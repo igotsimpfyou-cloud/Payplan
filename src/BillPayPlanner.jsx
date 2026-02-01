@@ -576,10 +576,15 @@ const BillPayPlanner = () => {
                       Monthly payments: ${debtSummary.totalPayment.toFixed(2)}
                     </p>
                   </div>
-                  
                   <div className="bg-emerald-50 border-2 border-emerald-200 rounded-2xl p-6">
-                    <div
-                                  </div>
+  <p className="text-emerald-800 font-medium">
+    Your assets are in great shape.
+  </p>
+</div>
+
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -591,3 +596,4 @@ const BillPayPlanner = () => {
 };
 
 export default BillPayPlanner;
+                  
