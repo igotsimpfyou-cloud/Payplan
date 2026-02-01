@@ -559,16 +559,21 @@ const BillPayPlanner = () => {
                 </div>
               </div>
 
-              {/* Financial Summary */}
+                            {/* Financial Summary */}
               <div className="bg-white rounded-3xl shadow-2xl p-8">
-                <h2 className="text-2xl font-black text-slate-900 mb-6">Financial Summary</h2>
+                <h2 className="text-2xl font-black text-slate-900 mb-6">
+                  Financial Summary
+                </h2>
+
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                   <div className="bg-red-50 border-2 border-red-200 rounded-2xl p-6">
                     <div className="flex items-center justify-between mb-4">
                       <h3 className="text-lg font-bold text-red-900">Total Debt</h3>
                       <TrendingUp className="text-red-600" size={24} />
                     </div>
-                    <p className="text-3xl font-black text-red-900">${debtSummary.totalDebt.toFixed(2)}</p>
+                    <p className="text-3xl font-black text-red-900">
+                      ${debtSummary.totalDebt.toFixed(2)}
+                    </p>
                     <p className="text-red-700 font-medium mt-2">
                       {debtSummary.count} debt accounts
                     </p>
@@ -576,19 +581,68 @@ const BillPayPlanner = () => {
                       Monthly payments: ${debtSummary.totalPayment.toFixed(2)}
                     </p>
                   </div>
-                  <div className="bg-emerald-50 border-2 border-emerald-200 rounded-2xl p-6">
-  <p className="text-emerald-800 font-medium">
-    Your assets are in great shape.
-  </p>
-</div>
 
+                  <div className="bg-emerald-50 border-2 border-emerald-200 rounded-2xl p-6">
+                    <div className="flex items-center justify-between mb-4">
+                      <h3 className="text-lg font-bold text-emerald-900">
+                        Total Assets
+                      </h3>
+                      <Building2 className="text-emerald-600" size={24} />
+                    </div>
+                    <p className="text-3xl font-black text-emerald-900">
+                      ${assetSummary.totalAssets.toFixed(2)}
+                    </p>
+                    <p className="text-emerald-700 font-medium mt-2">
+                      {assetSummary.count} asset accounts
+                    </p>
+                    <p className="text-emerald-700 font-medium">
+                      Net Worth: $
+                      {(assetSummary.totalAssets -
+                        debtSummary.totalDebt).toFixed(2)}
+                    </p>
+                  </div>
                 </div>
               </div>
-            )}
+            </div>
+
+            {/* Upcoming Bills Sidebar */}
+            <div className="space-y-6">
+              <div className="bg-white rounded-3xl shadow-2xl p-6">
+                <div className="flex items-center justify-between mb-6">
+                  <h2 className="text-xl font-black text-slate-900">
+                    Upcoming Bills
+                  </h2>
+                  <Calendar className="text-slate-600" size={24} />
+                </div>
+
+                {upcomingBills.length === 0 ? (
+                  <p className="text-slate-600 text-center py-8">
+                    No upcoming bills 🎉
+                  </p>
+                ) : (
+                  <div className="space-y-3">
+                    {upcomingBills.map((bill) => (
+                      <div
+                        key={bill.id}
+                        className="p-4 rounded-2xl bg-slate-50 border-2 border-slate-200"
+                      >
+                        <h3 className="font-bold text-slate-900">
+                          {bill.name}
+                        </h3>
+                        <p className="text-slate-600">
+                          ${bill.amount} — due{' '}
+                          {new Date(bill.dueDate).toLocaleDateString()}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
         )}
 
-        {/* Footer spacing for mobile */}
+        {/* Footer spacing */}
         <div className="h-6" />
       </div>
     </div>
@@ -596,4 +650,4 @@ const BillPayPlanner = () => {
 };
 
 export default BillPayPlanner;
-                  
+              
