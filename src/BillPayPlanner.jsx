@@ -588,7 +588,6 @@ const BillPayPlanner = () => {
                   required
                 />
               </div>
-
               <div>
                 <label className="block text-sm font-semibold mb-2">Payment Amount</label>
                 <input
