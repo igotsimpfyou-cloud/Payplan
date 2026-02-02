@@ -3,25 +3,17 @@ import {
   DollarSign,
   Calendar,
   Plus,
-  Check,
-  AlertCircle,
   Trash2,
-  Edit2,
-  X,
   Clock,
-  TrendingUp,
-  Home,
   Settings,
   BarChart3,
-  ChevronRight,
-  RefreshCw,
   Building2,
   Receipt
 } from 'lucide-react';
 
-/* --------------------------------------------------
+/* -------------------------------
    Safari / iOS storage shim
--------------------------------------------------- */
+-------------------------------- */
 const storageShim = {
   async get(key) {
     try {
@@ -54,9 +46,9 @@ const BillPayPlanner = () => {
   const [calendarConnected, setCalendarConnected] = useState(false);
   const [loading, setLoading] = useState(true);
 
-  /* --------------------------------------------------
+  /* -------------------------------
      Backup / Restore
-  -------------------------------------------------- */
+  -------------------------------- */
   const backupFileInputRef = useRef(null);
 
   const exportBackup = () => {
@@ -82,26 +74,24 @@ const BillPayPlanner = () => {
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
 
-  const applyBackup = async (payload) => {
+  const importBackupFromFile = async (file) => {
+    if (!file) return;
+    const text = await file.text();
+    const payload = JSON.parse(text);
     const d = payload?.data ?? payload;
+
     setBills(Array.isArray(d?.bills) ? d.bills : []);
     setAssets(Array.isArray(d?.assets) ? d.assets : []);
     setOneTimeBills(Array.isArray(d?.oneTimeBills) ? d.oneTimeBills : []);
     setPaySchedule(d?.paySchedule ?? null);
     setCalendarConnected(!!d?.calendarConnected);
+
+    alert('Backup restored');
   };
 
-  const importBackupFromFile = async (file) => {
-    if (!file) return;
-    const text = await file.text();
-    const payload = JSON.parse(text);
-    await applyBackup(payload);
-    alert('Backup restored!');
-  };
-
-  /* --------------------------------------------------
-     Load & persist data
-  -------------------------------------------------- */
+  /* -------------------------------
+     Load & persist
+  -------------------------------- */
   useEffect(() => {
     const load = async () => {
       const sb = await window.storage.get('bills');
@@ -155,14 +145,11 @@ const BillPayPlanner = () => {
     );
   }
 
-  /* --------------------------------------------------
-     UI
-  -------------------------------------------------- */
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-indigo-900 p-4">
       <div className="max-w-7xl mx-auto">
 
-        {/* Header */}
+        {/* Top Navigation */}
         <div className="flex flex-wrap gap-2 mb-6">
           {[
             ['dashboard', 'Dashboard', BarChart3],
@@ -186,31 +173,83 @@ const BillPayPlanner = () => {
           ))}
         </div>
 
+        {/* Dashboard */}
+        {view === 'dashboard' && (
+          <div className="bg-white rounded-2xl shadow-xl p-6">
+            <h2 className="text-2xl font-black mb-4">Financial Overview</h2>
+            <p className="text-slate-600">
+              Bills: {bills.length} • Assets: {assets.length} • One-Time:{' '}
+              {oneTimeBills.length}
+            </p>
+          </div>
+        )}
+
+        {/* Bills */}
+        {view === 'bills' && (
+          <div className="bg-white rounded-2xl shadow-xl p-6 space-y-3">
+            <h2 className="text-xl font-black">Bills</h2>
+            {bills.map((b, i) => (
+              <div
+                key={i}
+                className="flex justify-between border p-3 rounded-lg"
+              >
+                <span>{b.name}</span>
+                <span>${b.amount}</span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Assets */}
+        {view === 'assets' && (
+          <div className="bg-white rounded-2xl shadow-xl p-6 space-y-3">
+            <h2 className="text-xl font-black">Assets</h2>
+            {assets.map((a, i) => (
+              <div
+                key={i}
+                className="flex justify-between border p-3 rounded-lg"
+              >
+                <span>{a.name}</span>
+                <span>${a.value}</span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* One-Time */}
+        {view === 'oneTime' && (
+          <div className="bg-white rounded-2xl shadow-xl p-6 space-y-3">
+            <h2 className="text-xl font-black">One-Time Bills</h2>
+            {oneTimeBills.map((o, i) => (
+              <div
+                key={i}
+                className="flex justify-between border p-3 rounded-lg"
+              >
+                <span>{o.name}</span>
+                <span>${o.amount}</span>
+              </div>
+            ))}
+          </div>
+        )}
+
         {/* Settings */}
         {view === 'settings' && (
           <div className="bg-white rounded-2xl shadow-xl p-6 space-y-6">
-            <div>
-              <h2 className="text-2xl font-black text-slate-900 mb-2">
-                Backup & Restore
-              </h2>
-              <p className="text-slate-600 text-sm mb-4">
-                Save your data to a file or restore it later.
-              </p>
+            <h2 className="text-2xl font-black">Settings</h2>
 
+            <div>
+              <h3 className="font-bold mb-2">Backup & Restore</h3>
               <div className="flex flex-col sm:flex-row gap-3">
                 <button
                   onClick={exportBackup}
-                  className="px-4 py-3 bg-slate-900 text-white rounded-xl font-semibold"
+                  className="px-4 py-2 bg-slate-900 text-white rounded-lg"
                 >
                   Export Backup
                 </button>
 
                 <button
-                  onClick={() =>
-                    backupFileInputRef.current &&
-                    backupFileInputRef.current.click()
-                  }
-                  className="px-4 py-3 bg-emerald-600 text-white rounded-xl font-semibold"
+                  onClick={() => backupFileInputRef.current.click()}
+                  className="px-4 py-2 bg-emerald-600 text-white rounded-lg"
                 >
                   Import Backup
                 </button>
@@ -228,13 +267,6 @@ const BillPayPlanner = () => {
                 />
               </div>
             </div>
-          </div>
-        )}
-
-        {/* Placeholder views (unchanged logic elsewhere) */}
-        {view !== 'settings' && (
-          <div className="bg-white rounded-2xl shadow-xl p-6 text-slate-700">
-            This view is unchanged from your working version.
           </div>
         )}
 
