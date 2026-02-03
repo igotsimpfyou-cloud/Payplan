@@ -16,6 +16,8 @@ const BillPayPlanner = () => {
   const [showPayScheduleForm, setShowPayScheduleForm] = useState(false);
   const [showHistoricalForm, setShowHistoricalForm] = useState(null);
   const [showAmortizationView, setShowAmortizationView] = useState(null);
+  const [showClearDataModal, setShowClearDataModal] = useState(false);
+  const [clearDataCountdown, setClearDataCountdown] = useState(5);
   const [loading, setLoading] = useState(true);
   const [calendarConnected, setCalendarConnected] = useState(false);
   
@@ -56,12 +58,12 @@ const BillPayPlanner = () => {
     setPaySchedule(newPaySchedule);
     setCalendarConnected(newCalendarConnected);
     
-    // Persist to storage
-    await window.storage.set('bills', JSON.stringify(newBills));
-    await window.storage.set('assets', JSON.stringify(newAssets));
-    await window.storage.set('oneTimeBills', JSON.stringify(newOneTimeBills));
-    await window.storage.set('paySchedule', JSON.stringify(newPaySchedule));
-    await window.storage.set('calendarConnected', JSON.stringify(newCalendarConnected));
+    // Persist to localStorage
+    localStorage.setItem('bills', JSON.stringify(newBills));
+    localStorage.setItem('assets', JSON.stringify(newAssets));
+    localStorage.setItem('oneTimeBills', JSON.stringify(newOneTimeBills));
+    localStorage.setItem('paySchedule', JSON.stringify(newPaySchedule));
+    localStorage.setItem('calendarConnected', JSON.stringify(newCalendarConnected));
   };
 
   const importBackupFromFile = async (file) => {
@@ -69,10 +71,18 @@ const BillPayPlanner = () => {
     try {
       const text = await file.text();
       const payload = JSON.parse(text);
+      
+      // Validate the backup file
+      if (!payload.app || payload.app !== 'PayPlan Pro') {
+        alert('Invalid backup file. Please select a valid PayPlan Pro backup.');
+        return;
+      }
+      
       await applyBackup(payload);
-      alert('Backup restored successfully!');
+      alert('Backup restored successfully! Your data has been loaded.');
     } catch (error) {
-      alert('Error restoring backup: ' + error.message);
+      console.error('Backup restore error:', error);
+      alert('Error restoring backup: ' + error.message + '\n\nPlease make sure you selected a valid backup file.');
     }
   };
 
@@ -81,53 +91,64 @@ const BillPayPlanner = () => {
     loadData();
   }, []);
 
+  // Countdown timer for clear data modal
+  useEffect(() => {
+    let timer;
+    if (showClearDataModal && clearDataCountdown > 0) {
+      timer = setTimeout(() => {
+        setClearDataCountdown(clearDataCountdown - 1);
+      }, 1000);
+    }
+    return () => clearTimeout(timer);
+  }, [showClearDataModal, clearDataCountdown]);
+
   const loadData = async () => {
     try {
-      const billsResult = await window.storage.get('bills');
-      const assetsResult = await window.storage.get('assets');
-      const oneTimeResult = await window.storage.get('oneTimeBills');
-      const scheduleResult = await window.storage.get('paySchedule');
-      const calendarResult = await window.storage.get('calendarConnected');
+      const billsData = localStorage.getItem('bills');
+      const assetsData = localStorage.getItem('assets');
+      const oneTimeData = localStorage.getItem('oneTimeBills');
+      const scheduleData = localStorage.getItem('paySchedule');
+      const calendarData = localStorage.getItem('calendarConnected');
       
-      if (billsResult?.value) {
-        setBills(JSON.parse(billsResult.value));
+      if (billsData) {
+        setBills(JSON.parse(billsData));
       }
-      if (assetsResult?.value) {
-        setAssets(JSON.parse(assetsResult.value));
+      if (assetsData) {
+        setAssets(JSON.parse(assetsData));
       }
-      if (oneTimeResult?.value) {
-        setOneTimeBills(JSON.parse(oneTimeResult.value));
+      if (oneTimeData) {
+        setOneTimeBills(JSON.parse(oneTimeData));
       }
-      if (scheduleResult?.value) {
-        setPaySchedule(JSON.parse(scheduleResult.value));
+      if (scheduleData) {
+        setPaySchedule(JSON.parse(scheduleData));
       }
-      if (calendarResult?.value) {
-        setCalendarConnected(JSON.parse(calendarResult.value));
+      if (calendarData) {
+        setCalendarConnected(JSON.parse(calendarData));
       }
     } catch (error) {
-      console.log('No existing data found');
+      console.log('No existing data found', error);
     }
     setLoading(false);
   };
 
   const saveBills = async (updatedBills) => {
     setBills(updatedBills);
-    await window.storage.set('bills', JSON.stringify(updatedBills));
+    localStorage.setItem('bills', JSON.stringify(updatedBills));
   };
 
   const saveAssets = async (updatedAssets) => {
     setAssets(updatedAssets);
-    await window.storage.set('assets', JSON.stringify(updatedAssets));
+    localStorage.setItem('assets', JSON.stringify(updatedAssets));
   };
 
   const saveOneTimeBills = async (updatedOneTime) => {
     setOneTimeBills(updatedOneTime);
-    await window.storage.set('oneTimeBills', JSON.stringify(updatedOneTime));
+    localStorage.setItem('oneTimeBills', JSON.stringify(updatedOneTime));
   };
 
   const savePaySchedule = async (schedule) => {
     setPaySchedule(schedule);
-    await window.storage.set('paySchedule', JSON.stringify(schedule));
+    localStorage.setItem('paySchedule', JSON.stringify(schedule));
   };
 
   const addBill = async (billData) => {
@@ -209,6 +230,33 @@ const BillPayPlanner = () => {
     }));
     await saveBills(resetBills);
     alert('All bills have been reset for the new month!');
+  };
+
+  const clearAllData = () => {
+    setShowClearDataModal(true);
+    setClearDataCountdown(5);
+  };
+
+  const confirmClearAllData = () => {
+    // Clear state
+    setBills([]);
+    setAssets([]);
+    setOneTimeBills([]);
+    setPaySchedule(null);
+    setCalendarConnected(false);
+    
+    // Clear localStorage
+    localStorage.removeItem('bills');
+    localStorage.removeItem('assets');
+    localStorage.removeItem('oneTimeBills');
+    localStorage.removeItem('paySchedule');
+    localStorage.removeItem('calendarConnected');
+    
+    setShowClearDataModal(false);
+    alert('✓ All data has been cleared. Starting fresh!');
+    
+    // Reload the page to ensure clean state
+    window.location.reload();
   };
 
   const togglePaid = async (billId) => {
@@ -343,7 +391,7 @@ const BillPayPlanner = () => {
     // In a real implementation, this would use OAuth
     const connected = !calendarConnected;
     setCalendarConnected(connected);
-    await window.storage.set('calendarConnected', JSON.stringify(connected));
+    localStorage.setItem('calendarConnected', JSON.stringify(connected));
     if (connected) {
       alert('Calendar connected! (Demo mode)');
     }
@@ -499,13 +547,16 @@ const BillPayPlanner = () => {
       category: 'utilities',
       autopay: false,
       isVariable: false,
-      payFromCheck: 'auto' // auto, check1, check2 - auto will determine based on due date and pay schedule
+      payFromCheck: 'auto'
     });
 
     const handleSubmit = (e) => {
       e.preventDefault();
       onSubmit(formData);
     };
+
+    const historicalCount = bill?.historicalPayments?.length || 0;
+    const isVariableBill = formData.isVariable || historicalCount > 0;
 
     return (
       <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
@@ -524,8 +575,34 @@ const BillPayPlanner = () => {
                 />
               </div>
 
+              <div className="flex items-center gap-2 mb-4">
+                <input
+                  type="checkbox"
+                  id="isVariable"
+                  checked={formData.isVariable}
+                  onChange={(e) => setFormData({...formData, isVariable: e.target.checked})}
+                  className="w-5 h-5"
+                />
+                <label htmlFor="isVariable" className="text-sm font-semibold">
+                  Variable amount (like water, electricity)
+                </label>
+              </div>
+
+              {isVariableBill && historicalCount > 0 && (
+                <div className="bg-blue-50 border-2 border-blue-200 rounded-xl p-3 mb-4">
+                  <p className="text-sm text-blue-800">
+                    📊 <strong>Estimated amount:</strong> ${formData.amount || '0.00'} (based on {historicalCount} month{historicalCount !== 1 ? 's' : ''})
+                  </p>
+                  <p className="text-xs text-blue-600 mt-1">
+                    Add more historical payments to improve accuracy
+                  </p>
+                </div>
+              )}
+
               <div>
-                <label className="block text-sm font-semibold mb-2">Amount</label>
+                <label className="block text-sm font-semibold mb-2">
+                  {isVariableBill ? 'Estimated Amount (or enter manually)' : 'Amount'}
+                </label>
                 <input
                   type="number"
                   step="0.01"
@@ -534,6 +611,11 @@ const BillPayPlanner = () => {
                   className="w-full px-4 py-2 border-2 border-slate-200 rounded-xl focus:border-emerald-500 outline-none"
                   required
                 />
+                {isVariableBill && (
+                  <p className="text-xs text-slate-500 mt-1">
+                    This will be automatically updated based on historical payments
+                  </p>
+                )}
               </div>
 
               <div>
@@ -589,17 +671,6 @@ const BillPayPlanner = () => {
                   className="w-5 h-5"
                 />
                 <label htmlFor="autopay" className="text-sm font-semibold">Auto-pay enabled</label>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  id="isVariable"
-                  checked={formData.isVariable}
-                  onChange={(e) => setFormData({...formData, isVariable: e.target.checked})}
-                  className="w-5 h-5"
-                />
-                <label htmlFor="isVariable" className="text-sm font-semibold">Variable amount</label>
               </div>
 
               <div>
@@ -945,76 +1016,173 @@ const BillPayPlanner = () => {
 
     const handleAddPayment = (e) => {
       e.preventDefault();
+      
+      // Check if we already have 12 payments
+      const currentPayments = bill.historicalPayments || [];
+      if (currentPayments.length >= 12) {
+        alert('Maximum 12 months of historical data. Delete an old entry to add a new one.');
+        return;
+      }
+      
       addHistoricalPayment(bill.id, newPayment);
       setNewPayment({ date: '', amount: '' });
     };
+
+    const historicalPayments = bill.historicalPayments || [];
+    const average = historicalPayments.length > 0
+      ? historicalPayments.reduce((sum, p) => sum + parseFloat(p.amount), 0) / historicalPayments.length
+      : 0;
 
     return (
       <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
         <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
           <div className="p-6">
             <div className="flex items-center justify-between mb-6">
-              <h2 className="text-2xl font-bold">Historical Payments - {bill.name}</h2>
+              <div>
+                <h2 className="text-2xl font-bold">Payment History - {bill.name}</h2>
+                <p className="text-sm text-slate-600">Track up to 12 months to estimate future bills</p>
+              </div>
               <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-lg">
                 <X size={24} />
               </button>
             </div>
 
+            {/* Current Estimate */}
+            {historicalPayments.length > 0 && (
+              <div className="mb-6 p-4 bg-gradient-to-r from-emerald-50 to-blue-50 border-2 border-emerald-200 rounded-xl">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-slate-600 mb-1">Current Estimated Amount</p>
+                    <p className="text-3xl font-black text-emerald-600">${average.toFixed(2)}</p>
+                    <p className="text-xs text-slate-500 mt-1">
+                      Based on {historicalPayments.length} month{historicalPayments.length !== 1 ? 's' : ''} of data
+                    </p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-sm text-slate-600">Data completeness</p>
+                    <div className="flex gap-1 mt-2">
+                      {[...Array(12)].map((_, i) => (
+                        <div
+                          key={i}
+                          className={`w-2 h-8 rounded ${
+                            i < historicalPayments.length ? 'bg-emerald-500' : 'bg-slate-200'
+                          }`}
+                        />
+                      ))}
+                    </div>
+                    <p className="text-xs text-slate-500 mt-1">{historicalPayments.length}/12 months</p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Add New Payment */}
             <form onSubmit={handleAddPayment} className="mb-6 p-4 bg-slate-50 rounded-xl">
-              <h3 className="font-semibold mb-3">Add Payment</h3>
+              <h3 className="font-semibold mb-3 flex items-center gap-2">
+                <Plus size={18} />
+                Add Payment ({12 - historicalPayments.length} slots remaining)
+              </h3>
               <div className="flex gap-3">
-                <input
-                  type="date"
-                  value={newPayment.date}
-                  onChange={(e) => setNewPayment({...newPayment, date: e.target.value})}
-                  className="flex-1 px-4 py-2 border-2 border-slate-200 rounded-xl focus:border-emerald-500 outline-none"
-                  required
-                />
-                <input
-                  type="number"
-                  step="0.01"
-                  placeholder="Amount"
-                  value={newPayment.amount}
-                  onChange={(e) => setNewPayment({...newPayment, amount: e.target.value})}
-                  className="flex-1 px-4 py-2 border-2 border-slate-200 rounded-xl focus:border-emerald-500 outline-none"
-                  required
-                />
+                <div className="flex-1">
+                  <label className="block text-xs text-slate-600 mb-1">Payment Date</label>
+                  <input
+                    type="date"
+                    value={newPayment.date}
+                    onChange={(e) => setNewPayment({...newPayment, date: e.target.value})}
+                    className="w-full px-4 py-2 border-2 border-slate-200 rounded-xl focus:border-emerald-500 outline-none"
+                    required
+                  />
+                </div>
+                <div className="flex-1">
+                  <label className="block text-xs text-slate-600 mb-1">Amount Paid</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    placeholder="Amount"
+                    value={newPayment.amount}
+                    onChange={(e) => setNewPayment({...newPayment, amount: e.target.value})}
+                    className="w-full px-4 py-2 border-2 border-slate-200 rounded-xl focus:border-emerald-500 outline-none"
+                    required
+                  />
+                </div>
                 <button
                   type="submit"
-                  className="px-6 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-semibold"
+                  className="px-6 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-semibold self-end"
+                  disabled={historicalPayments.length >= 12}
                 >
                   Add
                 </button>
               </div>
+              {historicalPayments.length >= 12 && (
+                <p className="text-xs text-amber-600 mt-2">
+                  ⚠️ Maximum 12 months reached. Delete an old payment to add a new one.
+                </p>
+              )}
             </form>
 
+            {/* Payment History List */}
             <div className="space-y-2">
               <h3 className="font-semibold mb-3">Payment History</h3>
-              {bill.historicalPayments?.length > 0 ? (
-                bill.historicalPayments.map((payment, idx) => (
-                  <div key={idx} className="flex items-center justify-between p-3 bg-slate-50 rounded-xl">
-                    <div>
-                      <span className="font-semibold">{new Date(payment.date).toLocaleDateString()}</span>
-                      <span className="ml-4">${payment.amount}</span>
-                    </div>
-                    <button
-                      onClick={() => deleteHistoricalPayment(bill.id, idx)}
-                      className="p-2 text-red-600 hover:bg-red-50 rounded-lg"
-                    >
-                      <Trash2 size={18} />
-                    </button>
-                  </div>
-                ))
+              {historicalPayments.length > 0 ? (
+                <div className="space-y-2">
+                  {historicalPayments
+                    .sort((a, b) => new Date(b.date) - new Date(a.date))
+                    .map((payment, idx) => {
+                      const originalIdx = historicalPayments.findIndex(p => p === payment);
+                      return (
+                        <div key={idx} className="flex items-center justify-between p-3 bg-slate-50 rounded-xl hover:bg-slate-100 transition-colors">
+                          <div className="flex items-center gap-3">
+                            <div className="p-2 bg-emerald-100 rounded-lg">
+                              <Calendar size={16} className="text-emerald-600" />
+                            </div>
+                            <div>
+                              <span className="font-semibold">{new Date(payment.date).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}</span>
+                              <span className="ml-4 text-slate-600">${parseFloat(payment.amount).toFixed(2)}</span>
+                            </div>
+                          </div>
+                          <button
+                            onClick={() => deleteHistoricalPayment(bill.id, originalIdx)}
+                            className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                            title="Delete this payment"
+                          >
+                            <Trash2 size={18} />
+                          </button>
+                        </div>
+                      );
+                    })}
+                </div>
               ) : (
-                <p className="text-slate-500 text-center py-4">No historical payments yet</p>
+                <div className="text-center py-8 bg-slate-50 rounded-xl">
+                  <BarChart3 className="mx-auto mb-3 text-slate-300" size={48} />
+                  <p className="text-slate-500 font-semibold">No historical payments yet</p>
+                  <p className="text-slate-400 text-sm mt-1">
+                    Add your past payments to generate an estimated amount
+                  </p>
+                </div>
               )}
             </div>
 
-            {bill.historicalPayments?.length > 0 && (
-              <div className="mt-6 p-4 bg-emerald-50 rounded-xl">
-                <p className="text-sm text-slate-600">
-                  Current average: <span className="font-bold text-emerald-700">${bill.amount}</span>
-                </p>
+            {/* Statistics */}
+            {historicalPayments.length > 1 && (
+              <div className="mt-6 grid grid-cols-3 gap-3">
+                <div className="p-3 bg-blue-50 rounded-xl text-center">
+                  <p className="text-xs text-slate-600">Lowest</p>
+                  <p className="text-lg font-bold text-blue-600">
+                    ${Math.min(...historicalPayments.map(p => parseFloat(p.amount))).toFixed(2)}
+                  </p>
+                </div>
+                <div className="p-3 bg-emerald-50 rounded-xl text-center">
+                  <p className="text-xs text-slate-600">Average</p>
+                  <p className="text-lg font-bold text-emerald-600">
+                    ${average.toFixed(2)}
+                  </p>
+                </div>
+                <div className="p-3 bg-red-50 rounded-xl text-center">
+                  <p className="text-xs text-slate-600">Highest</p>
+                  <p className="text-lg font-bold text-red-600">
+                    ${Math.max(...historicalPayments.map(p => parseFloat(p.amount))).toFixed(2)}
+                  </p>
+                </div>
               </div>
             )}
           </div>
@@ -1308,88 +1476,94 @@ const BillPayPlanner = () => {
               const assignments = getPaycheckAssignments();
               const formatDate = (date) => {
                 if (!date) return '';
-                return new Date(date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+                // Use UTC to prevent timezone issues that shift dates by one day
+                const d = new Date(date);
+                return d.toLocaleDateString('en-US', { 
+                  month: 'short', 
+                  day: 'numeric',
+                  timeZone: 'UTC'
+                });
               };
               
               return (
                 <div className="space-y-6">
-                  {/* First Paycheck Bills */}
-                  <div>
-                    <h3 className="text-2xl font-bold text-white mb-2 flex items-center gap-2">
+                  {/* First Paycheck Bills - in a card */}
+                  <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-6">
+                    <h3 className="text-2xl font-bold text-white mb-2 flex items-center gap-2 flex-wrap">
                       <DollarSign size={24} />
-                      First Paycheck Bills
+                      <span>First Paycheck Bills</span>
                       {assignments.payDates[0] && (
-                        <span className="text-lg font-normal text-white/80">
+                        <span className="text-lg font-normal text-emerald-300">
                           (Pay Date: {formatDate(assignments.payDates[0])})
                         </span>
                       )}
                     </h3>
-                    <p className="text-white/70 text-sm mb-4">
+                    <p className="text-white/70 text-sm mb-6">
                       Bills to pay with your next paycheck
                     </p>
                     <div className="grid grid-cols-1 gap-4">
                       {assignments.check1.map(bill => (
-                      <div key={bill.id} className="bg-white rounded-2xl shadow-xl p-6">
-                        <div className="flex items-start gap-4">
+                      <div key={bill.id} className="bg-white rounded-xl shadow-lg p-4">
+                        <div className="flex items-start gap-3">
                           <button
                             onClick={() => togglePaid(bill.id)}
-                            className={`p-3 rounded-xl transition-colors ${
+                            className={`p-2 rounded-lg transition-colors flex-shrink-0 ${
                               bill.paidThisMonth
                                 ? 'bg-green-500 text-white'
                                 : 'bg-slate-100 text-slate-400 hover:bg-slate-200'
                             }`}
                           >
-                            <Check size={24} />
+                            <Check size={20} />
                           </button>
 
-                          <div className="flex-1">
-                            <div className="flex items-center gap-3 mb-2">
-                              <h3 className={`text-2xl font-bold ${bill.paidThisMonth ? 'text-green-600 line-through' : 'text-slate-800'}`}>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 mb-2 flex-wrap">
+                              <h3 className={`text-lg font-bold ${bill.paidThisMonth ? 'text-green-600 line-through' : 'text-slate-800'}`}>
                                 {bill.name}
                               </h3>
                               {bill.isVariable && (
-                                <span className="px-3 py-1 bg-yellow-100 text-yellow-700 text-xs font-bold rounded-full">
+                                <span className="px-2 py-1 bg-yellow-100 text-yellow-700 text-xs font-bold rounded-full">
                                   VARIABLE
                                 </span>
                               )}
                               {bill.autopay && (
-                                <span className="px-3 py-1 bg-blue-100 text-blue-700 text-xs font-bold rounded-full">
+                                <span className="px-2 py-1 bg-blue-100 text-blue-700 text-xs font-bold rounded-full">
                                   AUTO-PAY
                                 </span>
                               )}
                             </div>
                             
-                            <div className="flex flex-wrap gap-4 text-sm text-slate-600">
+                            <div className="flex flex-wrap gap-3 text-sm text-slate-600">
                               <span className="flex items-center gap-1">
-                                <DollarSign size={16} />
+                                <DollarSign size={14} />
                                 ${bill.amount}
                               </span>
                               <span className="flex items-center gap-1">
-                                <Calendar size={16} />
+                                <Calendar size={14} />
                                 Due: Day {bill.dueDate}
                               </span>
                               <span className="flex items-center gap-1">
-                                <Clock size={16} />
+                                <Clock size={14} />
                                 {bill.frequency}
                               </span>
                             </div>
                           </div>
 
-                          <div className="flex gap-2">
+                          <div className="flex gap-2 flex-shrink-0">
                             {bill.isVariable && (
                               <button
                                 onClick={() => setShowHistoricalForm(bill)}
                                 className="p-2 text-purple-600 hover:bg-purple-50 rounded-lg transition-colors"
                                 title="View payment history"
                               >
-                                <BarChart3 size={18} />
+                                <BarChart3 size={16} />
                               </button>
                             )}
                             <button
                               onClick={() => setEditingBill(bill)}
                               className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
                             >
-                              <Edit2 size={18} />
+                              <Edit2 size={16} />
                             </button>
                             <button
                               onClick={() => {
@@ -1399,95 +1573,95 @@ const BillPayPlanner = () => {
                               }}
                               className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
                             >
-                              <Trash2 size={18} />
+                              <Trash2 size={16} />
                             </button>
                           </div>
                         </div>
                       </div>
                     ))}
                     {assignments.check1.length === 0 && (
-                      <p className="text-white/70 text-center py-4">No bills due in first half of month</p>
+                      <p className="text-white/70 text-center py-8 text-sm">No bills due before your next paycheck</p>
                     )}
                   </div>
                 </div>
 
-                {/* Second Paycheck Bills */}
-                <div>
-                  <h3 className="text-2xl font-bold text-white mb-2 flex items-center gap-2">
+                {/* Second Paycheck Bills - in a card */}
+                <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-6">
+                  <h3 className="text-2xl font-bold text-white mb-2 flex items-center gap-2 flex-wrap">
                     <DollarSign size={24} />
-                    Second Paycheck Bills
+                    <span>Second Paycheck Bills</span>
                     {assignments.payDates[1] && (
-                      <span className="text-lg font-normal text-white/80">
+                      <span className="text-lg font-normal text-blue-300">
                         (Pay Date: {formatDate(assignments.payDates[1])})
                       </span>
                     )}
                   </h3>
-                  <p className="text-white/70 text-sm mb-4">
+                  <p className="text-white/70 text-sm mb-6">
                     Bills to pay with your following paycheck
                   </p>
                   <div className="grid grid-cols-1 gap-4">
                     {assignments.check2.map(bill => (
-                      <div key={bill.id} className="bg-white rounded-2xl shadow-xl p-6">
-                        <div className="flex items-start gap-4">
+                      <div key={bill.id} className="bg-white rounded-xl shadow-lg p-4">
+                        <div className="flex items-start gap-3">
                           <button
                             onClick={() => togglePaid(bill.id)}
-                            className={`p-3 rounded-xl transition-colors ${
+                            className={`p-2 rounded-lg transition-colors flex-shrink-0 ${
                               bill.paidThisMonth
                                 ? 'bg-green-500 text-white'
                                 : 'bg-slate-100 text-slate-400 hover:bg-slate-200'
                             }`}
                           >
-                            <Check size={24} />
+                            <Check size={20} />
                           </button>
 
-                          <div className="flex-1">
-                            <div className="flex items-center gap-3 mb-2">
-                              <h3 className={`text-2xl font-bold ${bill.paidThisMonth ? 'text-green-600 line-through' : 'text-slate-800'}`}>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 mb-2 flex-wrap">
+                              <h3 className={`text-lg font-bold ${bill.paidThisMonth ? 'text-green-600 line-through' : 'text-slate-800'}`}>
                                 {bill.name}
                               </h3>
                               {bill.isVariable && (
-                                <span className="px-3 py-1 bg-yellow-100 text-yellow-700 text-xs font-bold rounded-full">
+                                <span className="px-2 py-1 bg-yellow-100 text-yellow-700 text-xs font-bold rounded-full">
                                   VARIABLE
                                 </span>
                               )}
                               {bill.autopay && (
-                                <span className="px-3 py-1 bg-blue-100 text-blue-700 text-xs font-bold rounded-full">
+                                <span className="px-2 py-1 bg-blue-100 text-blue-700 text-xs font-bold rounded-full">
                                   AUTO-PAY
                                 </span>
                               )}
                             </div>
                             
-                            <div className="flex flex-wrap gap-4 text-sm text-slate-600">
+                            <div className="flex flex-wrap gap-3 text-sm text-slate-600">
                               <span className="flex items-center gap-1">
-                                <DollarSign size={16} />
+                                <DollarSign size={14} />
                                 ${bill.amount}
                               </span>
                               <span className="flex items-center gap-1">
-                                <Calendar size={16} />
+                                <Calendar size={14} />
                                 Due: Day {bill.dueDate}
                               </span>
                               <span className="flex items-center gap-1">
-                                <Clock size={16} />
+                                <Clock size={14} />
                                 {bill.frequency}
                               </span>
                             </div>
                           </div>
 
-                          <div className="flex gap-2">
+                          <div className="flex gap-2 flex-shrink-0">
                             {bill.isVariable && (
                               <button
                                 onClick={() => setShowHistoricalForm(bill)}
                                 className="p-2 text-purple-600 hover:bg-purple-50 rounded-lg transition-colors"
                                 title="View payment history"
                               >
-                                <BarChart3 size={18} />
+                                <BarChart3 size={16} />
                               </button>
                             )}
                             <button
                               onClick={() => setEditingBill(bill)}
                               className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
                             >
-                              <Edit2 size={18} />
+                              <Edit2 size={16} />
                             </button>
                             <button
                               onClick={() => {
@@ -1497,14 +1671,14 @@ const BillPayPlanner = () => {
                               }}
                               className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
                             >
-                              <Trash2 size={18} />
+                              <Trash2 size={16} />
                             </button>
                           </div>
                         </div>
                       </div>
                     ))}
                     {assignments.check2.length === 0 && (
-                      <p className="text-white/70 text-center py-4">No bills due in second half of month</p>
+                      <p className="text-white/70 text-center py-8 text-sm">No bills due before your second paycheck</p>
                     )}
                   </div>
                 </div>
@@ -1885,6 +2059,28 @@ const BillPayPlanner = () => {
                   </p>
                 </div>
               </div>
+
+              {/* Clear All Data */}
+              <div className="bg-white rounded-2xl shadow-xl p-6 border-2 border-red-200">
+                <div className="mb-4">
+                  <h3 className="text-xl font-bold text-red-600">Danger Zone</h3>
+                  <p className="text-slate-600 text-sm">Permanently delete all your data</p>
+                </div>
+                
+                <button
+                  onClick={clearAllData}
+                  className="w-full px-4 py-3 bg-red-100 hover:bg-red-200 text-red-700 rounded-xl font-semibold transition-colors flex items-center justify-center gap-2"
+                >
+                  <Trash2 size={18} />
+                  Clear All Data
+                </button>
+                
+                <div className="mt-4 bg-red-50 border-2 border-red-200 rounded-xl p-4">
+                  <p className="text-red-800 text-sm">
+                    <strong>⚠️ Warning:</strong> This will permanently delete ALL bills, assets, one-time bills, and settings. This action cannot be undone. Make a backup first if you want to keep your data!
+                  </p>
+                </div>
+              </div>
             </div>
           </div>
         )}
@@ -1956,6 +2152,61 @@ const BillPayPlanner = () => {
           asset={showAmortizationView}
           onClose={() => setShowAmortizationView(null)}
         />
+      )}
+
+      {/* Clear All Data Modal */}
+      {showClearDataModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full">
+            <div className="p-6">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="p-3 bg-red-100 rounded-full">
+                  <AlertCircle className="text-red-600" size={32} />
+                </div>
+                <h2 className="text-2xl font-bold text-red-600">Clear All Data?</h2>
+              </div>
+              
+              <div className="bg-red-50 border-2 border-red-200 rounded-xl p-4 mb-6">
+                <p className="text-red-800 font-semibold mb-2">
+                  ⚠️ This will permanently delete:
+                </p>
+                <ul className="text-red-700 text-sm space-y-1 ml-4">
+                  <li>• All recurring bills</li>
+                  <li>• All assets and loans</li>
+                  <li>• All one-time bills</li>
+                  <li>• Your pay schedule</li>
+                  <li>• All settings</li>
+                </ul>
+                <p className="text-red-800 font-semibold mt-3">
+                  This action cannot be undone!
+                </p>
+              </div>
+
+              <div className="flex gap-3">
+                <button
+                  onClick={() => {
+                    setShowClearDataModal(false);
+                    setClearDataCountdown(5);
+                  }}
+                  className="flex-1 px-4 py-3 bg-slate-100 hover:bg-slate-200 rounded-xl font-semibold transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={confirmClearAllData}
+                  disabled={clearDataCountdown > 0}
+                  className={`flex-1 px-4 py-3 rounded-xl font-semibold transition-colors ${
+                    clearDataCountdown > 0
+                      ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                      : 'bg-red-600 hover:bg-red-700 text-white'
+                  }`}
+                >
+                  {clearDataCountdown > 0 ? `Wait ${clearDataCountdown}s...` : 'Yes, Delete Everything'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
