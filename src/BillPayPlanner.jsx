@@ -510,16 +510,60 @@ const BillPayPlanner = () => {
 
     const totalMonthly = monthlyBills + monthlyAssets;
     
-    // Calculate monthly income based on pay frequency
+    // Calculate actual monthly income based on paychecks in current month
     let monthlyIncome = 0;
-    if (paySchedule) {
+    let paychecksThisMonth = 0;
+    let nextPaycheckDate = null;
+    let daysUntilNextPaycheck = null;
+    
+    if (paySchedule && paySchedule.nextPayDate) {
+      const today = new Date();
+      const currentMonth = today.getMonth();
+      const currentYear = today.getFullYear();
       const payAmount = parseFloat(paySchedule.payAmount);
-      switch(paySchedule.frequency) {
-        case 'weekly': monthlyIncome = payAmount * 4.33; break;
-        case 'biweekly': monthlyIncome = payAmount * 2.17; break;
-        case 'semimonthly': monthlyIncome = payAmount * 2; break;
-        case 'monthly': monthlyIncome = payAmount; break;
-        default: monthlyIncome = payAmount;
+      
+      // Calculate next several pay dates
+      const nextPay = new Date(paySchedule.nextPayDate);
+      const payDates = [nextPay];
+      
+      for (let i = 1; i < 8; i++) {
+        const nextDate = new Date(payDates[i - 1]);
+        
+        switch(paySchedule.frequency) {
+          case 'weekly':
+            nextDate.setDate(nextDate.getDate() + 7);
+            break;
+          case 'biweekly':
+            nextDate.setDate(nextDate.getDate() + 14);
+            break;
+          case 'semimonthly':
+            if (nextDate.getDate() <= 15) {
+              nextDate.setDate(15);
+            } else {
+              nextDate.setMonth(nextDate.getMonth() + 1);
+              nextDate.setDate(1);
+            }
+            break;
+          case 'monthly':
+            nextDate.setMonth(nextDate.getMonth() + 1);
+            break;
+        }
+        
+        payDates.push(new Date(nextDate));
+      }
+      
+      // Count paychecks in current month
+      paychecksThisMonth = payDates.filter(date => 
+        date.getMonth() === currentMonth && date.getFullYear() === currentYear
+      ).length;
+      
+      monthlyIncome = payAmount * paychecksThisMonth;
+      
+      // Find next paycheck date
+      nextPaycheckDate = payDates.find(date => date >= today);
+      if (nextPaycheckDate) {
+        const timeDiff = nextPaycheckDate.getTime() - today.getTime();
+        daysUntilNextPaycheck = Math.ceil(timeDiff / (1000 * 3600 * 24));
       }
     }
     
@@ -531,7 +575,10 @@ const BillPayPlanner = () => {
       totalMonthly,
       upcomingOneTime,
       monthlyIncome,
-      leftover
+      leftover,
+      paychecksThisMonth,
+      nextPaycheckDate,
+      daysUntilNextPaycheck
     };
   };
 
@@ -1342,13 +1389,37 @@ const BillPayPlanner = () => {
                   <div className="p-3 bg-emerald-100 rounded-xl">
                     <DollarSign className="text-emerald-600" size={24} />
                   </div>
-                  <div>
-                    <p className="text-slate-500 text-sm">Monthly Income</p>
+                  <div className="flex-1">
+                    <p className="text-slate-500 text-sm">
+                      {new Date().toLocaleDateString('en-US', { month: 'long' })} Income
+                    </p>
                     <p className="text-3xl font-black text-slate-800">
                       ${overview.monthlyIncome.toFixed(2)}
                     </p>
+                    {overview.paychecksThisMonth > 0 && (
+                      <p className="text-xs text-slate-500 mt-1">
+                        {overview.paychecksThisMonth} paycheck{overview.paychecksThisMonth !== 1 ? 's' : ''} this month
+                      </p>
+                    )}
                   </div>
                 </div>
+                {overview.nextPaycheckDate && (
+                  <div className="mt-3 pt-3 border-t border-slate-100">
+                    <p className="text-xs text-slate-500">Next paycheck:</p>
+                    <p className="text-sm font-semibold text-emerald-600">
+                      {overview.nextPaycheckDate.toLocaleDateString('en-US', { 
+                        weekday: 'short', 
+                        month: 'short', 
+                        day: 'numeric' 
+                      })}
+                      {overview.daysUntilNextPaycheck !== null && (
+                        <span className="text-slate-500 ml-1">
+                          ({overview.daysUntilNextPaycheck} day{overview.daysUntilNextPaycheck !== 1 ? 's' : ''})
+                        </span>
+                      )}
+                    </p>
+                  </div>
+                )}
               </div>
 
               <div className="bg-white rounded-2xl shadow-xl p-6">
@@ -1389,8 +1460,60 @@ const BillPayPlanner = () => {
                   const check1Total = assignments.check1.reduce((sum, b) => sum + parseFloat(b.amount), 0);
                   const check2Total = assignments.check2.reduce((sum, b) => sum + parseFloat(b.amount), 0);
                   
+                  // Get pay dates for current month
+                  const today = new Date();
+                  const currentMonth = today.getMonth();
+                  const currentYear = today.getFullYear();
+                  let payDatesThisMonth = [];
+                  
+                  if (paySchedule && paySchedule.nextPayDate) {
+                    const nextPay = new Date(paySchedule.nextPayDate);
+                    const allPayDates = [nextPay];
+                    
+                    for (let i = 1; i < 8; i++) {
+                      const nextDate = new Date(allPayDates[i - 1]);
+                      switch(paySchedule.frequency) {
+                        case 'weekly': nextDate.setDate(nextDate.getDate() + 7); break;
+                        case 'biweekly': nextDate.setDate(nextDate.getDate() + 14); break;
+                        case 'semimonthly':
+                          if (nextDate.getDate() <= 15) {
+                            nextDate.setDate(15);
+                          } else {
+                            nextDate.setMonth(nextDate.getMonth() + 1);
+                            nextDate.setDate(1);
+                          }
+                          break;
+                        case 'monthly': nextDate.setMonth(nextDate.getMonth() + 1); break;
+                      }
+                      allPayDates.push(new Date(nextDate));
+                    }
+                    
+                    payDatesThisMonth = allPayDates.filter(date => 
+                      date.getMonth() === currentMonth && date.getFullYear() === currentYear
+                    );
+                  }
+                  
                   return (
                     <div className="space-y-3">
+                      {payDatesThisMonth.length > 0 && (
+                        <div className="p-3 bg-gradient-to-r from-emerald-50 to-blue-50 rounded-xl border-2 border-emerald-200">
+                          <div className="text-xs text-slate-600 mb-2">
+                            📅 Pay dates this month:
+                          </div>
+                          <div className="space-y-1">
+                            {payDatesThisMonth.map((date, idx) => (
+                              <div key={idx} className="text-sm font-semibold text-slate-800">
+                                • {date.toLocaleDateString('en-US', { 
+                                  weekday: 'long', 
+                                  month: 'short', 
+                                  day: 'numeric' 
+                                })}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      
                       <div className="p-3 bg-emerald-50 rounded-xl">
                         <div className="flex items-center justify-between mb-2">
                           <span className="font-semibold text-slate-700">First Paycheck (1st-15th)</span>
