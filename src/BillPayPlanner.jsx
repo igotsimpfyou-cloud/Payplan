@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { DollarSign, Calendar, Plus, Check, AlertCircle, Trash2, Edit2, X, Clock, TrendingUp, Home, Settings, List, BarChart3, ChevronRight, RefreshCw, Building2, Receipt, Download, Upload } from 'lucide-react';
+import { DollarSign, Calendar, Plus, Check, AlertCircle, Trash2, Edit2, X, Clock, TrendingUp, Home, Settings, List, BarChart3, ChevronRight, RefreshCw, Building2, Receipt, Download, Upload, Flame } from 'lucide-react';
 
 const BillPayPlanner = () => {
   const [view, setView] = useState('dashboard');
@@ -7,6 +7,7 @@ const BillPayPlanner = () => {
   const [assets, setAssets] = useState([]);
   const [oneTimeBills, setOneTimeBills] = useState([]);
   const [paySchedule, setPaySchedule] = useState(null);
+  const [propaneFills, setPropaneFills] = useState([]);
   const [editingBill, setEditingBill] = useState(null);
   const [editingAsset, setEditingAsset] = useState(null);
   const [editingOneTime, setEditingOneTime] = useState(null);
@@ -18,6 +19,7 @@ const BillPayPlanner = () => {
   const [showAmortizationView, setShowAmortizationView] = useState(null);
   const [showClearDataModal, setShowClearDataModal] = useState(false);
   const [clearDataCountdown, setClearDataCountdown] = useState(5);
+  const [showPropaneForm, setShowPropaneForm] = useState(false);
   const [loading, setLoading] = useState(true);
   const [calendarConnected, setCalendarConnected] = useState(false);
   
@@ -109,22 +111,14 @@ const BillPayPlanner = () => {
       const oneTimeData = localStorage.getItem('oneTimeBills');
       const scheduleData = localStorage.getItem('paySchedule');
       const calendarData = localStorage.getItem('calendarConnected');
+      const propaneData = localStorage.getItem('propaneFills');
       
-      if (billsData) {
-        setBills(JSON.parse(billsData));
-      }
-      if (assetsData) {
-        setAssets(JSON.parse(assetsData));
-      }
-      if (oneTimeData) {
-        setOneTimeBills(JSON.parse(oneTimeData));
-      }
-      if (scheduleData) {
-        setPaySchedule(JSON.parse(scheduleData));
-      }
-      if (calendarData) {
-        setCalendarConnected(JSON.parse(calendarData));
-      }
+      if (billsData) setBills(JSON.parse(billsData));
+      if (assetsData) setAssets(JSON.parse(assetsData));
+      if (oneTimeData) setOneTimeBills(JSON.parse(oneTimeData));
+      if (scheduleData) setPaySchedule(JSON.parse(scheduleData));
+      if (calendarData) setCalendarConnected(JSON.parse(calendarData));
+      if (propaneData) setPropaneFills(JSON.parse(propaneData));
     } catch (error) {
       console.log('No existing data found', error);
     }
@@ -149,6 +143,20 @@ const BillPayPlanner = () => {
   const savePaySchedule = async (schedule) => {
     setPaySchedule(schedule);
     localStorage.setItem('paySchedule', JSON.stringify(schedule));
+  };
+
+  const savePropaneFills = async (fills) => {
+    setPropaneFills(fills);
+    localStorage.setItem('propaneFills', JSON.stringify(fills));
+  };
+
+  const addPropaneFill = async (fill) => {
+    const newFill = { ...fill, id: Date.now() };
+    await savePropaneFills([...propaneFills, newFill]);
+  };
+
+  const deletePropaneFill = async (id) => {
+    await savePropaneFills(propaneFills.filter(f => f.id !== id));
   };
 
   const addBill = async (billData) => {
@@ -238,24 +246,22 @@ const BillPayPlanner = () => {
   };
 
   const confirmClearAllData = () => {
-    // Clear state
     setBills([]);
     setAssets([]);
     setOneTimeBills([]);
     setPaySchedule(null);
     setCalendarConnected(false);
+    setPropaneFills([]);
     
-    // Clear localStorage
     localStorage.removeItem('bills');
     localStorage.removeItem('assets');
     localStorage.removeItem('oneTimeBills');
     localStorage.removeItem('paySchedule');
     localStorage.removeItem('calendarConnected');
+    localStorage.removeItem('propaneFills');
     
     setShowClearDataModal(false);
-    alert('✓ All data has been cleared. Starting fresh!');
-    
-    // Reload the page to ensure clean state
+    alert('✓ All data cleared!');
     window.location.reload();
   };
 
@@ -1367,6 +1373,17 @@ const BillPayPlanner = () => {
             One-Time
           </button>
           <button
+            onClick={() => setView('propane')}
+            className={`px-6 py-3 rounded-xl font-semibold transition-all flex items-center gap-2 whitespace-nowrap ${
+              view === 'propane'
+                ? 'bg-white text-emerald-600 shadow-lg'
+                : 'bg-white/20 text-white hover:bg-white/30'
+            }`}
+          >
+            <Flame size={20} />
+            Propane
+          </button>
+          <button
             onClick={() => setView('settings')}
             className={`px-6 py-3 rounded-xl font-semibold transition-all flex items-center gap-2 whitespace-nowrap ${
               view === 'settings'
@@ -2043,6 +2060,109 @@ const BillPayPlanner = () => {
           </div>
         )}
 
+        {/* Propane View */}
+        {view === 'propane' && (
+          <div>
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-3xl font-black text-white">Propane Usage Tracker</h2>
+              <button onClick={() => setShowPropaneForm(true)} className="px-6 py-3 bg-white hover:bg-emerald-50 text-emerald-600 rounded-xl font-semibold shadow-lg transition-colors flex items-center gap-2">
+                <Plus size={20} />
+                Add Fill
+              </button>
+            </div>
+
+            {propaneFills.length > 0 && (() => {
+              const sorted = [...propaneFills].sort((a, b) => new Date(b.date) - new Date(a.date));
+              const latest = sorted[0];
+              const totalGallons = propaneFills.reduce((sum, f) => sum + parseFloat(f.gallons), 0);
+              const totalCost = propaneFills.reduce((sum, f) => sum + parseFloat(f.totalCost), 0);
+              const avgPricePerGal = totalCost / totalGallons;
+              
+              const fillsWithUsage = sorted.map((fill, idx) => {
+                if (idx === sorted.length - 1) return { ...fill, daysLasted: null, dailyUsage: null };
+                const nextFill = sorted[idx + 1];
+                const days = Math.floor((new Date(fill.date) - new Date(nextFill.date)) / (1000 * 60 * 60 * 24));
+                const dailyUsage = parseFloat(fill.gallons) / days;
+                return { ...fill, daysLasted: days, dailyUsage };
+              });
+
+              return (
+                <div className="space-y-6">
+                  <div className="bg-white rounded-2xl shadow-xl p-6">
+                    <h3 className="text-xl font-bold mb-4">Latest Fill</h3>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                      <div>
+                        <p className="text-sm text-slate-500">Date</p>
+                        <p className="text-lg font-bold">{new Date(latest.date).toLocaleDateString()}</p>
+                      </div>
+                      <div>
+                        <p className="text-sm text-slate-500">Gallons</p>
+                        <p className="text-lg font-bold text-emerald-600">{latest.gallons}</p>
+                      </div>
+                      <div>
+                        <p className="text-sm text-slate-500">Price/Gal</p>
+                        <p className="text-lg font-bold">${latest.pricePerGal}</p>
+                      </div>
+                      <div>
+                        <p className="text-sm text-slate-500">Total Cost</p>
+                        <p className="text-lg font-bold text-red-600">${latest.totalCost}</p>
+                      </div>
+                    </div>
+                    {fillsWithUsage[0].daysLasted && (
+                      <div className="mt-4 pt-4 border-t">
+                        <p className="text-sm text-slate-600">Lasted <span className="font-bold">{fillsWithUsage[0].daysLasted} days</span> • Avg <span className="font-bold">{fillsWithUsage[0].dailyUsage.toFixed(1)} gal/day</span></p>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="bg-white rounded-2xl shadow-xl p-6">
+                      <p className="text-sm text-slate-500 mb-1">Total Spent (All Time)</p>
+                      <p className="text-3xl font-black text-red-600">${totalCost.toFixed(2)}</p>
+                    </div>
+                    <div className="bg-white rounded-2xl shadow-xl p-6">
+                      <p className="text-sm text-slate-500 mb-1">Total Gallons</p>
+                      <p className="text-3xl font-black text-emerald-600">{totalGallons.toFixed(0)}</p>
+                    </div>
+                    <div className="bg-white rounded-2xl shadow-xl p-6">
+                      <p className="text-sm text-slate-500 mb-1">Avg Price/Gal</p>
+                      <p className="text-3xl font-black text-slate-800">${avgPricePerGal.toFixed(2)}</p>
+                    </div>
+                  </div>
+
+                  <div className="bg-white rounded-2xl shadow-xl p-6">
+                    <h3 className="text-xl font-bold mb-4">Fill History</h3>
+                    <div className="space-y-2">
+                      {fillsWithUsage.map(fill => (
+                        <div key={fill.id} className="flex items-center justify-between p-4 bg-slate-50 rounded-xl hover:bg-slate-100 transition-colors">
+                          <div className="flex-1">
+                            <p className="font-semibold">{new Date(fill.date).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}</p>
+                            <p className="text-sm text-slate-600">
+                              {fill.gallons} gal @ ${fill.pricePerGal}/gal = ${fill.totalCost}
+                              {fill.daysLasted && ` • Lasted ${fill.daysLasted} days (${fill.dailyUsage.toFixed(1)} gal/day)`}
+                            </p>
+                          </div>
+                          <button onClick={() => deletePropaneFill(fill.id)} className="p-2 text-red-600 hover:bg-red-50 rounded-lg">
+                            <Trash2 size={18} />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
+
+            {propaneFills.length === 0 && (
+              <div className="bg-white rounded-2xl shadow-xl p-12 text-center">
+                <Flame className="mx-auto mb-4 text-slate-300" size={64} />
+                <h3 className="text-xl font-bold text-slate-800 mb-2">No Fills Tracked Yet</h3>
+                <p className="text-slate-600 mb-6">Start tracking your propane fills to see usage patterns and costs</p>
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Settings View */}
         {view === 'settings' && (
           <div>
@@ -2275,6 +2395,47 @@ const BillPayPlanner = () => {
           asset={showAmortizationView}
           onClose={() => setShowAmortizationView(null)}
         />
+      )}
+
+      {/* Propane Fill Form */}
+      {showPropaneForm && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full">
+            <div className="p-6">
+              <h2 className="text-2xl font-bold mb-6">Add Propane Fill</h2>
+              <form onSubmit={(e) => {
+                e.preventDefault();
+                const formData = new FormData(e.target);
+                const gallons = parseFloat(formData.get('gallons'));
+                const pricePerGal = parseFloat(formData.get('pricePerGal'));
+                addPropaneFill({
+                  date: formData.get('date'),
+                  gallons: gallons.toFixed(2),
+                  pricePerGal: pricePerGal.toFixed(2),
+                  totalCost: (gallons * pricePerGal).toFixed(2)
+                });
+                setShowPropaneForm(false);
+              }} className="space-y-4">
+                <div>
+                  <label className="block text-sm font-semibold mb-2">Fill Date</label>
+                  <input type="date" name="date" required className="w-full px-4 py-2 border-2 border-slate-200 rounded-xl focus:border-emerald-500 outline-none" />
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold mb-2">Gallons Delivered</label>
+                  <input type="number" step="0.1" name="gallons" required className="w-full px-4 py-2 border-2 border-slate-200 rounded-xl focus:border-emerald-500 outline-none" />
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold mb-2">Price per Gallon</label>
+                  <input type="number" step="0.01" name="pricePerGal" required className="w-full px-4 py-2 border-2 border-slate-200 rounded-xl focus:border-emerald-500 outline-none" />
+                </div>
+                <div className="flex gap-3 pt-4">
+                  <button type="button" onClick={() => setShowPropaneForm(false)} className="flex-1 px-4 py-3 bg-slate-100 hover:bg-slate-200 rounded-xl font-semibold">Cancel</button>
+                  <button type="submit" className="flex-1 px-4 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-semibold">Add Fill</button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Clear All Data Modal */}
