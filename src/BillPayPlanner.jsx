@@ -490,35 +490,30 @@ const BillPayPlanner = () => {
       } else if (bill.payFromCheck === 'check2') {
         check2Bills.push(bill);
       } else {
-        // Auto-assign: Find the paycheck that comes BEFORE the bill's due date
-        // Look through all pay dates to find which check should pay this bill
-        let assignedToCheck1 = false;
+        // Auto-assign based on which check comes before the due date
+        const check1Month = check1Date.getMonth();
+        const check1Year = check1Date.getFullYear();
+        const check2Month = check2Date.getMonth();
+        const check2Year = check2Date.getFullYear();
         
-        for (let i = 0; i < payDates.length; i++) {
-          const payDate = payDates[i];
-          const payMonth = payDate.getMonth();
-          const payYear = payDate.getFullYear();
-          
-          // Check if bill is due AFTER this paycheck (in the same month or next)
-          // Create due date relative to this pay period
-          let billDueDate = new Date(payYear, payMonth, dueDay);
-          
-          // If due day is before pay day in same month, bill is for next month
-          if (dueDay < payDate.getDate()) {
-            billDueDate.setMonth(billDueDate.getMonth() + 1);
-          }
-          
-          // If this paycheck comes before the bill due date, it should pay it
-          if (payDate <= billDueDate) {
-            // Assign to check1 or check2 based on which paycheck this is
-            if (i === 0) {
-              assignedToCheck1 = true;
-            }
-            break;
-          }
+        // Create bill due dates for both pay periods
+        let dueDateForCheck1 = new Date(check1Year, check1Month, dueDay);
+        let dueDateForCheck2 = new Date(check2Year, check2Month, dueDay);
+        
+        // If due day already passed in check1's month, it's for next month
+        if (dueDay < check1Date.getDate()) {
+          dueDateForCheck1.setMonth(dueDateForCheck1.getMonth() + 1);
         }
         
-        if (assignedToCheck1) {
+        // If due day already passed in check2's month, it's for next month
+        if (dueDay < check2Date.getDate()) {
+          dueDateForCheck2.setMonth(dueDateForCheck2.getMonth() + 1);
+        }
+        
+        // Assign to check that comes before due date
+        // If check1 can pay it (comes before due date), use check1
+        // Otherwise use check2
+        if (check1Date < dueDateForCheck1 && dueDateForCheck1 <= check2Date) {
           check1Bills.push(bill);
         } else {
           check2Bills.push(bill);
