@@ -2170,14 +2170,35 @@ const BillPayPlanner = () => {
                 }
               }
 
-              // Use existing assignment logic
+              // Use existing assignment logic for first 2 checks
               const assignments = getPaycheckAssignments();
+              
+              // Calculate 3rd check assignments manually
+              const check3Bills = [];
+              const check2Date = paychecks[1];
+              const check3Date = paychecks[2];
+              
+              bills.forEach(bill => {
+                const dueDay = parseInt(bill.dueDate);
+                const check3Month = check3Date.getMonth();
+                const check3Year = check3Date.getFullYear();
+                
+                let billDue = new Date(check3Year, check3Month, dueDay);
+                if (dueDay < check3Date.getDate()) {
+                  billDue.setMonth(billDue.getMonth() + 1);
+                }
+                
+                // If due after check2 and before/at a reasonable window after check3
+                if (billDue > check2Date && !bill.payFromCheck) {
+                  check3Bills.push(bill);
+                }
+              });
               
               // Map to stream format
               const streamData = [
                 { paycheck: paychecks[0], bills: assignments.check1 },
                 { paycheck: paychecks[1], bills: assignments.check2 },
-                { paycheck: paychecks[2], bills: [] } // Third check placeholder
+                { paycheck: paychecks[2], bills: check3Bills }
               ];
 
               return (
