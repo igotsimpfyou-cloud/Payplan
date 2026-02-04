@@ -2170,41 +2170,19 @@ const BillPayPlanner = () => {
                 }
               }
 
-              // Assign bills to paychecks - only show in correct window
-              const streamAssignments = paychecks.map((paycheck, idx) => {
-                const nextPaycheck = paychecks[idx + 1] || new Date(paycheck.getTime() + 30*24*60*60*1000);
-                const assigned = [];
-                
-                bills.forEach(bill => {
-                  if (bill.frequency === 'monthly') {
-                    const dueDay = parseInt(bill.dueDate);
-                    
-                    // Calculate this bill's due date in the paycheck's month
-                    const paycheckMonth = paycheck.getMonth();
-                    const paycheckYear = paycheck.getFullYear();
-                    const billDueThisMonth = new Date(paycheckYear, paycheckMonth, dueDay);
-                    
-                    // Only include if due date falls AFTER this paycheck and BEFORE next paycheck
-                    if (billDueThisMonth > paycheck && billDueThisMonth <= nextPaycheck) {
-                      // Check not already paid this occurrence
-                      const lastPaid = bill.lastPaidDate ? new Date(bill.lastPaidDate) : null;
-                      const alreadyPaid = lastPaid && 
-                        lastPaid.getMonth() === billDueThisMonth.getMonth() && 
-                        lastPaid.getFullYear() === billDueThisMonth.getFullYear();
-                      
-                      if (!alreadyPaid) {
-                        assigned.push({ ...bill, effectiveDueDate: billDueThisMonth.toISOString().split('T')[0] });
-                      }
-                    }
-                  }
-                });
-                
-                return { paycheck, bills: assigned };
-              });
+              // Use existing assignment logic
+              const assignments = getPaycheckAssignments();
+              
+              // Map to stream format
+              const streamData = [
+                { paycheck: paychecks[0], bills: assignments.check1 },
+                { paycheck: paychecks[1], bills: assignments.check2 },
+                { paycheck: paychecks[2], bills: [] } // Third check placeholder
+              ];
 
               return (
                 <div className="space-y-6">
-                  {streamAssignments.map(({paycheck, bills: assignedBills}, idx) => {
+                  {streamData.map(({paycheck, bills: assignedBills}, idx) => {
                     const total = assignedBills.reduce((sum, b) => sum + parseFloat(b.amount), 0);
                     const perCheck = parseFloat(paySchedule.payAmount);
                     const leftover = perCheck - total;
@@ -2213,7 +2191,7 @@ const BillPayPlanner = () => {
                       <div key={idx} className="bg-white/10 backdrop-blur-sm rounded-2xl p-6">
                         <div className="flex items-center justify-between mb-4">
                           <h3 className="text-2xl font-bold text-white">
-                            Paycheck {idx + 1}: {paycheck.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                            {paycheck.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
                           </h3>
                           <div className="text-right">
                             <p className="text-white/70 text-sm">Bills: ${total.toFixed(2)}</p>
