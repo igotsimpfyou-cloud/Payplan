@@ -2170,31 +2170,30 @@ const BillPayPlanner = () => {
                 }
               }
 
-              // Assign bills to paychecks using nextDueDate
+              // Assign bills to paychecks - only show in correct window
               const streamAssignments = paychecks.map((paycheck, idx) => {
                 const nextPaycheck = paychecks[idx + 1] || new Date(paycheck.getTime() + 30*24*60*60*1000);
                 const assigned = [];
                 
                 bills.forEach(bill => {
-                  let dueDate = new Date(bill.nextDueDate);
-                  
                   if (bill.frequency === 'monthly') {
-                    // Check next 3 months
-                    for (let m = 0; m < 3; m++) {
-                      const checkDate = new Date(dueDate);
-                      checkDate.setMonth(checkDate.getMonth() + m);
+                    const dueDay = parseInt(bill.dueDate);
+                    
+                    // Calculate this bill's due date in the paycheck's month
+                    const paycheckMonth = paycheck.getMonth();
+                    const paycheckYear = paycheck.getFullYear();
+                    const billDueThisMonth = new Date(paycheckYear, paycheckMonth, dueDay);
+                    
+                    // Only include if due date falls AFTER this paycheck and BEFORE next paycheck
+                    if (billDueThisMonth > paycheck && billDueThisMonth <= nextPaycheck) {
+                      // Check not already paid this occurrence
+                      const lastPaid = bill.lastPaidDate ? new Date(bill.lastPaidDate) : null;
+                      const alreadyPaid = lastPaid && 
+                        lastPaid.getMonth() === billDueThisMonth.getMonth() && 
+                        lastPaid.getFullYear() === billDueThisMonth.getFullYear();
                       
-                      // Only include if in this paycheck window and not already paid this month
-                      if (checkDate > paycheck && checkDate <= nextPaycheck) {
-                        const lastPaid = bill.lastPaidDate ? new Date(bill.lastPaidDate) : null;
-                        const isSameMonth = lastPaid && 
-                          lastPaid.getMonth() === checkDate.getMonth() && 
-                          lastPaid.getFullYear() === checkDate.getFullYear();
-                        
-                        if (!isSameMonth) {
-                          assigned.push({ ...bill, effectiveDueDate: checkDate.toISOString().split('T')[0] });
-                        }
-                        break;
+                      if (!alreadyPaid) {
+                        assigned.push({ ...bill, effectiveDueDate: billDueThisMonth.toISOString().split('T')[0] });
                       }
                     }
                   }
