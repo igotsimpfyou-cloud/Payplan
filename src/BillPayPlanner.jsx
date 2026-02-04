@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { DollarSign, Calendar, Plus, Check, AlertCircle, Trash2, Edit2, X, Clock, TrendingUp, Home, Settings, List, BarChart3, ChevronRight, RefreshCw, Building2, Receipt, Download, Upload, Flame } from 'lucide-react';
+import { DollarSign, Calendar, Plus, Check, AlertCircle, Trash2, Edit2, X, Clock, TrendingUp, Home, Settings, List, BarChart3, ChevronRight, RefreshCw, Building2, Receipt, Download, Upload } from 'lucide-react';
 
 const BillPayPlanner = () => {
   const [view, setView] = useState('dashboard');
@@ -7,7 +7,6 @@ const BillPayPlanner = () => {
   const [assets, setAssets] = useState([]);
   const [oneTimeBills, setOneTimeBills] = useState([]);
   const [paySchedule, setPaySchedule] = useState(null);
-  const [propaneFills, setPropaneFills] = useState([]);
   const [editingBill, setEditingBill] = useState(null);
   const [editingAsset, setEditingAsset] = useState(null);
   const [editingOneTime, setEditingOneTime] = useState(null);
@@ -17,13 +16,6 @@ const BillPayPlanner = () => {
   const [showPayScheduleForm, setShowPayScheduleForm] = useState(false);
   const [showHistoricalForm, setShowHistoricalForm] = useState(null);
   const [showAmortizationView, setShowAmortizationView] = useState(null);
-  const [showClearDataModal, setShowClearDataModal] = useState(false);
-  const [clearDataCountdown, setClearDataCountdown] = useState(5);
-  const [showPropaneForm, setShowPropaneForm] = useState(false);
-  const [collapseCheck1, setCollapseCheck1] = useState(false);
-  const [collapseCheck2, setCollapseCheck2] = useState(false);
-  const [emergencyFund, setEmergencyFund] = useState({ target: 0, current: 0 });
-  const [debtPayoff, setDebtPayoff] = useState([]);
   const [loading, setLoading] = useState(true);
   const [calendarConnected, setCalendarConnected] = useState(false);
   
@@ -97,17 +89,6 @@ const BillPayPlanner = () => {
     loadData();
   }, []);
 
-  // Countdown timer for clear data modal
-  useEffect(() => {
-    let timer;
-    if (showClearDataModal && clearDataCountdown > 0) {
-      timer = setTimeout(() => {
-        setClearDataCountdown(clearDataCountdown - 1);
-      }, 1000);
-    }
-    return () => clearTimeout(timer);
-  }, [showClearDataModal, clearDataCountdown]);
-
   const loadData = async () => {
     try {
       const billsData = localStorage.getItem('bills');
@@ -115,18 +96,22 @@ const BillPayPlanner = () => {
       const oneTimeData = localStorage.getItem('oneTimeBills');
       const scheduleData = localStorage.getItem('paySchedule');
       const calendarData = localStorage.getItem('calendarConnected');
-      const propaneData = localStorage.getItem('propaneFills');
-      const emergencyData = localStorage.getItem('emergencyFund');
-      const debtData = localStorage.getItem('debtPayoff');
       
-      if (billsData) setBills(JSON.parse(billsData));
-      if (assetsData) setAssets(JSON.parse(assetsData));
-      if (oneTimeData) setOneTimeBills(JSON.parse(oneTimeData));
-      if (scheduleData) setPaySchedule(JSON.parse(scheduleData));
-      if (calendarData) setCalendarConnected(JSON.parse(calendarData));
-      if (propaneData) setPropaneFills(JSON.parse(propaneData));
-      if (emergencyData) setEmergencyFund(JSON.parse(emergencyData));
-      if (debtData) setDebtPayoff(JSON.parse(debtData));
+      if (billsData) {
+        setBills(JSON.parse(billsData));
+      }
+      if (assetsData) {
+        setAssets(JSON.parse(assetsData));
+      }
+      if (oneTimeData) {
+        setOneTimeBills(JSON.parse(oneTimeData));
+      }
+      if (scheduleData) {
+        setPaySchedule(JSON.parse(scheduleData));
+      }
+      if (calendarData) {
+        setCalendarConnected(JSON.parse(calendarData));
+      }
     } catch (error) {
       console.log('No existing data found', error);
     }
@@ -153,20 +138,6 @@ const BillPayPlanner = () => {
     localStorage.setItem('paySchedule', JSON.stringify(schedule));
   };
 
-  const savePropaneFills = async (fills) => {
-    setPropaneFills(fills);
-    localStorage.setItem('propaneFills', JSON.stringify(fills));
-  };
-
-  const addPropaneFill = async (fill) => {
-    const newFill = { ...fill, id: Date.now() };
-    await savePropaneFills([...propaneFills, newFill]);
-  };
-
-  const deletePropaneFill = async (id) => {
-    await savePropaneFills(propaneFills.filter(f => f.id !== id));
-  };
-
   const addBill = async (billData) => {
     const newBill = {
       id: Date.now(),
@@ -186,23 +157,6 @@ const BillPayPlanner = () => {
       startDate: assetData.startDate || new Date().toISOString().split('T')[0]
     };
     await saveAssets([...assets, newAsset]);
-    
-    if (assetData.createBill) {
-      const newBill = {
-        id: Date.now() + 1,
-        name: assetData.name,
-        amount: assetData.paymentAmount,
-        dueDate: new Date(assetData.startDate).getDate().toString(),
-        frequency: assetData.paymentFrequency,
-        category: 'loan',
-        autopay: false,
-        isVariable: false,
-        payFromCheck: 'auto',
-        paidThisMonth: false
-      };
-      await saveBills([...bills, newBill]);
-    }
-    
     setShowAssetForm(false);
   };
 
@@ -263,35 +217,6 @@ const BillPayPlanner = () => {
     }));
     await saveBills(resetBills);
     alert('All bills have been reset for the new month!');
-  };
-
-  const clearAllData = () => {
-    setShowClearDataModal(true);
-    setClearDataCountdown(5);
-  };
-
-  const confirmClearAllData = () => {
-    setBills([]);
-    setAssets([]);
-    setOneTimeBills([]);
-    setPaySchedule(null);
-    setCalendarConnected(false);
-    setPropaneFills([]);
-    setEmergencyFund({ target: 0, current: 0 });
-    setDebtPayoff([]);
-    
-    localStorage.removeItem('bills');
-    localStorage.removeItem('assets');
-    localStorage.removeItem('oneTimeBills');
-    localStorage.removeItem('paySchedule');
-    localStorage.removeItem('calendarConnected');
-    localStorage.removeItem('propaneFills');
-    localStorage.removeItem('emergencyFund');
-    localStorage.removeItem('debtPayoff');
-    
-    setShowClearDataModal(false);
-    alert('✓ All data cleared!');
-    window.location.reload();
   };
 
   const togglePaid = async (billId) => {
@@ -482,7 +407,17 @@ const BillPayPlanner = () => {
     const check2Bills = [];
 
     bills.forEach(bill => {
+      const currentMonth = check1Date.getMonth();
+      const currentYear = check1Date.getFullYear();
       const dueDay = parseInt(bill.dueDate);
+      
+      // Create the actual due date for this month
+      let dueDate = new Date(currentYear, currentMonth, dueDay);
+      
+      // If the due date is before the first paycheck, it's for next month
+      if (dueDate < check1Date) {
+        dueDate.setMonth(dueDate.getMonth() + 1);
+      }
       
       // Manual assignment override
       if (bill.payFromCheck === 'check1') {
@@ -490,81 +425,16 @@ const BillPayPlanner = () => {
       } else if (bill.payFromCheck === 'check2') {
         check2Bills.push(bill);
       } else {
-        // Auto-assign based on which check comes before the due date
-        const check1Month = check1Date.getMonth();
-        const check1Year = check1Date.getFullYear();
-        const check2Month = check2Date.getMonth();
-        const check2Year = check2Date.getFullYear();
-        
-        // Create bill due dates for both pay periods
-        let dueDateForCheck1 = new Date(check1Year, check1Month, dueDay);
-        let dueDateForCheck2 = new Date(check2Year, check2Month, dueDay);
-        
-        // If due day already passed in check1's month, it's for next month
-        if (dueDay < check1Date.getDate()) {
-          dueDateForCheck1.setMonth(dueDateForCheck1.getMonth() + 1);
-        }
-        
-        // If due day already passed in check2's month, it's for next month
-        if (dueDay < check2Date.getDate()) {
-          dueDateForCheck2.setMonth(dueDateForCheck2.getMonth() + 1);
-        }
-        
-        // Store with assignment info for balancing
-        bill._originalCheck = (check1Date < dueDateForCheck1 && dueDateForCheck1 <= check2Date) ? 1 : 2;
-        bill._dueDate = bill._originalCheck === 1 ? dueDateForCheck1 : dueDateForCheck2;
-        
-        // Initially assign to original check
-        if (bill._originalCheck === 1) {
+        // Auto-assign: bill is paid by the check that comes BEFORE the due date
+        if (dueDate <= check2Date) {
+          // Due before or on second paycheck - pay with first check
           check1Bills.push(bill);
         } else {
+          // Due after second paycheck - pay with second check (or third check if available)
           check2Bills.push(bill);
         }
       }
     });
-    
-    // Balance leftovers by pulling check2 bills forward to check1 (pay early)
-    if (paySchedule) {
-      const perCheck = parseFloat(paySchedule.payAmount);
-      let check1Total = check1Bills.reduce((sum, b) => sum + parseFloat(b.amount), 0);
-      let check2Total = check2Bills.reduce((sum, b) => sum + parseFloat(b.amount), 0);
-      let leftover1 = perCheck - check1Total;
-      let leftover2 = perCheck - check2Total;
-      
-      // Only balance if check1 has significantly more leftover
-      while (leftover1 - leftover2 > 200) {
-        // Find non-autopay bills in check2 that can be paid early with check1
-        const movable = check2Bills.filter(b => 
-          !b.autopay && 
-          b.payFromCheck === 'auto' &&
-          parseInt(b.dueDate) > check1Date.getDate() // Due after check1
-        );
-        
-        if (movable.length === 0) break;
-        
-        // Pick bill closest to half the difference
-        const targetAmount = (leftover1 - leftover2) / 2;
-        movable.sort((a, b) => 
-          Math.abs(parseFloat(a.amount) - targetAmount) - Math.abs(parseFloat(b.amount) - targetAmount)
-        );
-        
-        const billToMove = movable[0];
-        
-        // Move bill from check2 to check1 (pay early)
-        const fromIndex = check2Bills.indexOf(billToMove);
-        check2Bills.splice(fromIndex, 1);
-        check1Bills.push(billToMove);
-        
-        // Recalculate
-        check1Total = check1Bills.reduce((sum, b) => sum + parseFloat(b.amount), 0);
-        check2Total = check2Bills.reduce((sum, b) => sum + parseFloat(b.amount), 0);
-        leftover1 = perCheck - check1Total;
-        leftover2 = perCheck - check2Total;
-        
-        // Stop if only one bill or no improvement
-        if (movable.length === 1) break;
-      }
-    }
 
     return { 
       check1: check1Bills, 
@@ -584,66 +454,32 @@ const BillPayPlanner = () => {
       return sum;
     }, 0);
 
+    const monthlyAssets = assets.reduce((sum, asset) => {
+      const amount = parseFloat(asset.paymentAmount);
+      if (asset.paymentFrequency === 'monthly') return sum + amount;
+      if (asset.paymentFrequency === 'weekly') return sum + (amount * 4.33);
+      if (asset.paymentFrequency === 'biweekly') return sum + (amount * 2.17);
+      if (asset.paymentFrequency === 'quarterly') return sum + (amount / 3);
+      if (asset.paymentFrequency === 'annual') return sum + (amount / 12);
+      return sum;
+    }, 0);
+
     const upcomingOneTime = oneTimeBills
       .filter(b => !b.paid)
       .reduce((sum, bill) => sum + parseFloat(bill.amount), 0);
 
-    const totalMonthly = monthlyBills;
+    const totalMonthly = monthlyBills + monthlyAssets;
     
-    // Calculate actual monthly income based on paychecks in current month
+    // Calculate monthly income based on pay frequency
     let monthlyIncome = 0;
-    let paychecksThisMonth = 0;
-    let nextPaycheckDate = null;
-    let daysUntilNextPaycheck = null;
-    
-    if (paySchedule && paySchedule.nextPayDate) {
-      const today = new Date();
-      const currentMonth = today.getMonth();
-      const currentYear = today.getFullYear();
+    if (paySchedule) {
       const payAmount = parseFloat(paySchedule.payAmount);
-      
-      // Calculate next several pay dates
-      const nextPay = new Date(paySchedule.nextPayDate);
-      const payDates = [nextPay];
-      
-      for (let i = 1; i < 8; i++) {
-        const nextDate = new Date(payDates[i - 1]);
-        
-        switch(paySchedule.frequency) {
-          case 'weekly':
-            nextDate.setDate(nextDate.getDate() + 7);
-            break;
-          case 'biweekly':
-            nextDate.setDate(nextDate.getDate() + 14);
-            break;
-          case 'semimonthly':
-            if (nextDate.getDate() <= 15) {
-              nextDate.setDate(15);
-            } else {
-              nextDate.setMonth(nextDate.getMonth() + 1);
-              nextDate.setDate(1);
-            }
-            break;
-          case 'monthly':
-            nextDate.setMonth(nextDate.getMonth() + 1);
-            break;
-        }
-        
-        payDates.push(new Date(nextDate));
-      }
-      
-      // Count paychecks in current month
-      paychecksThisMonth = payDates.filter(date => 
-        date.getMonth() === currentMonth && date.getFullYear() === currentYear
-      ).length;
-      
-      monthlyIncome = payAmount * paychecksThisMonth;
-      
-      // Find next paycheck date
-      nextPaycheckDate = payDates.find(date => date >= today);
-      if (nextPaycheckDate) {
-        const timeDiff = nextPaycheckDate.getTime() - today.getTime();
-        daysUntilNextPaycheck = Math.ceil(timeDiff / (1000 * 3600 * 24));
+      switch(paySchedule.frequency) {
+        case 'weekly': monthlyIncome = payAmount * 4.33; break;
+        case 'biweekly': monthlyIncome = payAmount * 2.17; break;
+        case 'semimonthly': monthlyIncome = payAmount * 2; break;
+        case 'monthly': monthlyIncome = payAmount; break;
+        default: monthlyIncome = payAmount;
       }
     }
     
@@ -651,13 +487,11 @@ const BillPayPlanner = () => {
 
     return {
       monthlyBills,
+      monthlyAssets,
       totalMonthly,
       upcomingOneTime,
       monthlyIncome,
-      leftover,
-      paychecksThisMonth,
-      nextPaycheckDate,
-      daysUntilNextPaycheck
+      leftover
     };
   };
 
@@ -673,16 +507,13 @@ const BillPayPlanner = () => {
       category: 'utilities',
       autopay: false,
       isVariable: false,
-      payFromCheck: 'auto'
+      payFromCheck: 'auto' // auto, check1, check2 - auto will determine based on due date and pay schedule
     });
 
     const handleSubmit = (e) => {
       e.preventDefault();
       onSubmit(formData);
     };
-
-    const historicalCount = bill?.historicalPayments?.length || 0;
-    const isVariableBill = formData.isVariable || historicalCount > 0;
 
     return (
       <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
@@ -701,34 +532,8 @@ const BillPayPlanner = () => {
                 />
               </div>
 
-              <div className="flex items-center gap-2 mb-4">
-                <input
-                  type="checkbox"
-                  id="isVariable"
-                  checked={formData.isVariable}
-                  onChange={(e) => setFormData({...formData, isVariable: e.target.checked})}
-                  className="w-5 h-5"
-                />
-                <label htmlFor="isVariable" className="text-sm font-semibold">
-                  Variable amount (like water, electricity)
-                </label>
-              </div>
-
-              {isVariableBill && historicalCount > 0 && (
-                <div className="bg-blue-50 border-2 border-blue-200 rounded-xl p-3 mb-4">
-                  <p className="text-sm text-blue-800">
-                    📊 <strong>Estimated amount:</strong> ${formData.amount || '0.00'} (based on {historicalCount} month{historicalCount !== 1 ? 's' : ''})
-                  </p>
-                  <p className="text-xs text-blue-600 mt-1">
-                    Add more historical payments to improve accuracy
-                  </p>
-                </div>
-              )}
-
               <div>
-                <label className="block text-sm font-semibold mb-2">
-                  {isVariableBill ? 'Estimated Amount (or enter manually)' : 'Amount'}
-                </label>
+                <label className="block text-sm font-semibold mb-2">Amount</label>
                 <input
                   type="number"
                   step="0.01"
@@ -737,11 +542,6 @@ const BillPayPlanner = () => {
                   className="w-full px-4 py-2 border-2 border-slate-200 rounded-xl focus:border-emerald-500 outline-none"
                   required
                 />
-                {isVariableBill && (
-                  <p className="text-xs text-slate-500 mt-1">
-                    This will be automatically updated based on historical payments
-                  </p>
-                )}
               </div>
 
               <div>
@@ -799,6 +599,17 @@ const BillPayPlanner = () => {
                 <label htmlFor="autopay" className="text-sm font-semibold">Auto-pay enabled</label>
               </div>
 
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="isVariable"
+                  checked={formData.isVariable}
+                  onChange={(e) => setFormData({...formData, isVariable: e.target.checked})}
+                  className="w-5 h-5"
+                />
+                <label htmlFor="isVariable" className="text-sm font-semibold">Variable amount</label>
+              </div>
+
               <div>
                 <label className="block text-sm font-semibold mb-2">Pay From Paycheck</label>
                 <select
@@ -842,13 +653,10 @@ const BillPayPlanner = () => {
       name: '',
       type: 'mortgage',
       loanAmount: '',
-      currentBalance: '',
-      loanTerm: '',
       interestRate: '',
       paymentAmount: '',
       paymentFrequency: 'monthly',
-      startDate: new Date().toISOString().split('T')[0],
-      createBill: true
+      startDate: new Date().toISOString().split('T')[0]
     });
 
     const handleSubmit = (e) => {
@@ -902,29 +710,6 @@ const BillPayPlanner = () => {
               </div>
 
               <div>
-                <label className="block text-sm font-semibold mb-2">Current Balance Remaining</label>
-                <input
-                  type="number"
-                  step="0.01"
-                  value={formData.currentBalance}
-                  onChange={(e) => setFormData({...formData, currentBalance: e.target.value})}
-                  className="w-full px-4 py-2 border-2 border-slate-200 rounded-xl focus:border-emerald-500 outline-none"
-                  required
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-semibold mb-2">Loan Term (months)</label>
-                <input
-                  type="number"
-                  value={formData.loanTerm}
-                  onChange={(e) => setFormData({...formData, loanTerm: e.target.value})}
-                  className="w-full px-4 py-2 border-2 border-slate-200 rounded-xl focus:border-emerald-500 outline-none"
-                  required
-                />
-              </div>
-
-              <div>
                 <label className="block text-sm font-semibold mb-2">Interest Rate (%)</label>
                 <input
                   type="number"
@@ -946,17 +731,6 @@ const BillPayPlanner = () => {
                   className="w-full px-4 py-2 border-2 border-slate-200 rounded-xl focus:border-emerald-500 outline-none"
                   required
                 />
-              </div>
-
-              <div className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  id="createBill"
-                  checked={formData.createBill}
-                  onChange={(e) => setFormData({...formData, createBill: e.target.checked})}
-                  className="w-5 h-5"
-                />
-                <label htmlFor="createBill" className="text-sm font-semibold">Add as recurring bill</label>
               </div>
 
               <div>
@@ -1179,173 +953,76 @@ const BillPayPlanner = () => {
 
     const handleAddPayment = (e) => {
       e.preventDefault();
-      
-      // Check if we already have 12 payments
-      const currentPayments = bill.historicalPayments || [];
-      if (currentPayments.length >= 12) {
-        alert('Maximum 12 months of historical data. Delete an old entry to add a new one.');
-        return;
-      }
-      
       addHistoricalPayment(bill.id, newPayment);
       setNewPayment({ date: '', amount: '' });
     };
-
-    const historicalPayments = bill.historicalPayments || [];
-    const average = historicalPayments.length > 0
-      ? historicalPayments.reduce((sum, p) => sum + parseFloat(p.amount), 0) / historicalPayments.length
-      : 0;
 
     return (
       <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
         <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
           <div className="p-6">
             <div className="flex items-center justify-between mb-6">
-              <div>
-                <h2 className="text-2xl font-bold">Payment History - {bill.name}</h2>
-                <p className="text-sm text-slate-600">Track up to 12 months to estimate future bills</p>
-              </div>
+              <h2 className="text-2xl font-bold">Historical Payments - {bill.name}</h2>
               <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-lg">
                 <X size={24} />
               </button>
             </div>
 
-            {/* Current Estimate */}
-            {historicalPayments.length > 0 && (
-              <div className="mb-6 p-4 bg-gradient-to-r from-emerald-50 to-blue-50 border-2 border-emerald-200 rounded-xl">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-slate-600 mb-1">Current Estimated Amount</p>
-                    <p className="text-3xl font-black text-emerald-600">${average.toFixed(2)}</p>
-                    <p className="text-xs text-slate-500 mt-1">
-                      Based on {historicalPayments.length} month{historicalPayments.length !== 1 ? 's' : ''} of data
-                    </p>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-sm text-slate-600">Data completeness</p>
-                    <div className="flex gap-1 mt-2">
-                      {[...Array(12)].map((_, i) => (
-                        <div
-                          key={i}
-                          className={`w-2 h-8 rounded ${
-                            i < historicalPayments.length ? 'bg-emerald-500' : 'bg-slate-200'
-                          }`}
-                        />
-                      ))}
-                    </div>
-                    <p className="text-xs text-slate-500 mt-1">{historicalPayments.length}/12 months</p>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Add New Payment */}
             <form onSubmit={handleAddPayment} className="mb-6 p-4 bg-slate-50 rounded-xl">
-              <h3 className="font-semibold mb-3 flex items-center gap-2">
-                <Plus size={18} />
-                Add Payment ({12 - historicalPayments.length} slots remaining)
-              </h3>
+              <h3 className="font-semibold mb-3">Add Payment</h3>
               <div className="flex gap-3">
-                <div className="flex-1">
-                  <label className="block text-xs text-slate-600 mb-1">Payment Date</label>
-                  <input
-                    type="date"
-                    value={newPayment.date}
-                    onChange={(e) => setNewPayment({...newPayment, date: e.target.value})}
-                    className="w-full px-4 py-2 border-2 border-slate-200 rounded-xl focus:border-emerald-500 outline-none"
-                    required
-                  />
-                </div>
-                <div className="flex-1">
-                  <label className="block text-xs text-slate-600 mb-1">Amount Paid</label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    placeholder="Amount"
-                    value={newPayment.amount}
-                    onChange={(e) => setNewPayment({...newPayment, amount: e.target.value})}
-                    className="w-full px-4 py-2 border-2 border-slate-200 rounded-xl focus:border-emerald-500 outline-none"
-                    required
-                  />
-                </div>
+                <input
+                  type="date"
+                  value={newPayment.date}
+                  onChange={(e) => setNewPayment({...newPayment, date: e.target.value})}
+                  className="flex-1 px-4 py-2 border-2 border-slate-200 rounded-xl focus:border-emerald-500 outline-none"
+                  required
+                />
+                <input
+                  type="number"
+                  step="0.01"
+                  placeholder="Amount"
+                  value={newPayment.amount}
+                  onChange={(e) => setNewPayment({...newPayment, amount: e.target.value})}
+                  className="flex-1 px-4 py-2 border-2 border-slate-200 rounded-xl focus:border-emerald-500 outline-none"
+                  required
+                />
                 <button
                   type="submit"
-                  className="px-6 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-semibold self-end"
-                  disabled={historicalPayments.length >= 12}
+                  className="px-6 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-semibold"
                 >
                   Add
                 </button>
               </div>
-              {historicalPayments.length >= 12 && (
-                <p className="text-xs text-amber-600 mt-2">
-                  ⚠️ Maximum 12 months reached. Delete an old payment to add a new one.
-                </p>
-              )}
             </form>
 
-            {/* Payment History List */}
             <div className="space-y-2">
               <h3 className="font-semibold mb-3">Payment History</h3>
-              {historicalPayments.length > 0 ? (
-                <div className="space-y-2">
-                  {historicalPayments
-                    .sort((a, b) => new Date(b.date) - new Date(a.date))
-                    .map((payment, idx) => {
-                      const originalIdx = historicalPayments.findIndex(p => p === payment);
-                      return (
-                        <div key={idx} className="flex items-center justify-between p-3 bg-slate-50 rounded-xl hover:bg-slate-100 transition-colors">
-                          <div className="flex items-center gap-3">
-                            <div className="p-2 bg-emerald-100 rounded-lg">
-                              <Calendar size={16} className="text-emerald-600" />
-                            </div>
-                            <div>
-                              <span className="font-semibold">{new Date(payment.date).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}</span>
-                              <span className="ml-4 text-slate-600">${parseFloat(payment.amount).toFixed(2)}</span>
-                            </div>
-                          </div>
-                          <button
-                            onClick={() => deleteHistoricalPayment(bill.id, originalIdx)}
-                            className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                            title="Delete this payment"
-                          >
-                            <Trash2 size={18} />
-                          </button>
-                        </div>
-                      );
-                    })}
-                </div>
+              {bill.historicalPayments?.length > 0 ? (
+                bill.historicalPayments.map((payment, idx) => (
+                  <div key={idx} className="flex items-center justify-between p-3 bg-slate-50 rounded-xl">
+                    <div>
+                      <span className="font-semibold">{new Date(payment.date).toLocaleDateString()}</span>
+                      <span className="ml-4">${payment.amount}</span>
+                    </div>
+                    <button
+                      onClick={() => deleteHistoricalPayment(bill.id, idx)}
+                      className="p-2 text-red-600 hover:bg-red-50 rounded-lg"
+                    >
+                      <Trash2 size={18} />
+                    </button>
+                  </div>
+                ))
               ) : (
-                <div className="text-center py-8 bg-slate-50 rounded-xl">
-                  <BarChart3 className="mx-auto mb-3 text-slate-300" size={48} />
-                  <p className="text-slate-500 font-semibold">No historical payments yet</p>
-                  <p className="text-slate-400 text-sm mt-1">
-                    Add your past payments to generate an estimated amount
-                  </p>
-                </div>
+                <p className="text-slate-500 text-center py-4">No historical payments yet</p>
               )}
             </div>
 
-            {/* Statistics */}
-            {historicalPayments.length > 1 && (
-              <div className="mt-6 grid grid-cols-3 gap-3">
-                <div className="p-3 bg-blue-50 rounded-xl text-center">
-                  <p className="text-xs text-slate-600">Lowest</p>
-                  <p className="text-lg font-bold text-blue-600">
-                    ${Math.min(...historicalPayments.map(p => parseFloat(p.amount))).toFixed(2)}
-                  </p>
-                </div>
-                <div className="p-3 bg-emerald-50 rounded-xl text-center">
-                  <p className="text-xs text-slate-600">Average</p>
-                  <p className="text-lg font-bold text-emerald-600">
-                    ${average.toFixed(2)}
-                  </p>
-                </div>
-                <div className="p-3 bg-red-50 rounded-xl text-center">
-                  <p className="text-xs text-slate-600">Highest</p>
-                  <p className="text-lg font-bold text-red-600">
-                    ${Math.max(...historicalPayments.map(p => parseFloat(p.amount))).toFixed(2)}
-                  </p>
-                </div>
+            {bill.historicalPayments?.length > 0 && (
+              <div className="mt-6 p-4 bg-emerald-50 rounded-xl">
+                <p className="text-sm text-slate-600">
+                  Current average: <span className="font-bold text-emerald-700">${bill.amount}</span>
+                </p>
               </div>
             )}
           </div>
@@ -1483,28 +1160,6 @@ const BillPayPlanner = () => {
             One-Time
           </button>
           <button
-            onClick={() => setView('propane')}
-            className={`px-6 py-3 rounded-xl font-semibold transition-all flex items-center gap-2 whitespace-nowrap ${
-              view === 'propane'
-                ? 'bg-white text-emerald-600 shadow-lg'
-                : 'bg-white/20 text-white hover:bg-white/30'
-            }`}
-          >
-            <Flame size={20} />
-            Propane
-          </button>
-          <button
-            onClick={() => setView('analytics')}
-            className={`px-6 py-3 rounded-xl font-semibold transition-all flex items-center gap-2 whitespace-nowrap ${
-              view === 'analytics'
-                ? 'bg-white text-emerald-600 shadow-lg'
-                : 'bg-white/20 text-white hover:bg-white/30'
-            }`}
-          >
-            <BarChart3 size={20} />
-            Analytics
-          </button>
-          <button
             onClick={() => setView('settings')}
             className={`px-6 py-3 rounded-xl font-semibold transition-all flex items-center gap-2 whitespace-nowrap ${
               view === 'settings'
@@ -1527,38 +1182,13 @@ const BillPayPlanner = () => {
                   <div className="p-3 bg-emerald-100 rounded-xl">
                     <DollarSign className="text-emerald-600" size={24} />
                   </div>
-                  <div className="flex-1">
-                    <p className="text-slate-500 text-sm">
-                      {new Date().toLocaleDateString('en-US', { month: 'long' })} Income
-                    </p>
+                  <div>
+                    <p className="text-slate-500 text-sm">Monthly Income</p>
                     <p className="text-3xl font-black text-slate-800">
                       ${overview.monthlyIncome.toFixed(2)}
                     </p>
-                    {overview.paychecksThisMonth > 0 && (
-                      <p className="text-xs text-slate-500 mt-1">
-                        {overview.paychecksThisMonth} paycheck{overview.paychecksThisMonth !== 1 ? 's' : ''} this month
-                      </p>
-                    )}
                   </div>
                 </div>
-                {overview.nextPaycheckDate && (
-                  <div className="mt-3 pt-3 border-t border-slate-100">
-                    <p className="text-xs text-slate-500">Next paycheck:</p>
-                    <p className="text-sm font-semibold text-emerald-600">
-                      {overview.nextPaycheckDate.toLocaleDateString('en-US', { 
-                        weekday: 'short', 
-                        month: 'short', 
-                        day: 'numeric',
-                        timeZone: 'UTC'
-                      })}
-                      {overview.daysUntilNextPaycheck !== null && (
-                        <span className="text-slate-500 ml-1">
-                          ({overview.daysUntilNextPaycheck} day{overview.daysUntilNextPaycheck !== 1 ? 's' : ''})
-                        </span>
-                      )}
-                    </p>
-                  </div>
-                )}
               </div>
 
               <div className="bg-white rounded-2xl shadow-xl p-6">
@@ -1576,46 +1206,17 @@ const BillPayPlanner = () => {
               </div>
 
               <div className="bg-white rounded-2xl shadow-xl p-6">
-                {(() => {
-                  const assignments = getPaycheckAssignments();
-                  const check1Total = assignments.check1.reduce((sum, b) => sum + parseFloat(b.amount), 0);
-                  const check2Total = assignments.check2.reduce((sum, b) => sum + parseFloat(b.amount), 0);
-                  const perCheck = paySchedule ? parseFloat(paySchedule.payAmount) : 0;
-                  const leftover1 = perCheck - check1Total;
-                  const leftover2 = perCheck - check2Total;
-                  
-                  return (
-                    <>
-                      <h3 className="text-lg font-bold mb-3">Leftover Per Check</h3>
-                      <div className="space-y-3">
-                        <div className="p-3 bg-emerald-50 rounded-xl">
-                          <div className="flex justify-between items-center">
-                            <span className="text-sm text-slate-600">Check 1 Leftover</span>
-                            <span className={`text-xl font-bold ${leftover1 >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
-                              ${leftover1.toFixed(2)}
-                            </span>
-                          </div>
-                        </div>
-                        <div className="p-3 bg-blue-50 rounded-xl">
-                          <div className="flex justify-between items-center">
-                            <span className="text-sm text-slate-600">Check 2 Leftover</span>
-                            <span className={`text-xl font-bold ${leftover2 >= 0 ? 'text-blue-600' : 'text-red-600'}`}>
-                              ${leftover2.toFixed(2)}
-                            </span>
-                          </div>
-                        </div>
-                        <div className="p-3 bg-slate-50 rounded-xl border-2 border-slate-200">
-                          <div className="flex justify-between items-center">
-                            <span className="text-sm font-semibold text-slate-700">Total Monthly</span>
-                            <span className={`text-xl font-bold ${overview.leftover >= 0 ? 'text-slate-800' : 'text-red-600'}`}>
-                              ${overview.leftover.toFixed(2)}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-                    </>
-                  );
-                })()}
+                <div className="flex items-center gap-3 mb-2">
+                  <div className={`p-3 rounded-xl ${overview.leftover >= 0 ? 'bg-emerald-100' : 'bg-red-100'}`}>
+                    <DollarSign className={overview.leftover >= 0 ? 'text-emerald-600' : 'text-red-600'} size={24} />
+                  </div>
+                  <div>
+                    <p className="text-slate-500 text-sm">Left Over</p>
+                    <p className={`text-3xl font-black ${overview.leftover >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                      ${overview.leftover.toFixed(2)}
+                    </p>
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -1628,61 +1229,8 @@ const BillPayPlanner = () => {
                   const check1Total = assignments.check1.reduce((sum, b) => sum + parseFloat(b.amount), 0);
                   const check2Total = assignments.check2.reduce((sum, b) => sum + parseFloat(b.amount), 0);
                   
-                  // Get pay dates for current month
-                  const today = new Date();
-                  const currentMonth = today.getMonth();
-                  const currentYear = today.getFullYear();
-                  let payDatesThisMonth = [];
-                  
-                  if (paySchedule && paySchedule.nextPayDate) {
-                    const nextPay = new Date(paySchedule.nextPayDate);
-                    const allPayDates = [nextPay];
-                    
-                    for (let i = 1; i < 8; i++) {
-                      const nextDate = new Date(allPayDates[i - 1]);
-                      switch(paySchedule.frequency) {
-                        case 'weekly': nextDate.setDate(nextDate.getDate() + 7); break;
-                        case 'biweekly': nextDate.setDate(nextDate.getDate() + 14); break;
-                        case 'semimonthly':
-                          if (nextDate.getDate() <= 15) {
-                            nextDate.setDate(15);
-                          } else {
-                            nextDate.setMonth(nextDate.getMonth() + 1);
-                            nextDate.setDate(1);
-                          }
-                          break;
-                        case 'monthly': nextDate.setMonth(nextDate.getMonth() + 1); break;
-                      }
-                      allPayDates.push(new Date(nextDate));
-                    }
-                    
-                    payDatesThisMonth = allPayDates.filter(date => 
-                      date.getMonth() === currentMonth && date.getFullYear() === currentYear
-                    );
-                  }
-                  
                   return (
                     <div className="space-y-3">
-                      {payDatesThisMonth.length > 0 && (
-                        <div className="p-3 bg-gradient-to-r from-emerald-50 to-blue-50 rounded-xl border-2 border-emerald-200">
-                          <div className="text-xs text-slate-600 mb-2">
-                            📅 Pay dates this month:
-                          </div>
-                          <div className="space-y-1">
-                            {payDatesThisMonth.map((date, idx) => (
-                              <div key={idx} className="text-sm font-semibold text-slate-800">
-                                • {date.toLocaleDateString('en-US', { 
-                                  weekday: 'long', 
-                                  month: 'short', 
-                                  day: 'numeric',
-                                  timeZone: 'UTC'
-                                })}
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                      
                       <div className="p-3 bg-emerald-50 rounded-xl">
                         <div className="flex items-center justify-between mb-2">
                           <span className="font-semibold text-slate-700">First Paycheck (1st-15th)</span>
@@ -1744,9 +1292,7 @@ const BillPayPlanner = () => {
         {view === 'bills' && (
           <div>
             <div className="flex items-center justify-between mb-6">
-              <h2 className="text-3xl font-black text-white">
-                {new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' })} Bills
-              </h2>
+              <h2 className="text-3xl font-black text-white">Recurring Bills</h2>
               <div className="flex gap-3">
                 <button
                   onClick={resetMonthlyBills}
@@ -1770,99 +1316,88 @@ const BillPayPlanner = () => {
               const assignments = getPaycheckAssignments();
               const formatDate = (date) => {
                 if (!date) return '';
-                // Use UTC to prevent timezone issues that shift dates by one day
-                const d = new Date(date);
-                return d.toLocaleDateString('en-US', { 
-                  month: 'short', 
-                  day: 'numeric',
-                  timeZone: 'UTC'
-                });
+                return new Date(date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
               };
               
               return (
                 <div className="space-y-6">
-                  {/* First Paycheck Bills - in a card */}
-                  <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-6">
-                    <div className="flex items-center justify-between mb-2 cursor-pointer" onClick={() => setCollapseCheck1(!collapseCheck1)}>
-                      <h3 className="text-2xl font-bold text-white flex items-center gap-2 flex-wrap">
-                        <DollarSign size={24} />
-                        <span>First Paycheck Bills</span>
-                        {assignments.payDates[0] && (
-                          <span className="text-lg font-normal text-emerald-300">
-                            (Pay Date: {formatDate(assignments.payDates[0])})
-                          </span>
-                        )}
-                      </h3>
-                      <ChevronRight size={24} className={`text-white transition-transform ${collapseCheck1 ? '' : 'rotate-90'}`} />
-                    </div>
-                    {!collapseCheck1 && (
-                      <>
-                        <p className="text-white/70 text-sm mb-6">
-                          Bills to pay with your next paycheck
-                        </p>
+                  {/* First Paycheck Bills */}
+                  <div>
+                    <h3 className="text-2xl font-bold text-white mb-2 flex items-center gap-2">
+                      <DollarSign size={24} />
+                      First Paycheck Bills
+                      {assignments.payDates[0] && (
+                        <span className="text-lg font-normal text-white/80">
+                          (Pay Date: {formatDate(assignments.payDates[0])})
+                        </span>
+                      )}
+                    </h3>
+                    <p className="text-white/70 text-sm mb-4">
+                      Bills to pay with your next paycheck
+                    </p>
                     <div className="grid grid-cols-1 gap-4">
                       {assignments.check1.map(bill => (
-                      <div key={bill.id} className="bg-white rounded-xl shadow-lg p-4">
-                        <div className="flex items-start gap-3">
+                      <div key={bill.id} className="bg-white rounded-2xl shadow-xl p-6">
+                        <div className="flex items-start gap-4">
                           <button
                             onClick={() => togglePaid(bill.id)}
-                            className={`p-2 rounded-lg transition-colors flex-shrink-0 ${
+                            className={`p-3 rounded-xl transition-colors ${
                               bill.paidThisMonth
                                 ? 'bg-green-500 text-white'
                                 : 'bg-slate-100 text-slate-400 hover:bg-slate-200'
                             }`}
                           >
-                            <Check size={20} />
+                            <Check size={24} />
                           </button>
 
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2 mb-2 flex-wrap">
-                              <h3 className={`text-lg font-bold ${bill.paidThisMonth ? 'text-green-600 line-through' : 'text-slate-800'}`}>
+                          <div className="flex-1">
+                            <div className="flex items-center gap-3 mb-2">
+                              <h3 className={`text-2xl font-bold ${bill.paidThisMonth ? 'text-green-600 line-through' : 'text-slate-800'}`}>
                                 {bill.name}
                               </h3>
                               {bill.isVariable && (
-                                <span className="px-2 py-1 bg-yellow-100 text-yellow-700 text-xs font-bold rounded-full">
+                                <span className="px-3 py-1 bg-yellow-100 text-yellow-700 text-xs font-bold rounded-full">
                                   VARIABLE
                                 </span>
                               )}
                               {bill.autopay && (
-                                <span className="px-2 py-1 bg-blue-100 text-blue-700 text-xs font-bold rounded-full">
+                                <span className="px-3 py-1 bg-blue-100 text-blue-700 text-xs font-bold rounded-full">
                                   AUTO-PAY
                                 </span>
                               )}
                             </div>
                             
-                            <div className="flex flex-wrap gap-3 text-sm text-slate-600">
+                            <div className="flex flex-wrap gap-4 text-sm text-slate-600">
                               <span className="flex items-center gap-1">
-                                <DollarSign size={14} />
+                                <DollarSign size={16} />
                                 ${bill.amount}
                               </span>
                               <span className="flex items-center gap-1">
-                                <Calendar size={14} />
+                                <Calendar size={16} />
                                 Due: Day {bill.dueDate}
                               </span>
                               <span className="flex items-center gap-1">
-                                <Clock size={14} />
+                                <Clock size={16} />
                                 {bill.frequency}
                               </span>
                             </div>
                           </div>
 
-                          <div className="flex gap-2 flex-shrink-0">
+                          <div className="flex gap-2">
                             {bill.isVariable && (
                               <button
                                 onClick={() => setShowHistoricalForm(bill)}
                                 className="p-2 text-purple-600 hover:bg-purple-50 rounded-lg transition-colors"
                                 title="View payment history"
                               >
-                                <BarChart3 size={16} />
+                                <BarChart3 size={18} />
                               </button>
                             )}
                             <button
                               onClick={() => setEditingBill(bill)}
                               className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
                             >
-                              <Edit2 size={16} />
+                              <Edit2 size={18} />
                             </button>
                             <button
                               onClick={() => {
@@ -1872,102 +1407,95 @@ const BillPayPlanner = () => {
                               }}
                               className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
                             >
-                              <Trash2 size={16} />
+                              <Trash2 size={18} />
                             </button>
                           </div>
                         </div>
                       </div>
                     ))}
                     {assignments.check1.length === 0 && (
-                      <p className="text-white/70 text-center py-8 text-sm">No bills due before your next paycheck</p>
+                      <p className="text-white/70 text-center py-4">No bills due in first half of month</p>
                     )}
                   </div>
-                  </>
-                )}
                 </div>
 
-                {/* Second Paycheck Bills - in a card */}
-                <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-6">
-                  <div className="flex items-center justify-between mb-2 cursor-pointer" onClick={() => setCollapseCheck2(!collapseCheck2)}>
-                    <h3 className="text-2xl font-bold text-white flex items-center gap-2 flex-wrap">
-                      <DollarSign size={24} />
-                      <span>Second Paycheck Bills</span>
-                      {assignments.payDates[1] && (
-                        <span className="text-lg font-normal text-blue-300">
-                          (Pay Date: {formatDate(assignments.payDates[1])})
-                        </span>
-                      )}
-                    </h3>
-                    <ChevronRight size={24} className={`text-white transition-transform ${collapseCheck2 ? '' : 'rotate-90'}`} />
-                  </div>
-                  {!collapseCheck2 && (
-                    <>
-                      <p className="text-white/70 text-sm mb-6">
-                        Bills to pay with your following paycheck
-                      </p>
+                {/* Second Paycheck Bills */}
+                <div>
+                  <h3 className="text-2xl font-bold text-white mb-2 flex items-center gap-2">
+                    <DollarSign size={24} />
+                    Second Paycheck Bills
+                    {assignments.payDates[1] && (
+                      <span className="text-lg font-normal text-white/80">
+                        (Pay Date: {formatDate(assignments.payDates[1])})
+                      </span>
+                    )}
+                  </h3>
+                  <p className="text-white/70 text-sm mb-4">
+                    Bills to pay with your following paycheck
+                  </p>
                   <div className="grid grid-cols-1 gap-4">
                     {assignments.check2.map(bill => (
-                      <div key={bill.id} className="bg-white rounded-xl shadow-lg p-4">
-                        <div className="flex items-start gap-3">
+                      <div key={bill.id} className="bg-white rounded-2xl shadow-xl p-6">
+                        <div className="flex items-start gap-4">
                           <button
                             onClick={() => togglePaid(bill.id)}
-                            className={`p-2 rounded-lg transition-colors flex-shrink-0 ${
+                            className={`p-3 rounded-xl transition-colors ${
                               bill.paidThisMonth
                                 ? 'bg-green-500 text-white'
                                 : 'bg-slate-100 text-slate-400 hover:bg-slate-200'
                             }`}
                           >
-                            <Check size={20} />
+                            <Check size={24} />
                           </button>
 
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2 mb-2 flex-wrap">
-                              <h3 className={`text-lg font-bold ${bill.paidThisMonth ? 'text-green-600 line-through' : 'text-slate-800'}`}>
+                          <div className="flex-1">
+                            <div className="flex items-center gap-3 mb-2">
+                              <h3 className={`text-2xl font-bold ${bill.paidThisMonth ? 'text-green-600 line-through' : 'text-slate-800'}`}>
                                 {bill.name}
                               </h3>
                               {bill.isVariable && (
-                                <span className="px-2 py-1 bg-yellow-100 text-yellow-700 text-xs font-bold rounded-full">
+                                <span className="px-3 py-1 bg-yellow-100 text-yellow-700 text-xs font-bold rounded-full">
                                   VARIABLE
                                 </span>
                               )}
                               {bill.autopay && (
-                                <span className="px-2 py-1 bg-blue-100 text-blue-700 text-xs font-bold rounded-full">
+                                <span className="px-3 py-1 bg-blue-100 text-blue-700 text-xs font-bold rounded-full">
                                   AUTO-PAY
                                 </span>
                               )}
                             </div>
                             
-                            <div className="flex flex-wrap gap-3 text-sm text-slate-600">
+                            <div className="flex flex-wrap gap-4 text-sm text-slate-600">
                               <span className="flex items-center gap-1">
-                                <DollarSign size={14} />
+                                <DollarSign size={16} />
                                 ${bill.amount}
                               </span>
                               <span className="flex items-center gap-1">
-                                <Calendar size={14} />
+                                <Calendar size={16} />
                                 Due: Day {bill.dueDate}
                               </span>
                               <span className="flex items-center gap-1">
-                                <Clock size={14} />
+                                <Clock size={16} />
                                 {bill.frequency}
                               </span>
                             </div>
                           </div>
 
-                          <div className="flex gap-2 flex-shrink-0">
+                          <div className="flex gap-2">
                             {bill.isVariable && (
                               <button
                                 onClick={() => setShowHistoricalForm(bill)}
                                 className="p-2 text-purple-600 hover:bg-purple-50 rounded-lg transition-colors"
                                 title="View payment history"
                               >
-                                <BarChart3 size={16} />
+                                <BarChart3 size={18} />
                               </button>
                             )}
                             <button
                               onClick={() => setEditingBill(bill)}
                               className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
                             >
-                              <Edit2 size={16} />
+                              <Edit2 size={18} />
                             </button>
                             <button
                               onClick={() => {
@@ -1977,18 +1505,16 @@ const BillPayPlanner = () => {
                               }}
                               className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
                             >
-                              <Trash2 size={16} />
+                              <Trash2 size={18} />
                             </button>
                           </div>
                         </div>
                       </div>
                     ))}
                     {assignments.check2.length === 0 && (
-                      <p className="text-white/70 text-center py-8 text-sm">No bills due before your second paycheck</p>
+                      <p className="text-white/70 text-center py-4">No bills due in second half of month</p>
                     )}
                   </div>
-                  </>
-                )}
                 </div>
               </div>
             );
@@ -2228,310 +1754,6 @@ const BillPayPlanner = () => {
           </div>
         )}
 
-        {/* Propane View */}
-        {view === 'propane' && (
-          <div>
-            <div className="flex items-center justify-between mb-6">
-              <h2 className="text-3xl font-black text-white">Propane Usage Tracker</h2>
-              <button onClick={() => setShowPropaneForm(true)} className="px-6 py-3 bg-white hover:bg-emerald-50 text-emerald-600 rounded-xl font-semibold shadow-lg transition-colors flex items-center gap-2">
-                <Plus size={20} />
-                Add Fill
-              </button>
-            </div>
-
-            {propaneFills.length > 0 && (() => {
-              const sorted = [...propaneFills].sort((a, b) => new Date(b.date) - new Date(a.date));
-              const latest = sorted[0];
-              const totalGallons = propaneFills.reduce((sum, f) => sum + parseFloat(f.gallons), 0);
-              const totalCost = propaneFills.reduce((sum, f) => sum + parseFloat(f.totalCost), 0);
-              const avgPricePerGal = totalCost / totalGallons;
-              
-              const fillsWithUsage = sorted.map((fill, idx) => {
-                if (idx === sorted.length - 1) return { ...fill, daysLasted: null, dailyUsage: null };
-                const nextFill = sorted[idx + 1];
-                const days = Math.floor((new Date(fill.date) - new Date(nextFill.date)) / (1000 * 60 * 60 * 24));
-                const dailyUsage = parseFloat(fill.gallons) / days;
-                return { ...fill, daysLasted: days, dailyUsage };
-              });
-
-              return (
-                <div className="space-y-6">
-                  <div className="bg-white rounded-2xl shadow-xl p-6">
-                    <h3 className="text-xl font-bold mb-4">Latest Fill</h3>
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                      <div>
-                        <p className="text-sm text-slate-500">Date</p>
-                        <p className="text-lg font-bold">{new Date(latest.date).toLocaleDateString()}</p>
-                      </div>
-                      <div>
-                        <p className="text-sm text-slate-500">Gallons</p>
-                        <p className="text-lg font-bold text-emerald-600">{latest.gallons}</p>
-                      </div>
-                      <div>
-                        <p className="text-sm text-slate-500">Price/Gal</p>
-                        <p className="text-lg font-bold">${latest.pricePerGal}</p>
-                      </div>
-                      <div>
-                        <p className="text-sm text-slate-500">Total Cost</p>
-                        <p className="text-lg font-bold text-red-600">${latest.totalCost}</p>
-                      </div>
-                    </div>
-                    {fillsWithUsage[0].daysLasted && (
-                      <div className="mt-4 pt-4 border-t">
-                        <p className="text-sm text-slate-600">Lasted <span className="font-bold">{fillsWithUsage[0].daysLasted} days</span> • Avg <span className="font-bold">{fillsWithUsage[0].dailyUsage.toFixed(1)} gal/day</span></p>
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div className="bg-white rounded-2xl shadow-xl p-6">
-                      <p className="text-sm text-slate-500 mb-1">Total Spent (All Time)</p>
-                      <p className="text-3xl font-black text-red-600">${totalCost.toFixed(2)}</p>
-                    </div>
-                    <div className="bg-white rounded-2xl shadow-xl p-6">
-                      <p className="text-sm text-slate-500 mb-1">Total Gallons</p>
-                      <p className="text-3xl font-black text-emerald-600">{totalGallons.toFixed(0)}</p>
-                    </div>
-                    <div className="bg-white rounded-2xl shadow-xl p-6">
-                      <p className="text-sm text-slate-500 mb-1">Avg Price/Gal</p>
-                      <p className="text-3xl font-black text-slate-800">${avgPricePerGal.toFixed(2)}</p>
-                    </div>
-                  </div>
-
-                  <div className="bg-white rounded-2xl shadow-xl p-6">
-                    <h3 className="text-xl font-bold mb-4">Fill History</h3>
-                    <div className="space-y-2">
-                      {fillsWithUsage.map(fill => (
-                        <div key={fill.id} className="flex items-center justify-between p-4 bg-slate-50 rounded-xl hover:bg-slate-100 transition-colors">
-                          <div className="flex-1">
-                            <p className="font-semibold">{new Date(fill.date).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}</p>
-                            <p className="text-sm text-slate-600">
-                              {fill.gallons} gal @ ${fill.pricePerGal}/gal = ${fill.totalCost}
-                              {fill.daysLasted && ` • Lasted ${fill.daysLasted} days (${fill.dailyUsage.toFixed(1)} gal/day)`}
-                            </p>
-                          </div>
-                          <button onClick={() => deletePropaneFill(fill.id)} className="p-2 text-red-600 hover:bg-red-50 rounded-lg">
-                            <Trash2 size={18} />
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              );
-            })()}
-
-            {propaneFills.length === 0 && (
-              <div className="bg-white rounded-2xl shadow-xl p-12 text-center">
-                <Flame className="mx-auto mb-4 text-slate-300" size={64} />
-                <h3 className="text-xl font-bold text-slate-800 mb-2">No Fills Tracked Yet</h3>
-                <p className="text-slate-600 mb-6">Start tracking your propane fills to see usage patterns and costs</p>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Analytics View */}
-        {view === 'analytics' && (
-          <div>
-            <h2 className="text-3xl font-black text-white mb-6">Financial Analytics</h2>
-
-            {/* Income vs Expenses Chart */}
-            <div className="bg-white rounded-2xl shadow-xl p-6 mb-6">
-              <h3 className="text-xl font-bold mb-4">Income vs Expenses</h3>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-                <div className="text-center p-4 bg-emerald-50 rounded-xl">
-                  <p className="text-xs text-slate-600 mb-1">Monthly Income</p>
-                  <p className="text-xl md:text-2xl font-bold text-emerald-600 break-all">${overview.monthlyIncome.toFixed(2)}</p>
-                </div>
-                <div className="text-center p-4 bg-red-50 rounded-xl">
-                  <p className="text-xs text-slate-600 mb-1">Monthly Expenses</p>
-                  <p className="text-xl md:text-2xl font-bold text-red-600 break-all">${overview.totalMonthly.toFixed(2)}</p>
-                </div>
-                <div className="text-center p-4 bg-blue-50 rounded-xl">
-                  <p className="text-xs text-slate-600 mb-1">Net Savings</p>
-                  <p className={`text-xl md:text-2xl font-bold break-all ${overview.leftover >= 0 ? 'text-blue-600' : 'text-red-600'}`}>
-                    ${overview.leftover.toFixed(2)}
-                  </p>
-                </div>
-              </div>
-              <div className="h-8 bg-slate-100 rounded-full overflow-hidden flex">
-                <div 
-                  className="bg-emerald-500 flex items-center justify-center text-white text-xs font-bold"
-                  style={{ width: `${Math.min((overview.totalMonthly / overview.monthlyIncome) * 100, 100)}%` }}
-                >
-                  {overview.monthlyIncome > 0 ? ((overview.totalMonthly / overview.monthlyIncome) * 100).toFixed(0) : 0}%
-                </div>
-              </div>
-              <p className="text-xs text-slate-500 mt-2 text-center">
-                {overview.totalMonthly > overview.monthlyIncome ? '⚠️ Spending exceeds income' : '✓ Under budget'}
-              </p>
-            </div>
-
-            {/* Emergency Fund Tracker */}
-            <div className="bg-white rounded-2xl shadow-xl p-6 mb-6">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-xl font-bold">Emergency Fund</h3>
-                <button 
-                  type="button"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    const target = window.prompt('Target emergency fund amount:', emergencyFund.target);
-                    const current = window.prompt('Current saved amount:', emergencyFund.current);
-                    if (target !== null && current !== null) {
-                      const fund = { target: parseFloat(target) || 0, current: parseFloat(current) || 0 };
-                      setEmergencyFund(fund);
-                      localStorage.setItem('emergencyFund', JSON.stringify(fund));
-                    }
-                  }}
-                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-sm font-semibold transition-colors"
-                >
-                  Update
-                </button>
-              </div>
-              {emergencyFund.target > 0 ? (
-                <>
-                  <div className="mb-4">
-                    <div className="flex justify-between text-sm mb-2">
-                      <span className="text-slate-600">Progress: ${emergencyFund.current.toFixed(2)} / ${emergencyFund.target.toFixed(2)}</span>
-                      <span className="font-bold text-emerald-600">{((emergencyFund.current / emergencyFund.target) * 100).toFixed(0)}%</span>
-                    </div>
-                    <div className="h-6 bg-slate-100 rounded-full overflow-hidden">
-                      <div 
-                        className="h-full bg-gradient-to-r from-emerald-500 to-emerald-600 transition-all duration-500"
-                        style={{ width: `${Math.min((emergencyFund.current / emergencyFund.target) * 100, 100)}%` }}
-                      />
-                    </div>
-                  </div>
-                  <p className="text-sm text-slate-600">
-                    {emergencyFund.current >= emergencyFund.target 
-                      ? '🎉 Goal reached!' 
-                      : `$${(emergencyFund.target - emergencyFund.current).toFixed(2)} to go`}
-                  </p>
-                </>
-              ) : (
-                <p className="text-slate-500 text-center py-4">Set your emergency fund goal to start tracking</p>
-              )}
-            </div>
-
-            {/* Debt Payoff Calculator */}
-            <div className="bg-white rounded-2xl shadow-xl p-6 mb-6">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-xl font-bold">Debt Payoff Tracker</h3>
-                <button 
-                  type="button"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    const name = window.prompt('Debt name (e.g., Credit Card):');
-                    if (!name) return;
-                    const balance = window.prompt('Current balance:');
-                    if (!balance) return;
-                    const rate = window.prompt('Interest rate % (e.g., 18.5):');
-                    if (!rate) return;
-                    const payment = window.prompt('Monthly payment:');
-                    if (!payment) return;
-                    
-                    const debt = {
-                      id: Date.now(),
-                      name,
-                      balance: parseFloat(balance),
-                      rate: parseFloat(rate),
-                      payment: parseFloat(payment)
-                    };
-                    const updated = [...debtPayoff, debt];
-                    setDebtPayoff(updated);
-                    localStorage.setItem('debtPayoff', JSON.stringify(updated));
-                  }}
-                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-sm font-semibold transition-colors"
-                >
-                  Add Debt
-                </button>
-              </div>
-              {debtPayoff.length > 0 ? (
-                <div className="space-y-3">
-                  {debtPayoff.map(debt => {
-                    const monthsToPayoff = Math.ceil(debt.balance / debt.payment);
-                    const totalInterest = (debt.payment * monthsToPayoff) - debt.balance;
-                    return (
-                      <div key={debt.id} className="p-4 bg-slate-50 rounded-xl">
-                        <div className="flex items-center justify-between mb-2">
-                          <span className="font-semibold">{debt.name}</span>
-                          <button 
-                            type="button"
-                            onClick={(e) => {
-                              e.preventDefault();
-                              const updated = debtPayoff.filter(d => d.id !== debt.id);
-                              setDebtPayoff(updated);
-                              localStorage.setItem('debtPayoff', JSON.stringify(updated));
-                            }}
-                            className="text-red-600 hover:bg-red-50 p-1 rounded transition-colors"
-                          >
-                            <X size={16} />
-                          </button>
-                        </div>
-                        <p className="text-sm text-slate-600">Balance: ${debt.balance.toFixed(2)} @ {debt.rate}%</p>
-                        <p className="text-sm text-slate-600">Payment: ${debt.payment.toFixed(2)}/mo</p>
-                        <p className="text-sm font-semibold text-emerald-600 mt-2">
-                          Payoff: {monthsToPayoff} months | Interest: ${totalInterest.toFixed(2)}
-                        </p>
-                      </div>
-                    );
-                  })}
-                </div>
-              ) : (
-                <p className="text-slate-500 text-center py-4">Add debts to track payoff timeline</p>
-              )}
-            </div>
-
-            {/* Export Section */}
-            <div className="bg-white rounded-2xl shadow-xl p-6">
-              <h3 className="text-xl font-bold mb-4">Export Reports</h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <button 
-                  type="button"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    const csv = `PayPlan Pro Export - ${new Date().toLocaleDateString()}\n\n` +
-                      `Monthly Income,$${overview.monthlyIncome.toFixed(2)}\n` +
-                      `Monthly Expenses,$${overview.totalMonthly.toFixed(2)}\n` +
-                      `Net Savings,$${overview.leftover.toFixed(2)}\n\n` +
-                      `Bills:\nName,Amount,Due Date,Frequency\n` +
-                      bills.map(b => `${b.name},$${b.amount},${b.dueDate},${b.frequency}`).join('\n');
-                    const blob = new Blob([csv], { type: 'text/csv' });
-                    const url = URL.createObjectURL(blob);
-                    const a = document.createElement('a');
-                    a.href = url;
-                    a.download = `payplan-export-${Date.now()}.csv`;
-                    a.click();
-                    URL.revokeObjectURL(url);
-                  }}
-                  className="px-6 py-4 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-semibold transition-colors"
-                >
-                  📊 Export CSV
-                </button>
-                <button 
-                  type="button"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    const data = { bills, assets, oneTimeBills, paySchedule, emergencyFund, debtPayoff, propaneFills };
-                    const json = JSON.stringify(data, null, 2);
-                    const blob = new Blob([json], { type: 'application/json' });
-                    const url = URL.createObjectURL(blob);
-                    const a = document.createElement('a');
-                    a.href = url;
-                    a.download = `payplan-backup-${Date.now()}.json`;
-                    a.click();
-                    URL.revokeObjectURL(url);
-                  }}
-                  className="px-6 py-4 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-semibold transition-colors"
-                >
-                  💾 Backup JSON
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
         {/* Settings View */}
         {view === 'settings' && (
           <div>
@@ -2671,28 +1893,6 @@ const BillPayPlanner = () => {
                   </p>
                 </div>
               </div>
-
-              {/* Clear All Data */}
-              <div className="bg-white rounded-2xl shadow-xl p-6 border-2 border-red-200">
-                <div className="mb-4">
-                  <h3 className="text-xl font-bold text-red-600">Danger Zone</h3>
-                  <p className="text-slate-600 text-sm">Permanently delete all your data</p>
-                </div>
-                
-                <button
-                  onClick={clearAllData}
-                  className="w-full px-4 py-3 bg-red-100 hover:bg-red-200 text-red-700 rounded-xl font-semibold transition-colors flex items-center justify-center gap-2"
-                >
-                  <Trash2 size={18} />
-                  Clear All Data
-                </button>
-                
-                <div className="mt-4 bg-red-50 border-2 border-red-200 rounded-xl p-4">
-                  <p className="text-red-800 text-sm">
-                    <strong>⚠️ Warning:</strong> This will permanently delete ALL bills, assets, one-time bills, and settings. This action cannot be undone. Make a backup first if you want to keep your data!
-                  </p>
-                </div>
-              </div>
             </div>
           </div>
         )}
@@ -2764,102 +1964,6 @@ const BillPayPlanner = () => {
           asset={showAmortizationView}
           onClose={() => setShowAmortizationView(null)}
         />
-      )}
-
-      {/* Propane Fill Form */}
-      {showPropaneForm && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full">
-            <div className="p-6">
-              <h2 className="text-2xl font-bold mb-6">Add Propane Fill</h2>
-              <form onSubmit={(e) => {
-                e.preventDefault();
-                const formData = new FormData(e.target);
-                const gallons = parseFloat(formData.get('gallons'));
-                const pricePerGal = parseFloat(formData.get('pricePerGal'));
-                addPropaneFill({
-                  date: formData.get('date'),
-                  gallons: gallons.toFixed(2),
-                  pricePerGal: pricePerGal.toFixed(2),
-                  totalCost: (gallons * pricePerGal).toFixed(2)
-                });
-                setShowPropaneForm(false);
-              }} className="space-y-4">
-                <div>
-                  <label className="block text-sm font-semibold mb-2">Fill Date</label>
-                  <input type="date" name="date" required className="w-full px-4 py-2 border-2 border-slate-200 rounded-xl focus:border-emerald-500 outline-none" />
-                </div>
-                <div>
-                  <label className="block text-sm font-semibold mb-2">Gallons Delivered</label>
-                  <input type="number" step="0.1" name="gallons" required className="w-full px-4 py-2 border-2 border-slate-200 rounded-xl focus:border-emerald-500 outline-none" />
-                </div>
-                <div>
-                  <label className="block text-sm font-semibold mb-2">Price per Gallon</label>
-                  <input type="number" step="0.01" name="pricePerGal" required className="w-full px-4 py-2 border-2 border-slate-200 rounded-xl focus:border-emerald-500 outline-none" />
-                </div>
-                <div className="flex gap-3 pt-4">
-                  <button type="button" onClick={() => setShowPropaneForm(false)} className="flex-1 px-4 py-3 bg-slate-100 hover:bg-slate-200 rounded-xl font-semibold">Cancel</button>
-                  <button type="submit" className="flex-1 px-4 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-semibold">Add Fill</button>
-                </div>
-              </form>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Clear All Data Modal */}
-      {showClearDataModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full">
-            <div className="p-6">
-              <div className="flex items-center gap-3 mb-4">
-                <div className="p-3 bg-red-100 rounded-full">
-                  <AlertCircle className="text-red-600" size={32} />
-                </div>
-                <h2 className="text-2xl font-bold text-red-600">Clear All Data?</h2>
-              </div>
-              
-              <div className="bg-red-50 border-2 border-red-200 rounded-xl p-4 mb-6">
-                <p className="text-red-800 font-semibold mb-2">
-                  ⚠️ This will permanently delete:
-                </p>
-                <ul className="text-red-700 text-sm space-y-1 ml-4">
-                  <li>• All recurring bills</li>
-                  <li>• All assets and loans</li>
-                  <li>• All one-time bills</li>
-                  <li>• Your pay schedule</li>
-                  <li>• All settings</li>
-                </ul>
-                <p className="text-red-800 font-semibold mt-3">
-                  This action cannot be undone!
-                </p>
-              </div>
-
-              <div className="flex gap-3">
-                <button
-                  onClick={() => {
-                    setShowClearDataModal(false);
-                    setClearDataCountdown(5);
-                  }}
-                  className="flex-1 px-4 py-3 bg-slate-100 hover:bg-slate-200 rounded-xl font-semibold transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={confirmClearAllData}
-                  disabled={clearDataCountdown > 0}
-                  className={`flex-1 px-4 py-3 rounded-xl font-semibold transition-colors ${
-                    clearDataCountdown > 0
-                      ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
-                      : 'bg-red-600 hover:bg-red-700 text-white'
-                  }`}
-                >
-                  {clearDataCountdown > 0 ? `Wait ${clearDataCountdown}s...` : 'Yes, Delete Everything'}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
       )}
     </div>
   );
