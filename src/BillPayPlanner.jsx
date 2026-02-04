@@ -1531,17 +1531,67 @@ const BillPayPlanner = () => {
               </div>
 
               <div className="bg-white rounded-2xl shadow-xl p-6">
-                <div className="flex items-center gap-3 mb-2">
-                  <div className={`p-3 rounded-xl ${overview.leftover >= 0 ? 'bg-emerald-100' : 'bg-red-100'}`}>
-                    <DollarSign className={overview.leftover >= 0 ? 'text-emerald-600' : 'text-red-600'} size={24} />
-                  </div>
-                  <div>
-                    <p className="text-slate-500 text-sm">Left Over</p>
-                    <p className={`text-3xl font-black ${overview.leftover >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
-                      ${overview.leftover.toFixed(2)}
-                    </p>
-                  </div>
-                </div>
+                {(() => {
+                  const assignments = getPaycheckAssignments();
+                  const check1Total = assignments.check1.reduce((sum, b) => sum + parseFloat(b.amount), 0);
+                  const check2Total = assignments.check2.reduce((sum, b) => sum + parseFloat(b.amount), 0);
+                  const perCheck = paySchedule ? parseFloat(paySchedule.payAmount) : 0;
+                  const leftover1 = perCheck - check1Total;
+                  const leftover2 = perCheck - check2Total;
+                  const difference = Math.abs(leftover1 - leftover2);
+                  
+                  // Find non-autopay bills in check with more leftover that could move
+                  const movableBills = leftover1 > leftover2 
+                    ? assignments.check1.filter(b => !b.autopay && b.payFromCheck === 'auto')
+                    : assignments.check2.filter(b => !b.autopay && b.payFromCheck === 'auto');
+                  
+                  const targetDiff = difference / 2;
+                  const suggestion = movableBills.find(b => 
+                    parseFloat(b.amount) >= targetDiff * 0.5 && parseFloat(b.amount) <= targetDiff * 1.5
+                  );
+                  
+                  return (
+                    <>
+                      <h3 className="text-lg font-bold mb-3">Leftover Per Check</h3>
+                      <div className="space-y-3">
+                        <div className="p-3 bg-emerald-50 rounded-xl">
+                          <div className="flex justify-between items-center">
+                            <span className="text-sm text-slate-600">Check 1 Leftover</span>
+                            <span className={`text-xl font-bold ${leftover1 >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                              ${leftover1.toFixed(2)}
+                            </span>
+                          </div>
+                        </div>
+                        <div className="p-3 bg-blue-50 rounded-xl">
+                          <div className="flex justify-between items-center">
+                            <span className="text-sm text-slate-600">Check 2 Leftover</span>
+                            <span className={`text-xl font-bold ${leftover2 >= 0 ? 'text-blue-600' : 'text-red-600'}`}>
+                              ${leftover2.toFixed(2)}
+                            </span>
+                          </div>
+                        </div>
+                        
+                        {difference > 100 && suggestion && (
+                          <div className="p-3 bg-amber-50 border-2 border-amber-200 rounded-xl">
+                            <p className="text-xs font-semibold text-amber-800 mb-2">💡 Balance Suggestion</p>
+                            <p className="text-xs text-amber-700">
+                              Pay <strong>{suggestion.name}</strong> (${suggestion.amount}) early with Check {leftover1 > leftover2 ? '1' : '2'} to balance leftovers
+                            </p>
+                          </div>
+                        )}
+                        
+                        <div className="p-3 bg-slate-50 rounded-xl border-2 border-slate-200">
+                          <div className="flex justify-between items-center">
+                            <span className="text-sm font-semibold text-slate-700">Total Monthly</span>
+                            <span className={`text-xl font-bold ${overview.leftover >= 0 ? 'text-slate-800' : 'text-red-600'}`}>
+                              ${overview.leftover.toFixed(2)}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    </>
+                  );
+                })()}
               </div>
             </div>
 
