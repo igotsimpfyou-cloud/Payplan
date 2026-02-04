@@ -22,6 +22,7 @@ const BillPayPlanner = () => {
   const [showPropaneForm, setShowPropaneForm] = useState(false);
   const [collapseCheck1, setCollapseCheck1] = useState(false);
   const [collapseCheck2, setCollapseCheck2] = useState(false);
+  const [billsViewMode, setBillsViewMode] = useState('monthly'); // 'monthly' or 'stream'
   const [emergencyFund, setEmergencyFund] = useState({ target: 0, current: 0 });
   const [debtPayoff, setDebtPayoff] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -119,7 +120,26 @@ const BillPayPlanner = () => {
       const emergencyData = localStorage.getItem('emergencyFund');
       const debtData = localStorage.getItem('debtPayoff');
       
-      if (billsData) setBills(JSON.parse(billsData));
+      if (billsData) {
+        let loadedBills = JSON.parse(billsData);
+        // Migration: Add nextDueDate if missing
+        let needsSave = false;
+        loadedBills = loadedBills.map(bill => {
+          if (!bill.nextDueDate) {
+            const today = new Date();
+            const dueDay = parseInt(bill.dueDate);
+            let nextDue = new Date(today.getFullYear(), today.getMonth(), dueDay);
+            if (nextDue < today) {
+              nextDue.setMonth(nextDue.getMonth() + 1);
+            }
+            needsSave = true;
+            return { ...bill, nextDueDate: nextDue.toISOString().split('T')[0] };
+          }
+          return bill;
+        });
+        setBills(loadedBills);
+        if (needsSave) localStorage.setItem('bills', JSON.stringify(loadedBills));
+      }
       if (assetsData) setAssets(JSON.parse(assetsData));
       if (oneTimeData) setOneTimeBills(JSON.parse(oneTimeData));
       if (scheduleData) setPaySchedule(JSON.parse(scheduleData));
@@ -168,9 +188,17 @@ const BillPayPlanner = () => {
   };
 
   const addBill = async (billData) => {
+    const today = new Date();
+    const dueDay = parseInt(billData.dueDate);
+    let nextDue = new Date(today.getFullYear(), today.getMonth(), dueDay);
+    if (nextDue < today) {
+      nextDue.setMonth(nextDue.getMonth() + 1);
+    }
+    
     const newBill = {
       id: Date.now(),
       ...billData,
+      nextDueDate: nextDue.toISOString().split('T')[0],
       paidThisMonth: false,
       lastPaid: null,
       historicalPayments: billData.historicalPayments || []
@@ -295,11 +323,39 @@ const BillPayPlanner = () => {
   };
 
   const togglePaid = async (billId) => {
-    const updatedBills = bills.map(b => 
-      b.id === billId 
-        ? { ...b, paidThisMonth: !b.paidThisMonth, lastPaid: !b.paidThisMonth ? new Date().toISOString() : b.lastPaid }
-        : b
-    );
+    const updatedBills = bills.map(b => {
+      if (b.id === billId) {
+        const nowPaid = !b.paidThisMonth;
+        let updates = { 
+          ...b, 
+          paidThisMonth: nowPaid, 
+          lastPaid: nowPaid ? new Date().toISOString() : b.lastPaid 
+        };
+        
+        // Advance nextDueDate when marking as paid
+        if (nowPaid && b.nextDueDate) {
+          const currentDue = new Date(b.nextDueDate);
+          let nextDue = new Date(currentDue);
+          
+          if (b.frequency === 'monthly') {
+            nextDue.setMonth(nextDue.getMonth() + 1);
+          } else if (b.frequency === 'weekly') {
+            nextDue.setDate(nextDue.getDate() + 7);
+          } else if (b.frequency === 'biweekly') {
+            nextDue.setDate(nextDue.getDate() + 14);
+          } else if (b.frequency === 'quarterly') {
+            nextDue.setMonth(nextDue.getMonth() + 3);
+          } else if (b.frequency === 'annual') {
+            nextDue.setFullYear(nextDue.getFullYear() + 1);
+          }
+          
+          updates.nextDueDate = nextDue.toISOString().split('T')[0];
+        }
+        
+        return updates;
+      }
+      return b;
+    });
     await saveBills(updatedBills);
   };
 
@@ -1750,13 +1806,37 @@ const BillPayPlanner = () => {
                 {new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' })} Bills
               </h2>
               <div className="flex gap-3">
-                <button
-                  onClick={resetMonthlyBills}
-                  className="px-6 py-3 bg-white/20 hover:bg-white/30 text-white rounded-xl font-semibold shadow-lg transition-colors flex items-center gap-2"
-                >
-                  <RefreshCw size={20} />
-                  Reset Month
-                </button>
+                <div className="flex bg-white/20 rounded-xl p-1">
+                  <button
+                    onClick={() => setBillsViewMode('monthly')}
+                    className={`px-4 py-2 rounded-lg text-sm font-semibold transition-colors ${
+                      billsViewMode === 'monthly' 
+                        ? 'bg-white text-emerald-600' 
+                        : 'text-white hover:bg-white/20'
+                    }`}
+                  >
+                    Monthly
+                  </button>
+                  <button
+                    onClick={() => setBillsViewMode('stream')}
+                    className={`px-4 py-2 rounded-lg text-sm font-semibold transition-colors ${
+                      billsViewMode === 'stream' 
+                        ? 'bg-white text-emerald-600' 
+                        : 'text-white hover:bg-white/20'
+                    }`}
+                  >
+                    Stream
+                  </button>
+                </div>
+                {billsViewMode === 'monthly' && (
+                  <button
+                    onClick={resetMonthlyBills}
+                    className="px-6 py-3 bg-white/20 hover:bg-white/30 text-white rounded-xl font-semibold shadow-lg transition-colors flex items-center gap-2"
+                  >
+                    <RefreshCw size={20} />
+                    Reset Month
+                  </button>
+                )}
                 <button
                   onClick={() => setShowBillForm(true)}
                   className="px-6 py-3 bg-white hover:bg-emerald-50 text-emerald-600 rounded-xl font-semibold shadow-lg transition-colors flex items-center gap-2"
@@ -1767,8 +1847,8 @@ const BillPayPlanner = () => {
               </div>
             </div>
 
-            {/* Bills grouped by paycheck based on due dates */}
-            {bills.length > 0 && (() => {
+            {/* Monthly Checklist View */}
+            {billsViewMode === 'monthly' && bills.length > 0 && (() => {
               const assignments = getPaycheckAssignments();
               const formatDate = (date) => {
                 if (!date) return '';
@@ -2058,6 +2138,90 @@ const BillPayPlanner = () => {
                 </div>
               </div>
             );
+            })()}
+
+            {/* Bill Stream View */}
+            {billsViewMode === 'stream' && bills.length > 0 && (() => {
+              if (!paySchedule || !paySchedule.nextPayDate) {
+                return (
+                  <div className="bg-white rounded-2xl shadow-xl p-8 text-center">
+                    <p className="text-slate-600">Set up your pay schedule first to see bill stream</p>
+                  </div>
+                );
+              }
+
+              // Generate next 3 paychecks
+              const paychecks = [];
+              let currentDate = new Date(paySchedule.nextPayDate);
+              for (let i = 0; i < 3; i++) {
+                paychecks.push(new Date(currentDate));
+                switch(paySchedule.frequency) {
+                  case 'weekly': currentDate.setDate(currentDate.getDate() + 7); break;
+                  case 'biweekly': currentDate.setDate(currentDate.getDate() + 14); break;
+                  case 'semimonthly':
+                    currentDate.setDate(currentDate.getDate() <= 15 ? 15 : 1);
+                    if (currentDate.getDate() === 1) currentDate.setMonth(currentDate.getMonth() + 1);
+                    break;
+                  case 'monthly': currentDate.setMonth(currentDate.getMonth() + 1); break;
+                }
+              }
+
+              // Assign bills to paychecks using nextDueDate
+              const streamAssignments = paychecks.map((paycheck, idx) => {
+                const nextPaycheck = paychecks[idx + 1] || new Date(paycheck.getTime() + 30*24*60*60*1000);
+                const assigned = bills.filter(bill => {
+                  const dueDate = new Date(bill.nextDueDate);
+                  return dueDate > paycheck && dueDate <= nextPaycheck;
+                });
+                return { paycheck, bills: assigned };
+              });
+
+              return (
+                <div className="space-y-6">
+                  {streamAssignments.map(({paycheck, bills: assignedBills}, idx) => {
+                    const total = assignedBills.reduce((sum, b) => sum + parseFloat(b.amount), 0);
+                    const perCheck = parseFloat(paySchedule.payAmount);
+                    const leftover = perCheck - total;
+
+                    return (
+                      <div key={idx} className="bg-white/10 backdrop-blur-sm rounded-2xl p-6">
+                        <div className="flex items-center justify-between mb-4">
+                          <h3 className="text-2xl font-bold text-white">
+                            Paycheck {idx + 1}: {paycheck.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                          </h3>
+                          <div className="text-right">
+                            <p className="text-white/70 text-sm">Bills: ${total.toFixed(2)}</p>
+                            <p className={`text-lg font-bold ${leftover >= 0 ? 'text-emerald-300' : 'text-red-300'}`}>
+                              Left: ${leftover.toFixed(2)}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-1 gap-3">
+                          {assignedBills.map(bill => (
+                            <div key={bill.id} className="bg-white rounded-xl p-4 flex items-center justify-between">
+                              <div>
+                                <p className="font-semibold text-slate-800">{bill.name}</p>
+                                <p className="text-sm text-slate-600">
+                                  Due: {new Date(bill.nextDueDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                                </p>
+                              </div>
+                              <div className="flex items-center gap-3">
+                                <p className="text-lg font-bold text-slate-800">${bill.amount}</p>
+                                {bill.autopay && (
+                                  <span className="px-2 py-1 bg-blue-100 text-blue-700 text-xs font-bold rounded">AUTO</span>
+                                )}
+                              </div>
+                            </div>
+                          ))}
+                          {assignedBills.length === 0 && (
+                            <p className="text-white/70 text-center py-4 text-sm">No bills due before next paycheck</p>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              );
             })()}
 
             {bills.length === 0 && (
