@@ -329,7 +329,8 @@ const BillPayPlanner = () => {
         let updates = { 
           ...b, 
           paidThisMonth: nowPaid, 
-          lastPaid: nowPaid ? new Date().toISOString() : b.lastPaid 
+          lastPaid: nowPaid ? new Date().toISOString() : b.lastPaid,
+          lastPaidDate: nowPaid ? new Date().toISOString().split('T')[0] : b.lastPaidDate
         };
         
         // Advance nextDueDate when marking as paid
@@ -2175,17 +2176,24 @@ const BillPayPlanner = () => {
                 const assigned = [];
                 
                 bills.forEach(bill => {
-                  // Check if bill's nextDueDate falls in this period
                   let dueDate = new Date(bill.nextDueDate);
                   
-                  // For recurring bills, check if ANY occurrence falls in this period
                   if (bill.frequency === 'monthly') {
-                    // Check up to 2 months forward
-                    for (let m = 0; m < 2; m++) {
+                    // Check next 3 months
+                    for (let m = 0; m < 3; m++) {
                       const checkDate = new Date(dueDate);
                       checkDate.setMonth(checkDate.getMonth() + m);
+                      
+                      // Only include if in this paycheck window and not already paid this month
                       if (checkDate > paycheck && checkDate <= nextPaycheck) {
-                        assigned.push({ ...bill, effectiveDueDate: checkDate.toISOString().split('T')[0] });
+                        const lastPaid = bill.lastPaidDate ? new Date(bill.lastPaidDate) : null;
+                        const isSameMonth = lastPaid && 
+                          lastPaid.getMonth() === checkDate.getMonth() && 
+                          lastPaid.getFullYear() === checkDate.getFullYear();
+                        
+                        if (!isSameMonth) {
+                          assigned.push({ ...bill, effectiveDueDate: checkDate.toISOString().split('T')[0] });
+                        }
                         break;
                       }
                     }
@@ -2217,11 +2225,23 @@ const BillPayPlanner = () => {
                         </div>
                         <div className="grid grid-cols-1 gap-3">
                           {assignedBills.map(bill => (
-                            <div key={bill.id + (bill.effectiveDueDate || bill.nextDueDate)} className="bg-white rounded-xl p-4 flex items-center justify-between">
+                            <div key={bill.id + (bill.effectiveDueDate || bill.nextDueDate)} className="bg-white rounded-xl p-4 flex items-center gap-3">
+                              <button
+                                onClick={() => togglePaid(bill.id)}
+                                className={`p-2 rounded-lg transition-colors flex-shrink-0 ${
+                                  bill.paidThisMonth
+                                    ? 'bg-green-500 text-white'
+                                    : 'bg-slate-100 text-slate-400 hover:bg-slate-200'
+                                }`}
+                              >
+                                <Check size={20} />
+                              </button>
                               <div className="flex-1">
-                                <p className="font-semibold text-slate-800">{bill.name}</p>
+                                <p className={`font-semibold ${bill.paidThisMonth ? 'line-through text-green-600' : 'text-slate-800'}`}>
+                                  {bill.name}
+                                </p>
                                 <p className="text-sm text-slate-600">
-                                  Due: {new Date(bill.effectiveDueDate || bill.nextDueDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                                  {new Date(bill.effectiveDueDate || bill.nextDueDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
                                 </p>
                               </div>
                               <div className="flex items-center gap-3">
