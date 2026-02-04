@@ -20,6 +20,10 @@ const BillPayPlanner = () => {
   const [showClearDataModal, setShowClearDataModal] = useState(false);
   const [clearDataCountdown, setClearDataCountdown] = useState(5);
   const [showPropaneForm, setShowPropaneForm] = useState(false);
+  const [collapseCheck1, setCollapseCheck1] = useState(false);
+  const [collapseCheck2, setCollapseCheck2] = useState(false);
+  const [emergencyFund, setEmergencyFund] = useState({ target: 0, current: 0 });
+  const [debtPayoff, setDebtPayoff] = useState([]);
   const [loading, setLoading] = useState(true);
   const [calendarConnected, setCalendarConnected] = useState(false);
   
@@ -112,6 +116,8 @@ const BillPayPlanner = () => {
       const scheduleData = localStorage.getItem('paySchedule');
       const calendarData = localStorage.getItem('calendarConnected');
       const propaneData = localStorage.getItem('propaneFills');
+      const emergencyData = localStorage.getItem('emergencyFund');
+      const debtData = localStorage.getItem('debtPayoff');
       
       if (billsData) setBills(JSON.parse(billsData));
       if (assetsData) setAssets(JSON.parse(assetsData));
@@ -119,6 +125,8 @@ const BillPayPlanner = () => {
       if (scheduleData) setPaySchedule(JSON.parse(scheduleData));
       if (calendarData) setCalendarConnected(JSON.parse(calendarData));
       if (propaneData) setPropaneFills(JSON.parse(propaneData));
+      if (emergencyData) setEmergencyFund(JSON.parse(emergencyData));
+      if (debtData) setDebtPayoff(JSON.parse(debtData));
     } catch (error) {
       console.log('No existing data found', error);
     }
@@ -178,6 +186,23 @@ const BillPayPlanner = () => {
       startDate: assetData.startDate || new Date().toISOString().split('T')[0]
     };
     await saveAssets([...assets, newAsset]);
+    
+    if (assetData.createBill) {
+      const newBill = {
+        id: Date.now() + 1,
+        name: assetData.name,
+        amount: assetData.paymentAmount,
+        dueDate: new Date(assetData.startDate).getDate().toString(),
+        frequency: assetData.paymentFrequency,
+        category: 'loan',
+        autopay: false,
+        isVariable: false,
+        payFromCheck: 'auto',
+        paidThisMonth: false
+      };
+      await saveBills([...bills, newBill]);
+    }
+    
     setShowAssetForm(false);
   };
 
@@ -252,6 +277,8 @@ const BillPayPlanner = () => {
     setPaySchedule(null);
     setCalendarConnected(false);
     setPropaneFills([]);
+    setEmergencyFund({ target: 0, current: 0 });
+    setDebtPayoff([]);
     
     localStorage.removeItem('bills');
     localStorage.removeItem('assets');
@@ -259,6 +286,8 @@ const BillPayPlanner = () => {
     localStorage.removeItem('paySchedule');
     localStorage.removeItem('calendarConnected');
     localStorage.removeItem('propaneFills');
+    localStorage.removeItem('emergencyFund');
+    localStorage.removeItem('debtPayoff');
     
     setShowClearDataModal(false);
     alert('✓ All data cleared!');
@@ -453,17 +482,7 @@ const BillPayPlanner = () => {
     const check2Bills = [];
 
     bills.forEach(bill => {
-      const currentMonth = check1Date.getMonth();
-      const currentYear = check1Date.getFullYear();
       const dueDay = parseInt(bill.dueDate);
-      
-      // Create the actual due date for this month
-      let dueDate = new Date(currentYear, currentMonth, dueDay);
-      
-      // If the due date is before the first paycheck, it's for next month
-      if (dueDate < check1Date) {
-        dueDate.setMonth(dueDate.getMonth() + 1);
-      }
       
       // Manual assignment override
       if (bill.payFromCheck === 'check1') {
@@ -471,12 +490,37 @@ const BillPayPlanner = () => {
       } else if (bill.payFromCheck === 'check2') {
         check2Bills.push(bill);
       } else {
-        // Auto-assign: bill is paid by the check that comes BEFORE the due date
-        if (dueDate <= check2Date) {
-          // Due before or on second paycheck - pay with first check
+        // Auto-assign: Find the paycheck that comes BEFORE the bill's due date
+        // Look through all pay dates to find which check should pay this bill
+        let assignedToCheck1 = false;
+        
+        for (let i = 0; i < payDates.length; i++) {
+          const payDate = payDates[i];
+          const payMonth = payDate.getMonth();
+          const payYear = payDate.getFullYear();
+          
+          // Check if bill is due AFTER this paycheck (in the same month or next)
+          // Create due date relative to this pay period
+          let billDueDate = new Date(payYear, payMonth, dueDay);
+          
+          // If due day is before pay day in same month, bill is for next month
+          if (dueDay < payDate.getDate()) {
+            billDueDate.setMonth(billDueDate.getMonth() + 1);
+          }
+          
+          // If this paycheck comes before the bill due date, it should pay it
+          if (payDate <= billDueDate) {
+            // Assign to check1 or check2 based on which paycheck this is
+            if (i === 0) {
+              assignedToCheck1 = true;
+            }
+            break;
+          }
+        }
+        
+        if (assignedToCheck1) {
           check1Bills.push(bill);
         } else {
-          // Due after second paycheck - pay with second check (or third check if available)
           check2Bills.push(bill);
         }
       }
@@ -500,21 +544,11 @@ const BillPayPlanner = () => {
       return sum;
     }, 0);
 
-    const monthlyAssets = assets.reduce((sum, asset) => {
-      const amount = parseFloat(asset.paymentAmount);
-      if (asset.paymentFrequency === 'monthly') return sum + amount;
-      if (asset.paymentFrequency === 'weekly') return sum + (amount * 4.33);
-      if (asset.paymentFrequency === 'biweekly') return sum + (amount * 2.17);
-      if (asset.paymentFrequency === 'quarterly') return sum + (amount / 3);
-      if (asset.paymentFrequency === 'annual') return sum + (amount / 12);
-      return sum;
-    }, 0);
-
     const upcomingOneTime = oneTimeBills
       .filter(b => !b.paid)
       .reduce((sum, bill) => sum + parseFloat(bill.amount), 0);
 
-    const totalMonthly = monthlyBills + monthlyAssets;
+    const totalMonthly = monthlyBills;
     
     // Calculate actual monthly income based on paychecks in current month
     let monthlyIncome = 0;
@@ -577,7 +611,6 @@ const BillPayPlanner = () => {
 
     return {
       monthlyBills,
-      monthlyAssets,
       totalMonthly,
       upcomingOneTime,
       monthlyIncome,
@@ -769,10 +802,13 @@ const BillPayPlanner = () => {
       name: '',
       type: 'mortgage',
       loanAmount: '',
+      currentBalance: '',
+      loanTerm: '',
       interestRate: '',
       paymentAmount: '',
       paymentFrequency: 'monthly',
-      startDate: new Date().toISOString().split('T')[0]
+      startDate: new Date().toISOString().split('T')[0],
+      createBill: true
     });
 
     const handleSubmit = (e) => {
@@ -826,6 +862,29 @@ const BillPayPlanner = () => {
               </div>
 
               <div>
+                <label className="block text-sm font-semibold mb-2">Current Balance Remaining</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  value={formData.currentBalance}
+                  onChange={(e) => setFormData({...formData, currentBalance: e.target.value})}
+                  className="w-full px-4 py-2 border-2 border-slate-200 rounded-xl focus:border-emerald-500 outline-none"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold mb-2">Loan Term (months)</label>
+                <input
+                  type="number"
+                  value={formData.loanTerm}
+                  onChange={(e) => setFormData({...formData, loanTerm: e.target.value})}
+                  className="w-full px-4 py-2 border-2 border-slate-200 rounded-xl focus:border-emerald-500 outline-none"
+                  required
+                />
+              </div>
+
+              <div>
                 <label className="block text-sm font-semibold mb-2">Interest Rate (%)</label>
                 <input
                   type="number"
@@ -847,6 +906,17 @@ const BillPayPlanner = () => {
                   className="w-full px-4 py-2 border-2 border-slate-200 rounded-xl focus:border-emerald-500 outline-none"
                   required
                 />
+              </div>
+
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="createBill"
+                  checked={formData.createBill}
+                  onChange={(e) => setFormData({...formData, createBill: e.target.checked})}
+                  className="w-5 h-5"
+                />
+                <label htmlFor="createBill" className="text-sm font-semibold">Add as recurring bill</label>
               </div>
 
               <div>
@@ -1384,6 +1454,17 @@ const BillPayPlanner = () => {
             Propane
           </button>
           <button
+            onClick={() => setView('analytics')}
+            className={`px-6 py-3 rounded-xl font-semibold transition-all flex items-center gap-2 whitespace-nowrap ${
+              view === 'analytics'
+                ? 'bg-white text-emerald-600 shadow-lg'
+                : 'bg-white/20 text-white hover:bg-white/30'
+            }`}
+          >
+            <BarChart3 size={20} />
+            Analytics
+          </button>
+          <button
             onClick={() => setView('settings')}
             className={`px-6 py-3 rounded-xl font-semibold transition-all flex items-center gap-2 whitespace-nowrap ${
               view === 'settings'
@@ -1427,7 +1508,8 @@ const BillPayPlanner = () => {
                       {overview.nextPaycheckDate.toLocaleDateString('en-US', { 
                         weekday: 'short', 
                         month: 'short', 
-                        day: 'numeric' 
+                        day: 'numeric',
+                        timeZone: 'UTC'
                       })}
                       {overview.daysUntilNextPaycheck !== null && (
                         <span className="text-slate-500 ml-1">
@@ -1523,7 +1605,8 @@ const BillPayPlanner = () => {
                                 • {date.toLocaleDateString('en-US', { 
                                   weekday: 'long', 
                                   month: 'short', 
-                                  day: 'numeric' 
+                                  day: 'numeric',
+                                  timeZone: 'UTC'
                                 })}
                               </div>
                             ))}
@@ -1592,7 +1675,9 @@ const BillPayPlanner = () => {
         {view === 'bills' && (
           <div>
             <div className="flex items-center justify-between mb-6">
-              <h2 className="text-3xl font-black text-white">Recurring Bills</h2>
+              <h2 className="text-3xl font-black text-white">
+                {new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' })} Bills
+              </h2>
               <div className="flex gap-3">
                 <button
                   onClick={resetMonthlyBills}
@@ -1629,18 +1714,23 @@ const BillPayPlanner = () => {
                 <div className="space-y-6">
                   {/* First Paycheck Bills - in a card */}
                   <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-6">
-                    <h3 className="text-2xl font-bold text-white mb-2 flex items-center gap-2 flex-wrap">
-                      <DollarSign size={24} />
-                      <span>First Paycheck Bills</span>
-                      {assignments.payDates[0] && (
-                        <span className="text-lg font-normal text-emerald-300">
-                          (Pay Date: {formatDate(assignments.payDates[0])})
-                        </span>
-                      )}
-                    </h3>
-                    <p className="text-white/70 text-sm mb-6">
-                      Bills to pay with your next paycheck
-                    </p>
+                    <div className="flex items-center justify-between mb-2 cursor-pointer" onClick={() => setCollapseCheck1(!collapseCheck1)}>
+                      <h3 className="text-2xl font-bold text-white flex items-center gap-2 flex-wrap">
+                        <DollarSign size={24} />
+                        <span>First Paycheck Bills</span>
+                        {assignments.payDates[0] && (
+                          <span className="text-lg font-normal text-emerald-300">
+                            (Pay Date: {formatDate(assignments.payDates[0])})
+                          </span>
+                        )}
+                      </h3>
+                      <ChevronRight size={24} className={`text-white transition-transform ${collapseCheck1 ? '' : 'rotate-90'}`} />
+                    </div>
+                    {!collapseCheck1 && (
+                      <>
+                        <p className="text-white/70 text-sm mb-6">
+                          Bills to pay with your next paycheck
+                        </p>
                     <div className="grid grid-cols-1 gap-4">
                       {assignments.check1.map(bill => (
                       <div key={bill.id} className="bg-white rounded-xl shadow-lg p-4">
@@ -1723,22 +1813,29 @@ const BillPayPlanner = () => {
                       <p className="text-white/70 text-center py-8 text-sm">No bills due before your next paycheck</p>
                     )}
                   </div>
+                  </>
+                )}
                 </div>
 
                 {/* Second Paycheck Bills - in a card */}
                 <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-6">
-                  <h3 className="text-2xl font-bold text-white mb-2 flex items-center gap-2 flex-wrap">
-                    <DollarSign size={24} />
-                    <span>Second Paycheck Bills</span>
-                    {assignments.payDates[1] && (
-                      <span className="text-lg font-normal text-blue-300">
-                        (Pay Date: {formatDate(assignments.payDates[1])})
-                      </span>
-                    )}
-                  </h3>
-                  <p className="text-white/70 text-sm mb-6">
-                    Bills to pay with your following paycheck
-                  </p>
+                  <div className="flex items-center justify-between mb-2 cursor-pointer" onClick={() => setCollapseCheck2(!collapseCheck2)}>
+                    <h3 className="text-2xl font-bold text-white flex items-center gap-2 flex-wrap">
+                      <DollarSign size={24} />
+                      <span>Second Paycheck Bills</span>
+                      {assignments.payDates[1] && (
+                        <span className="text-lg font-normal text-blue-300">
+                          (Pay Date: {formatDate(assignments.payDates[1])})
+                        </span>
+                      )}
+                    </h3>
+                    <ChevronRight size={24} className={`text-white transition-transform ${collapseCheck2 ? '' : 'rotate-90'}`} />
+                  </div>
+                  {!collapseCheck2 && (
+                    <>
+                      <p className="text-white/70 text-sm mb-6">
+                        Bills to pay with your following paycheck
+                      </p>
                   <div className="grid grid-cols-1 gap-4">
                     {assignments.check2.map(bill => (
                       <div key={bill.id} className="bg-white rounded-xl shadow-lg p-4">
@@ -1821,6 +1918,8 @@ const BillPayPlanner = () => {
                       <p className="text-white/70 text-center py-8 text-sm">No bills due before your second paycheck</p>
                     )}
                   </div>
+                  </>
+                )}
                 </div>
               </div>
             );
@@ -2160,6 +2259,207 @@ const BillPayPlanner = () => {
                 <p className="text-slate-600 mb-6">Start tracking your propane fills to see usage patterns and costs</p>
               </div>
             )}
+          </div>
+        )}
+
+        {/* Analytics View */}
+        {view === 'analytics' && (
+          <div>
+            <h2 className="text-3xl font-black text-white mb-6">Financial Analytics</h2>
+
+            {/* Income vs Expenses Chart */}
+            <div className="bg-white rounded-2xl shadow-xl p-6 mb-6">
+              <h3 className="text-xl font-bold mb-4">Income vs Expenses</h3>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                <div className="text-center p-4 bg-emerald-50 rounded-xl">
+                  <p className="text-xs text-slate-600 mb-1">Monthly Income</p>
+                  <p className="text-xl md:text-2xl font-bold text-emerald-600 break-all">${overview.monthlyIncome.toFixed(2)}</p>
+                </div>
+                <div className="text-center p-4 bg-red-50 rounded-xl">
+                  <p className="text-xs text-slate-600 mb-1">Monthly Expenses</p>
+                  <p className="text-xl md:text-2xl font-bold text-red-600 break-all">${overview.totalMonthly.toFixed(2)}</p>
+                </div>
+                <div className="text-center p-4 bg-blue-50 rounded-xl">
+                  <p className="text-xs text-slate-600 mb-1">Net Savings</p>
+                  <p className={`text-xl md:text-2xl font-bold break-all ${overview.leftover >= 0 ? 'text-blue-600' : 'text-red-600'}`}>
+                    ${overview.leftover.toFixed(2)}
+                  </p>
+                </div>
+              </div>
+              <div className="h-8 bg-slate-100 rounded-full overflow-hidden flex">
+                <div 
+                  className="bg-emerald-500 flex items-center justify-center text-white text-xs font-bold"
+                  style={{ width: `${Math.min((overview.totalMonthly / overview.monthlyIncome) * 100, 100)}%` }}
+                >
+                  {overview.monthlyIncome > 0 ? ((overview.totalMonthly / overview.monthlyIncome) * 100).toFixed(0) : 0}%
+                </div>
+              </div>
+              <p className="text-xs text-slate-500 mt-2 text-center">
+                {overview.totalMonthly > overview.monthlyIncome ? '⚠️ Spending exceeds income' : '✓ Under budget'}
+              </p>
+            </div>
+
+            {/* Emergency Fund Tracker */}
+            <div className="bg-white rounded-2xl shadow-xl p-6 mb-6">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-xl font-bold">Emergency Fund</h3>
+                <button 
+                  type="button"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    const target = window.prompt('Target emergency fund amount:', emergencyFund.target);
+                    const current = window.prompt('Current saved amount:', emergencyFund.current);
+                    if (target !== null && current !== null) {
+                      const fund = { target: parseFloat(target) || 0, current: parseFloat(current) || 0 };
+                      setEmergencyFund(fund);
+                      localStorage.setItem('emergencyFund', JSON.stringify(fund));
+                    }
+                  }}
+                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-sm font-semibold transition-colors"
+                >
+                  Update
+                </button>
+              </div>
+              {emergencyFund.target > 0 ? (
+                <>
+                  <div className="mb-4">
+                    <div className="flex justify-between text-sm mb-2">
+                      <span className="text-slate-600">Progress: ${emergencyFund.current.toFixed(2)} / ${emergencyFund.target.toFixed(2)}</span>
+                      <span className="font-bold text-emerald-600">{((emergencyFund.current / emergencyFund.target) * 100).toFixed(0)}%</span>
+                    </div>
+                    <div className="h-6 bg-slate-100 rounded-full overflow-hidden">
+                      <div 
+                        className="h-full bg-gradient-to-r from-emerald-500 to-emerald-600 transition-all duration-500"
+                        style={{ width: `${Math.min((emergencyFund.current / emergencyFund.target) * 100, 100)}%` }}
+                      />
+                    </div>
+                  </div>
+                  <p className="text-sm text-slate-600">
+                    {emergencyFund.current >= emergencyFund.target 
+                      ? '🎉 Goal reached!' 
+                      : `$${(emergencyFund.target - emergencyFund.current).toFixed(2)} to go`}
+                  </p>
+                </>
+              ) : (
+                <p className="text-slate-500 text-center py-4">Set your emergency fund goal to start tracking</p>
+              )}
+            </div>
+
+            {/* Debt Payoff Calculator */}
+            <div className="bg-white rounded-2xl shadow-xl p-6 mb-6">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-xl font-bold">Debt Payoff Tracker</h3>
+                <button 
+                  type="button"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    const name = window.prompt('Debt name (e.g., Credit Card):');
+                    if (!name) return;
+                    const balance = window.prompt('Current balance:');
+                    if (!balance) return;
+                    const rate = window.prompt('Interest rate % (e.g., 18.5):');
+                    if (!rate) return;
+                    const payment = window.prompt('Monthly payment:');
+                    if (!payment) return;
+                    
+                    const debt = {
+                      id: Date.now(),
+                      name,
+                      balance: parseFloat(balance),
+                      rate: parseFloat(rate),
+                      payment: parseFloat(payment)
+                    };
+                    const updated = [...debtPayoff, debt];
+                    setDebtPayoff(updated);
+                    localStorage.setItem('debtPayoff', JSON.stringify(updated));
+                  }}
+                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-sm font-semibold transition-colors"
+                >
+                  Add Debt
+                </button>
+              </div>
+              {debtPayoff.length > 0 ? (
+                <div className="space-y-3">
+                  {debtPayoff.map(debt => {
+                    const monthsToPayoff = Math.ceil(debt.balance / debt.payment);
+                    const totalInterest = (debt.payment * monthsToPayoff) - debt.balance;
+                    return (
+                      <div key={debt.id} className="p-4 bg-slate-50 rounded-xl">
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="font-semibold">{debt.name}</span>
+                          <button 
+                            type="button"
+                            onClick={(e) => {
+                              e.preventDefault();
+                              const updated = debtPayoff.filter(d => d.id !== debt.id);
+                              setDebtPayoff(updated);
+                              localStorage.setItem('debtPayoff', JSON.stringify(updated));
+                            }}
+                            className="text-red-600 hover:bg-red-50 p-1 rounded transition-colors"
+                          >
+                            <X size={16} />
+                          </button>
+                        </div>
+                        <p className="text-sm text-slate-600">Balance: ${debt.balance.toFixed(2)} @ {debt.rate}%</p>
+                        <p className="text-sm text-slate-600">Payment: ${debt.payment.toFixed(2)}/mo</p>
+                        <p className="text-sm font-semibold text-emerald-600 mt-2">
+                          Payoff: {monthsToPayoff} months | Interest: ${totalInterest.toFixed(2)}
+                        </p>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <p className="text-slate-500 text-center py-4">Add debts to track payoff timeline</p>
+              )}
+            </div>
+
+            {/* Export Section */}
+            <div className="bg-white rounded-2xl shadow-xl p-6">
+              <h3 className="text-xl font-bold mb-4">Export Reports</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <button 
+                  type="button"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    const csv = `PayPlan Pro Export - ${new Date().toLocaleDateString()}\n\n` +
+                      `Monthly Income,$${overview.monthlyIncome.toFixed(2)}\n` +
+                      `Monthly Expenses,$${overview.totalMonthly.toFixed(2)}\n` +
+                      `Net Savings,$${overview.leftover.toFixed(2)}\n\n` +
+                      `Bills:\nName,Amount,Due Date,Frequency\n` +
+                      bills.map(b => `${b.name},$${b.amount},${b.dueDate},${b.frequency}`).join('\n');
+                    const blob = new Blob([csv], { type: 'text/csv' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `payplan-export-${Date.now()}.csv`;
+                    a.click();
+                    URL.revokeObjectURL(url);
+                  }}
+                  className="px-6 py-4 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-semibold transition-colors"
+                >
+                  📊 Export CSV
+                </button>
+                <button 
+                  type="button"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    const data = { bills, assets, oneTimeBills, paySchedule, emergencyFund, debtPayoff, propaneFills };
+                    const json = JSON.stringify(data, null, 2);
+                    const blob = new Blob([json], { type: 'application/json' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `payplan-backup-${Date.now()}.json`;
+                    a.click();
+                    URL.revokeObjectURL(url);
+                  }}
+                  className="px-6 py-4 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-semibold transition-colors"
+                >
+                  💾 Backup JSON
+                </button>
+              </div>
+            </div>
           </div>
         )}
 
