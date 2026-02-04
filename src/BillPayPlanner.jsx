@@ -1870,14 +1870,9 @@ const BillPayPlanner = () => {
                   {/* First Paycheck Bills - in a card */}
                   <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-6">
                     <div className="flex items-center justify-between mb-2 cursor-pointer" onClick={() => setCollapseCheck1(!collapseCheck1)}>
-                      <h3 className="text-2xl font-bold text-white flex items-center gap-2 flex-wrap">
+                      <h3 className="text-2xl font-bold text-white flex items-center gap-2">
                         <DollarSign size={24} />
-                        <span>First Paycheck Bills</span>
-                        {assignments.payDates[0] && (
-                          <span className="text-lg font-normal text-emerald-300">
-                            (Pay Date: {formatDate(assignments.payDates[0])})
-                          </span>
-                        )}
+                        {assignments.payDates[0] && formatDate(assignments.payDates[0])}
                       </h3>
                       <ChevronRight size={24} className={`text-white transition-transform ${collapseCheck1 ? '' : 'rotate-90'}`} />
                     </div>
@@ -2007,14 +2002,9 @@ const BillPayPlanner = () => {
                 {/* Second Paycheck Bills - in a card */}
                 <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-6">
                   <div className="flex items-center justify-between mb-2 cursor-pointer" onClick={() => setCollapseCheck2(!collapseCheck2)}>
-                    <h3 className="text-2xl font-bold text-white flex items-center gap-2 flex-wrap">
+                    <h3 className="text-2xl font-bold text-white flex items-center gap-2">
                       <DollarSign size={24} />
-                      <span>Second Paycheck Bills</span>
-                      {assignments.payDates[1] && (
-                        <span className="text-lg font-normal text-blue-300">
-                          (Pay Date: {formatDate(assignments.payDates[1])})
-                        </span>
-                      )}
+                      {assignments.payDates[1] && formatDate(assignments.payDates[1])}
                     </h3>
                     <ChevronRight size={24} className={`text-white transition-transform ${collapseCheck2 ? '' : 'rotate-90'}`} />
                   </div>
@@ -2173,23 +2163,37 @@ const BillPayPlanner = () => {
               // Use existing assignment logic for first 2 checks
               const assignments = getPaycheckAssignments();
               
-              // Calculate 3rd check assignments manually
+              // Calculate 3rd check assignments
               const check3Bills = [];
               const check2Date = paychecks[1];
               const check3Date = paychecks[2];
               
               bills.forEach(bill => {
+                if (bill.payFromCheck === 'check1' || bill.payFromCheck === 'check2') return;
+                
                 const dueDay = parseInt(bill.dueDate);
+                const check2Month = check2Date.getMonth();
+                const check2Year = check2Date.getFullYear();
                 const check3Month = check3Date.getMonth();
                 const check3Year = check3Date.getFullYear();
                 
-                let billDue = new Date(check3Year, check3Month, dueDay);
-                if (dueDay < check3Date.getDate()) {
-                  billDue.setMonth(billDue.getMonth() + 1);
+                // Bill due date for check2's month
+                let billDueCheck2Month = new Date(check2Year, check2Month, dueDay);
+                if (dueDay < check2Date.getDate()) {
+                  billDueCheck2Month.setMonth(billDueCheck2Month.getMonth() + 1);
                 }
                 
-                // If due after check2 and before/at a reasonable window after check3
-                if (billDue > check2Date && !bill.payFromCheck) {
+                // Bill due date for check3's month  
+                let billDueCheck3Month = new Date(check3Year, check3Month, dueDay);
+                if (dueDay < check3Date.getDate()) {
+                  billDueCheck3Month.setMonth(billDueCheck3Month.getMonth() + 1);
+                }
+                
+                // If bill is NOT in check2's window, it goes to check3
+                const inCheck2Window = billDueCheck2Month > check2Date && billDueCheck2Month <= check3Date;
+                const inCheck3Window = billDueCheck3Month > check2Date;
+                
+                if (!inCheck2Window && inCheck3Window) {
                   check3Bills.push(bill);
                 }
               });
