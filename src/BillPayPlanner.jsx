@@ -1409,7 +1409,7 @@ const BillPayPlanner = () => {
     };
 
     const historicalPayments = bill.historicalPayments || [];
-    const average = historicalPayments.length > 0
+    the average = historicalPayments.length > 0
       ? historicalPayments.reduce((sum, p) => sum + parseFloat(p.amount), 0) / historicalPayments.length
       : 0;
 
@@ -1722,6 +1722,507 @@ const BillPayPlanner = () => {
           </button>
         </div>
 
+        {/* Bills View */}
+        {view === 'bills' && (
+          <div>
+            {/*
+              Use the NEXT paycheck month for the Monthly header.
+              If no pay schedule, fall back to the current month.
+            */}
+            {(() => {
+              const billAssignments = getPaycheckAssignments();
+              const headerAnchor = billAssignments.payDates?.[0] || new Date();
+              const headerLabel = headerAnchor.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+
+              return (
+                <>
+                  <div className="flex items-center justify-between mb-6">
+                    <h2 className="text-2xl font-bold text-white">
+                      {billsViewMode === 'monthly'
+                        ? `${headerLabel} Bills`
+                        : 'Bill Stream'
+                      }
+                    </h2>
+                    <div className="flex gap-3">
+                      <div className="flex bg-white/20 rounded-xl p-1">
+                        <button
+                          onClick={() => setBillsViewMode('monthly')}
+                          className={`px-4 py-2 rounded-lg text-sm font-semibold transition-colors ${billsViewMode === 'monthly'
+                            ? 'bg-white text-emerald-600'
+                            : 'text-white hover:bg-white/20'
+                            }`}
+                          title="Monthly"
+                        >
+                          Monthly
+                        </button>
+                        <button
+                          onClick={() => setBillsViewMode('stream')}
+                          className={`px-4 py-2 rounded-lg text-sm font-semibold transition-colors ${billsViewMode === 'stream'
+                            ? 'bg-white text-emerald-600'
+                            : 'text-white hover:bg-white/20'
+                            }`}
+                          title="Stream"
+                        >
+                          Stream
+                        </button>
+                      </div>
+                      {billsViewMode === 'monthly' && (
+                        <button
+                          onClick={resetMonthlyBills}
+                          className="px-6 py-3 bg-white/20 hover:bg-white/30 text-white rounded-xl font-semibold shadow-lg transition-colors flex items-center gap-2"
+                          title="Reset current month"
+                        >
+                          <RefreshCw size={20} />
+                          Reset Month
+                        </button>
+                      )}
+                      <button
+                        onClick={exportUpcomingICS}
+                        className="px-6 py-3 bg-white/20 hover:bg-white/30 text-white rounded-xl font-semibold shadow-lg transition-colors flex items-center gap-2"
+                        title="Export upcoming bills to calendar (.ics)"
+                      >
+                        <Calendar size={20} />
+                        Export ICS
+                      </button>
+                      <button
+                        onClick={() => setShowBillForm(true)}
+                        className="px-6 py-3 bg-white hover:bg-emerald-50 text-emerald-600 rounded-xl font-semibold shadow-lg transition-colors flex items-center gap-2"
+                        title="Add bill"
+                      >
+                        <Plus size={20} />
+                        Add Bill
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Monthly Checklist View */}
+                  {billsViewMode === 'monthly' && bills.length > 0 && (() => {
+                    const assignments = billAssignments; // reuse
+                    const formatDate = (date) => {
+                      if (!date) return '';
+                      const d = new Date(date);
+                      return d.toLocaleDateString('en-US', {
+                        month: 'short',
+                        day: 'numeric',
+                        timeZone: 'UTC'
+                      });
+                    };
+
+                    return (
+                      <div className="space-y-6">
+                        {/* First Paycheck Bills */}
+                        <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-6">
+                          <div className="flex items-center justify-between mb-2 cursor-pointer" onClick={() => setCollapseCheck1(!collapseCheck1)}>
+                            <h3 className="text-2xl font-bold text-white flex items-center gap-2">
+                              <DollarSign size={24} />
+                              {assignments.payDates[0] && formatDate(assignments.payDates[0])}
+                            </h3>
+                            <ChevronRight size={24} className={`text-white transition-transform ${collapseCheck1 ? '' : 'rotate-90'}`} />
+                          </div>
+                          {!collapseCheck1 && (
+                            <>
+                              <p className="text-white/70 text-sm mb-6">
+                                Bills to pay with your next paycheck
+                              </p>
+                              <div className="grid grid-cols-1 gap-4">
+                                {assignments.check1.map(bill => (
+                                  <div key={bill.id} className="bg-white rounded-xl shadow-lg p-4">
+                                    <div className="flex items-start gap-3">
+                                      <button
+                                        onClick={() => togglePaid(bill.id)}
+                                        className={`p-2 rounded-lg transition-colors flex-shrink-0 ${bill.paidThisMonth
+                                          ? 'bg-green-500 text-white'
+                                          : 'bg-slate-100 text-slate-400 hover:bg-slate-200'
+                                          }`}
+                                        title={bill.paidThisMonth ? 'Mark unpaid' : 'Mark paid'}
+                                      >
+                                        <Check size={20} />
+                                      </button>
+
+                                      <div className="flex-1 min-w-0">
+                                        <div className="flex items-center gap-2 mb-2 flex-wrap">
+                                          <h3 className={`text-lg font-bold ${bill.paidThisMonth ? 'text-green-600 line-through' : 'text-slate-800'}`}>
+                                            {bill.name}
+                                          </h3>
+                                          {bill.isVariable && (
+                                            <span className="px-2 py-1 bg-yellow-100 text-yellow-700 text-xs font-bold rounded-full">
+                                              VARIABLE
+                                            </span>
+                                          )}
+                                          {bill.autopay && (
+                                            <span className="px-2 py-1 bg-blue-100 text-blue-700 text-xs font-bold rounded-full">
+                                              AUTO-PAY
+                                            </span>
+                                          )}
+                                          {bill.reminderDays > 0 && (
+                                            <span className="px-2 py-1 bg-emerald-100 text-emerald-700 text-xs font-bold rounded-full">
+                                              REMIND {bill.reminderDays}d
+                                            </span>
+                                          )}
+                                        </div>
+
+                                        <div className="flex flex-wrap gap-3 text-sm text-slate-600">
+                                          <span className="flex items-center gap-1">
+                                            <DollarSign size={14} />
+                                            ${bill.amount}
+                                          </span>
+                                          <span className="flex items-center gap-1">
+                                            <Calendar size={14} />
+                                            Due: Day {bill.dueDate}
+                                          </span>
+                                          <span className="flex items-center gap-1">
+                                            <Clock size={14} />
+                                            {bill.frequency}
+                                          </span>
+                                        </div>
+                                      </div>
+
+                                      <div className="flex gap-2 flex-shrink-0">
+                                        {!bill.autopay && bill.payFromCheck === 'auto' && parseInt(bill.dueDate) > (assignments.payDates[0]?.getDate() || 0) && (
+                                          <button
+                                            onClick={() => {
+                                              const updated = bills.map(b =>
+                                                b.id === bill.id ? { ...b, payFromCheck: 'check2' } : b
+                                              );
+                                              setBills(updated);
+                                              localStorage.setItem('bills', JSON.stringify(updated));
+                                            }}
+                                            className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                                            title="Move to Check 2 (Pay Later)"
+                                          >
+                                            <ChevronRight size={16} />
+                                          </button>
+                                        )}
+                                        {bill.payFromCheck === 'check1' && (
+                                          <button
+                                            onClick={() => {
+                                              const updated = bills.map(b =>
+                                                b.id === bill.id ? { ...b, payFromCheck: 'auto' } : b
+                                              );
+                                              setBills(updated);
+                                              localStorage.setItem('bills', JSON.stringify(updated));
+                                            }}
+                                            className="p-2 text-slate-600 hover:bg-slate-50 rounded-lg transition-colors"
+                                            title="Reset to Auto"
+                                          >
+                                            <RefreshCw size={16} />
+                                          </button>
+                                        )}
+                                        {bill.isVariable && (
+                                          <button
+                                            onClick={() => setShowHistoricalForm(bill)}
+                                            className="p-2 text-purple-600 hover:bg-purple-50 rounded-lg transition-colors"
+                                            title="View payment history"
+                                          >
+                                            <BarChart3 size={16} />
+                                          </button>
+                                        )}
+                                        <button
+                                          onClick={() => setEditingBill(bill)}
+                                          className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                                          title="Edit bill"
+                                        >
+                                          <Edit2 size={16} />
+                                        </button>
+                                        <button
+                                          onClick={() => {
+                                            if (confirm(`Delete ${bill.name}?`)) {
+                                              deleteBill(bill.id);
+                                            }
+                                          }}
+                                          className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                                          title="Delete bill"
+                                        >
+                                          <Trash2 size={16} />
+                                        </button>
+                                      </div>
+                                    </div>
+                                  </div>
+                                ))}
+                                {assignments.check1.length === 0 && (
+                                  <p className="text-white/70 text-center py-8 text-sm">No bills due before your next paycheck</p>
+                                )}
+                              </div>
+                            </>
+                          )}
+                        </div>
+
+                        {/* Second Paycheck Bills */}
+                        <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-6">
+                          <div className="flex items-center justify-between mb-2 cursor-pointer" onClick={() => setCollapseCheck2(!collapseCheck2)}>
+                            <h3 className="text-2xl font-bold text-white flex items-center gap-2">
+                              <DollarSign size={24} />
+                              {assignments.payDates[1] && formatDate(assignments.payDates[1])}
+                            </h3>
+                            <ChevronRight size={24} className={`text-white transition-transform ${collapseCheck2 ? '' : 'rotate-90'}`} />
+                          </div>
+                          {!collapseCheck2 && (
+                            <>
+                              <p className="text-white/70 text-sm mb-6">
+                                Bills to pay with your following paycheck
+                              </p>
+                              <div className="grid grid-cols-1 gap-4">
+                                {assignments.check2.map(bill => (
+                                  <div key={bill.id} className="bg-white rounded-xl shadow-lg p-4">
+                                    <div className="flex items-start gap-3">
+                                      <button
+                                        onClick={() => togglePaid(bill.id)}
+                                        className={`p-2 rounded-lg transition-colors flex-shrink-0 ${bill.paidThisMonth
+                                          ? 'bg-green-500 text-white'
+                                          : 'bg-slate-100 text-slate-400 hover:bg-slate-200'
+                                          }`}
+                                        title={bill.paidThisMonth ? 'Mark unpaid' : 'Mark paid'}
+                                      >
+                                        <Check size={20} />
+                                      </button>
+
+                                      <div className="flex-1 min-w-0">
+                                        <div className="flex items-center gap-2 mb-2 flex-wrap">
+                                          <h3 className={`text-lg font-bold ${bill.paidThisMonth ? 'text-green-600 line-through' : 'text-slate-800'}`}>
+                                            {bill.name}
+                                          </h3>
+                                          {bill.isVariable && (
+                                            <span className="px-2 py-1 bg-yellow-100 text-yellow-700 text-xs font-bold rounded-full">
+                                              VARIABLE
+                                            </span>
+                                          )}
+                                          {bill.autopay && (
+                                            <span className="px-2 py-1 bg-blue-100 text-blue-700 text-xs font-bold rounded-full">
+                                              AUTO-PAY
+                                            </span>
+                                          )}
+                                          {bill.reminderDays > 0 && (
+                                            <span className="px-2 py-1 bg-emerald-100 text-emerald-700 text-xs font-bold rounded-full">
+                                              REMIND {bill.reminderDays}d
+                                            </span>
+                                          )}
+                                        </div>
+
+                                        <div className="flex flex-wrap gap-3 text-sm text-slate-600">
+                                          <span className="flex items-center gap-1">
+                                            <DollarSign size={14} />
+                                            ${bill.amount}
+                                          </span>
+                                          <span className="flex items-center gap-1">
+                                            <Calendar size={14} />
+                                            Due: Day {bill.dueDate}
+                                          </span>
+                                          <span className="flex items-center gap-1">
+                                            <Clock size={14} />
+                                            {bill.frequency}
+                                          </span>
+                                        </div>
+                                      </div>
+
+                                      <div className="flex gap-2 flex-shrink-0">
+                                        {!bill.autopay && bill.payFromCheck === 'auto' && parseInt(bill.dueDate) > (assignments.payDates[0]?.getDate() || 0) && (
+                                          <button
+                                            onClick={() => {
+                                              const updated = bills.map(b =>
+                                                b.id === bill.id ? { ...b, payFromCheck: 'check1' } : b
+                                              );
+                                              setBills(updated);
+                                              localStorage.setItem('bills', JSON.stringify(updated));
+                                            }}
+                                            className="p-2 text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors"
+                                            title="Move to Check 1 (Pay Early)"
+                                          >
+                                            <ChevronLeft size={16} />
+                                          </button>
+                                        )}
+                                        {bill.payFromCheck === 'check2' && (
+                                          <button
+                                            onClick={() => {
+                                              const updated = bills.map(b =>
+                                                b.id === bill.id ? { ...b, payFromCheck: 'auto' } : b
+                                              );
+                                              setBills(updated);
+                                              localStorage.setItem('bills', JSON.stringify(updated));
+                                            }}
+                                            className="p-2 text-slate-600 hover:bg-slate-50 rounded-lg transition-colors"
+                                            title="Reset to Auto"
+                                          >
+                                            <RefreshCw size={16} />
+                                          </button>
+                                        )}
+                                        {bill.isVariable && (
+                                          <button
+                                            onClick={() => setShowHistoricalForm(bill)}
+                                            className="p-2 text-purple-600 hover:bg-purple-50 rounded-lg transition-colors"
+                                            title="View payment history"
+                                          >
+                                            <BarChart3 size={16} />
+                                          </button>
+                                        )}
+                                        <button
+                                          onClick={() => setEditingBill(bill)}
+                                          className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                                          title="Edit bill"
+                                        >
+                                          <Edit2 size={16} />
+                                        </button>
+                                        <button
+                                          onClick={() => {
+                                            if (confirm(`Delete ${bill.name}?`)) {
+                                              deleteBill(bill.id);
+                                            }
+                                          }}
+                                          className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                                          title="Delete bill"
+                                        >
+                                          <Trash2 size={16} />
+                                        </button>
+                                      </div>
+                                    </div>
+                                  </div>
+                                ))}
+                                {assignments.check2.length === 0 && (
+                                  <p className="text-white/70 text-center py-8 text-sm">No bills due before your second paycheck</p>
+                                )}
+                              </div>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })()}
+
+                  {/* Bill Stream View */}
+                  {billsViewMode === 'stream' && bills.length > 0 && (() => {
+                    if (!paySchedule || !paySchedule.nextPayDate) {
+                      return (
+                        <div className="bg-white rounded-2xl shadow-xl p-8 text-center">
+                          <p className="text-slate-600">Set up your pay schedule first to see bill stream</p>
+                        </div>
+                      );
+                    }
+
+                    // Reuse assignments for first two checks; compute third from anchor
+                    const assignments = billAssignments;
+                    const paychecks = [];
+                    let currentDate = new Date(paySchedule.nextPayDate);
+                    for (let i = 0; i < 3; i++) {
+                      paychecks.push(new Date(currentDate));
+                      switch (paySchedule.frequency) {
+                        case 'weekly': currentDate.setDate(currentDate.getDate() + 7); break;
+                        case 'biweekly': currentDate.setDate(currentDate.getDate() + 14); break;
+                        case 'semimonthly':
+                          currentDate.setDate(currentDate.getDate() <= 15 ? 15 : 1);
+                          if (currentDate.getDate() === 1) currentDate.setMonth(currentDate.getMonth() + 1);
+                          break;
+                        case 'monthly': currentDate.setMonth(currentDate.getMonth() + 1); break;
+                      }
+                    }
+
+                    const check3Bills = [];
+                    const check2Date = paychecks[1];
+                    const check3Date = paychecks[2];
+
+                    bills.forEach(bill => {
+                      if (bill.payFromCheck === 'check1' || bill.payFromCheck === 'check2') return;
+
+                      const dueDay = parseInt(bill.dueDate);
+                      const check2Month = check2Date.getMonth();
+                      const check2Year = check2Date.getFullYear();
+                      const check3Month = check3Date.getMonth();
+                      const check3Year = check3Date.getFullYear();
+
+                      let billDueCheck2Month = new Date(check2Year, check2Month, dueDay);
+                      if (dueDay < check2Date.getDate()) {
+                        billDueCheck2Month.setMonth(billDueCheck2Month.getMonth() + 1);
+                      }
+
+                      let billDueCheck3Month = new Date(check3Year, check3Month, dueDay);
+                      if (dueDay < check3Date.getDate()) {
+                        billDueCheck3Month.setMonth(billDueCheck3Month.getMonth() + 1);
+                      }
+
+                      const inCheck2Window = billDueCheck2Month > check2Date && billDueCheck2Month <= check3Date;
+                      const inCheck3Window = billDueCheck3Month > check2Date;
+
+                      if (!inCheck2Window && inCheck3Window) {
+                        check3Bills.push(bill);
+                      }
+                    });
+
+                    const streamData = [
+                      { paycheck: paychecks[0], bills: assignments.check1 },
+                      { paycheck: paychecks[1], bills: assignments.check2 },
+                      { paycheck: paychecks[2], bills: check3Bills }
+                    ];
+
+                    return (
+                      <div className="space-y-6">
+                        {streamData.map(({ paycheck, bills: assignedBills }, idx) => {
+                          const total = assignedBills.reduce((sum, b) => sum + parseFloat(b.amount), 0);
+                          const perCheck = parseFloat(paySchedule.payAmount);
+                          const leftover = (perCheck - perCheckEnvelopeSum()) - total;
+
+                          return (
+                            <div key={idx} className="bg-white/10 backdrop-blur-sm rounded-2xl p-6">
+                              <div className="flex items-center justify-between mb-4">
+                                <h3 className="text-2xl font-bold text-white">
+                                  {paycheck.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                                </h3>
+                                <div className="text-right">
+                                  <p className="text-white/70 text-sm">Bills: ${total.toFixed(2)}</p>
+                                  <p className={`text-lg font-bold ${leftover >= 0 ? 'text-emerald-300' : 'text-red-300'}`}>
+                                    Free after envelopes: ${leftover.toFixed(2)}
+                                  </p>
+                                </div>
+                              </div>
+                              <div className="grid grid-cols-1 gap-3">
+                                {assignedBills.map(bill => (
+                                  <div key={bill.id + (bill.effectiveDueDate || bill.nextDueDate)} className="bg-white rounded-xl p-4 flex items-center gap-3">
+                                    <button
+                                      onClick={() => togglePaid(bill.id)}
+                                      className={`p-2 rounded-lg transition-colors flex-shrink-0 ${bill.paidThisMonth
+                                        ? 'bg-green-500 text-white'
+                                        : 'bg-slate-100 text-slate-400 hover:bg-slate-200'
+                                        }`}
+                                      title={bill.paidThisMonth ? 'Mark unpaid' : 'Mark paid'}
+                                    >
+                                      <Check size={20} />
+                                    </button>
+                                    <div className="flex-1">
+                                      <p className={`font-semibold ${bill.paidThisMonth ? 'line-through text-green-600' : 'text-slate-800'}`}>
+                                        {bill.name}
+                                      </p>
+                                      <p className="text-sm text-slate-600">
+                                        {new Date(bill.effectiveDueDate || bill.nextDueDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                                      </p>
+                                    </div>
+                                    <div className="flex items-center gap-3">
+                                      <p className="text-lg font-bold text-slate-800">${bill.amount}</p>
+                                      {bill.autopay && (
+                                        <span className="px-2 py-1 bg-blue-100 text-blue-700 text-xs font-bold rounded">AUTO</span>
+                                      )}
+                                      <button
+                                        onClick={() => setEditingBill(bill)}
+                                        className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                                        title="Edit bill"
+                                      >
+                                        <Edit2 size={16} />
+                                      </button>
+                                    </div>
+                                  </div>
+                                ))}
+                                {assignedBills.length === 0 && (
+                                  <p className="text-white/70 text-center py-4 text-sm">No bills due before next paycheck</p>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    );
+                  })()}
+                </>
+              );
+            })()}
+          </div>
+        )}
+
         {/* Dashboard View */}
         {view === 'dashboard' && (
           <div>
@@ -1943,615 +2444,6 @@ const BillPayPlanner = () => {
                   )}
                 </div>
               </div>
-            </div>
-          </div>
-        )}
-
-        {/* Bills View */}
-        {view === 'bills' && (
-          <div>
-            <div className="flex items-center justify-between mb-6">
-              <h2 className="text-2xl font-bold text-white">
-                {billsViewMode === 'monthly'
-                  ? new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) + ' Bills'
-                  : 'Bill Stream'
-                }
-              </h2>
-              <div className="flex gap-3">
-                <div className="flex bg-white/20 rounded-xl p-1">
-                  <button
-                    onClick={() => setBillsViewMode('monthly')}
-                    className={`px-4 py-2 rounded-lg text-sm font-semibold transition-colors ${billsViewMode === 'monthly'
-                      ? 'bg-white text-emerald-600'
-                      : 'text-white hover:bg-white/20'
-                      }`}
-                    title="Monthly"
-                  >
-                    Monthly
-                  </button>
-                  <button
-                    onClick={() => setBillsViewMode('stream')}
-                    className={`px-4 py-2 rounded-lg text-sm font-semibold transition-colors ${billsViewMode === 'stream'
-                      ? 'bg-white text-emerald-600'
-                      : 'text-white hover:bg-white/20'
-                      }`}
-                    title="Stream"
-                  >
-                    Stream
-                  </button>
-                </div>
-                {billsViewMode === 'monthly' && (
-                  <button
-                    onClick={resetMonthlyBills}
-                    className="px-6 py-3 bg-white/20 hover:bg-white/30 text-white rounded-xl font-semibold shadow-lg transition-colors flex items-center gap-2"
-                    title="Reset current month"
-                  >
-                    <RefreshCw size={20} />
-                    Reset Month
-                  </button>
-                )}
-                <button
-                  onClick={exportUpcomingICS}
-                  className="px-6 py-3 bg-white/20 hover:bg-white/30 text-white rounded-xl font-semibold shadow-lg transition-colors flex items-center gap-2"
-                  title="Export upcoming bills to calendar (.ics)"
-                >
-                  <Calendar size={20} />
-                  Export ICS
-                </button>
-                <button
-                  onClick={() => setShowBillForm(true)}
-                  className="px-6 py-3 bg-white hover:bg-emerald-50 text-emerald-600 rounded-xl font-semibold shadow-lg transition-colors flex items-center gap-2"
-                  title="Add bill"
-                >
-                  <Plus size={20} />
-                  Add Bill
-                </button>
-              </div>
-            </div>
-
-            {/* Monthly Checklist View */}
-            {billsViewMode === 'monthly' && bills.length > 0 && (() => {
-              const assignments = getPaycheckAssignments();
-              const formatDate = (date) => {
-                if (!date) return '';
-                const d = new Date(date);
-                return d.toLocaleDateString('en-US', {
-                  month: 'short',
-                  day: 'numeric',
-                  timeZone: 'UTC'
-                });
-              };
-
-              return (
-                <div className="space-y-6">
-                  {/* First Paycheck Bills */}
-                  <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-6">
-                    <div className="flex items-center justify-between mb-2 cursor-pointer" onClick={() => setCollapseCheck1(!collapseCheck1)}>
-                      <h3 className="text-2xl font-bold text-white flex items-center gap-2">
-                        <DollarSign size={24} />
-                        {assignments.payDates[0] && formatDate(assignments.payDates[0])}
-                      </h3>
-                      <ChevronRight size={24} className={`text-white transition-transform ${collapseCheck1 ? '' : 'rotate-90'}`} />
-                    </div>
-                    {!collapseCheck1 && (
-                      <>
-                        <p className="text-white/70 text-sm mb-6">
-                          Bills to pay with your next paycheck
-                        </p>
-                        <div className="grid grid-cols-1 gap-4">
-                          {assignments.check1.map(bill => (
-                            <div key={bill.id} className="bg-white rounded-xl shadow-lg p-4">
-                              <div className="flex items-start gap-3">
-                                <button
-                                  onClick={() => togglePaid(bill.id)}
-                                  className={`p-2 rounded-lg transition-colors flex-shrink-0 ${bill.paidThisMonth
-                                    ? 'bg-green-500 text-white'
-                                    : 'bg-slate-100 text-slate-400 hover:bg-slate-200'
-                                    }`}
-                                  title={bill.paidThisMonth ? 'Mark unpaid' : 'Mark paid'}
-                                >
-                                  <Check size={20} />
-                                </button>
-
-                                <div className="flex-1 min-w-0">
-                                  <div className="flex items-center gap-2 mb-2 flex-wrap">
-                                    <h3 className={`text-lg font-bold ${bill.paidThisMonth ? 'text-green-600 line-through' : 'text-slate-800'}`}>
-                                      {bill.name}
-                                    </h3>
-                                    {bill.isVariable && (
-                                      <span className="px-2 py-1 bg-yellow-100 text-yellow-700 text-xs font-bold rounded-full">
-                                        VARIABLE
-                                      </span>
-                                    )}
-                                    {bill.autopay && (
-                                      <span className="px-2 py-1 bg-blue-100 text-blue-700 text-xs font-bold rounded-full">
-                                        AUTO-PAY
-                                      </span>
-                                    )}
-                                    {bill.reminderDays > 0 && (
-                                      <span className="px-2 py-1 bg-emerald-100 text-emerald-700 text-xs font-bold rounded-full">
-                                        REMIND {bill.reminderDays}d
-                                      </span>
-                                    )}
-                                  </div>
-
-                                  <div className="flex flex-wrap gap-3 text-sm text-slate-600">
-                                    <span className="flex items-center gap-1">
-                                      <DollarSign size={14} />
-                                      ${bill.amount}
-                                    </span>
-                                    <span className="flex items-center gap-1">
-                                      <Calendar size={14} />
-                                      Due: Day {bill.dueDate}
-                                    </span>
-                                    <span className="flex items-center gap-1">
-                                      <Clock size={14} />
-                                      {bill.frequency}
-                                    </span>
-                                  </div>
-                                </div>
-
-                                <div className="flex gap-2 flex-shrink-0">
-                                  {!bill.autopay && bill.payFromCheck === 'auto' && parseInt(bill.dueDate) > (assignments.payDates[0]?.getDate() || 0) && (
-                                    <button
-                                      onClick={() => {
-                                        const updated = bills.map(b =>
-                                          b.id === bill.id ? { ...b, payFromCheck: 'check2' } : b
-                                        );
-                                        setBills(updated);
-                                        localStorage.setItem('bills', JSON.stringify(updated));
-                                      }}
-                                      className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                                      title="Move to Check 2 (Pay Later)"
-                                    >
-                                      <ChevronRight size={16} />
-                                    </button>
-                                  )}
-                                  {bill.payFromCheck === 'check1' && (
-                                    <button
-                                      onClick={() => {
-                                        const updated = bills.map(b =>
-                                          b.id === bill.id ? { ...b, payFromCheck: 'auto' } : b
-                                        );
-                                        setBills(updated);
-                                        localStorage.setItem('bills', JSON.stringify(updated));
-                                      }}
-                                      className="p-2 text-slate-600 hover:bg-slate-50 rounded-lg transition-colors"
-                                      title="Reset to Auto"
-                                    >
-                                      <RefreshCw size={16} />
-                                    </button>
-                                  )}
-                                  {bill.isVariable && (
-                                    <button
-                                      onClick={() => setShowHistoricalForm(bill)}
-                                      className="p-2 text-purple-600 hover:bg-purple-50 rounded-lg transition-colors"
-                                      title="View payment history"
-                                    >
-                                      <BarChart3 size={16} />
-                                    </button>
-                                  )}
-                                  <button
-                                    onClick={() => setEditingBill(bill)}
-                                    className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                                    title="Edit bill"
-                                  >
-                                    <Edit2 size={16} />
-                                  </button>
-                                  <button
-                                    onClick={() => {
-                                      if (confirm(`Delete ${bill.name}?`)) {
-                                        deleteBill(bill.id);
-                                      }
-                                    }}
-                                    className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                                    title="Delete bill"
-                                  >
-                                    <Trash2 size={16} />
-                                  </button>
-                                </div>
-                              </div>
-                            </div>
-                          ))}
-                          {assignments.check1.length === 0 && (
-                            <p className="text-white/70 text-center py-8 text-sm">No bills due before your next paycheck</p>
-                          )}
-                        </div>
-                      </>
-                    )}
-                  </div>
-
-                  {/* Second Paycheck Bills */}
-                  <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-6">
-                    <div className="flex items-center justify-between mb-2 cursor-pointer" onClick={() => setCollapseCheck2(!collapseCheck2)}>
-                      <h3 className="text-2xl font-bold text-white flex items-center gap-2">
-                        <DollarSign size={24} />
-                        {assignments.payDates[1] && formatDate(assignments.payDates[1])}
-                      </h3>
-                      <ChevronRight size={24} className={`text-white transition-transform ${collapseCheck2 ? '' : 'rotate-90'}`} />
-                    </div>
-                    {!collapseCheck2 && (
-                      <>
-                        <p className="text-white/70 text-sm mb-6">
-                          Bills to pay with your following paycheck
-                        </p>
-                        <div className="grid grid-cols-1 gap-4">
-                          {assignments.check2.map(bill => (
-                            <div key={bill.id} className="bg-white rounded-xl shadow-lg p-4">
-                              <div className="flex items-start gap-3">
-                                <button
-                                  onClick={() => togglePaid(bill.id)}
-                                  className={`p-2 rounded-lg transition-colors flex-shrink-0 ${bill.paidThisMonth
-                                    ? 'bg-green-500 text-white'
-                                    : 'bg-slate-100 text-slate-400 hover:bg-slate-200'
-                                    }`}
-                                  title={bill.paidThisMonth ? 'Mark unpaid' : 'Mark paid'}
-                                >
-                                  <Check size={20} />
-                                </button>
-
-                                <div className="flex-1 min-w-0">
-                                  <div className="flex items-center gap-2 mb-2 flex-wrap">
-                                    <h3 className={`text-lg font-bold ${bill.paidThisMonth ? 'text-green-600 line-through' : 'text-slate-800'}`}>
-                                      {bill.name}
-                                    </h3>
-                                    {bill.isVariable && (
-                                      <span className="px-2 py-1 bg-yellow-100 text-yellow-700 text-xs font-bold rounded-full">
-                                        VARIABLE
-                                      </span>
-                                    )}
-                                    {bill.autopay && (
-                                      <span className="px-2 py-1 bg-blue-100 text-blue-700 text-xs font-bold rounded-full">
-                                        AUTO-PAY
-                                      </span>
-                                    )}
-                                    {bill.reminderDays > 0 && (
-                                      <span className="px-2 py-1 bg-emerald-100 text-emerald-700 text-xs font-bold rounded-full">
-                                        REMIND {bill.reminderDays}d
-                                      </span>
-                                    )}
-                                  </div>
-
-                                  <div className="flex flex-wrap gap-3 text-sm text-slate-600">
-                                    <span className="flex items-center gap-1">
-                                      <DollarSign size={14} />
-                                      ${bill.amount}
-                                    </span>
-                                    <span className="flex items-center gap-1">
-                                      <Calendar size={14} />
-                                      Due: Day {bill.dueDate}
-                                    </span>
-                                    <span className="flex items-center gap-1">
-                                      <Clock size={14} />
-                                      {bill.frequency}
-                                    </span>
-                                  </div>
-                                </div>
-
-                                <div className="flex gap-2 flex-shrink-0">
-                                  {!bill.autopay && bill.payFromCheck === 'auto' && parseInt(bill.dueDate) > (assignments.payDates[0]?.getDate() || 0) && (
-                                    <button
-                                      onClick={() => {
-                                        const updated = bills.map(b =>
-                                          b.id === bill.id ? { ...b, payFromCheck: 'check1' } : b
-                                        );
-                                        setBills(updated);
-                                        localStorage.setItem('bills', JSON.stringify(updated));
-                                      }}
-                                      className="p-2 text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors"
-                                      title="Move to Check 1 (Pay Early)"
-                                    >
-                                      <ChevronLeft size={16} />
-                                    </button>
-                                  )}
-                                  {bill.payFromCheck === 'check2' && (
-                                    <button
-                                      onClick={() => {
-                                        const updated = bills.map(b =>
-                                          b.id === bill.id ? { ...b, payFromCheck: 'auto' } : b
-                                        );
-                                        setBills(updated);
-                                        localStorage.setItem('bills', JSON.stringify(updated));
-                                      }}
-                                      className="p-2 text-slate-600 hover:bg-slate-50 rounded-lg transition-colors"
-                                      title="Reset to Auto"
-                                    >
-                                      <RefreshCw size={16} />
-                                    </button>
-                                  )}
-                                  {bill.isVariable && (
-                                    <button
-                                      onClick={() => setShowHistoricalForm(bill)}
-                                      className="p-2 text-purple-600 hover:bg-purple-50 rounded-lg transition-colors"
-                                      title="View payment history"
-                                    >
-                                      <BarChart3 size={16} />
-                                    </button>
-                                  )}
-                                  <button
-                                    onClick={() => setEditingBill(bill)}
-                                    className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                                    title="Edit bill"
-                                  >
-                                    <Edit2 size={16} />
-                                  </button>
-                                  <button
-                                    onClick={() => {
-                                      if (confirm(`Delete ${bill.name}?`)) {
-                                        deleteBill(bill.id);
-                                      }
-                                    }}
-                                    className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                                    title="Delete bill"
-                                  >
-                                    <Trash2 size={16} />
-                                  </button>
-                                </div>
-                              </div>
-                            </div>
-                          ))}
-                          {assignments.check2.length === 0 && (
-                            <p className="text-white/70 text-center py-8 text-sm">No bills due before your second paycheck</p>
-                          )}
-                        </div>
-                      </>
-                    )}
-                  </div>
-                </div>
-              );
-            })()}
-
-            {/* Bill Stream View */}
-            {billsViewMode === 'stream' && bills.length > 0 && (() => {
-              if (!paySchedule || !paySchedule.nextPayDate) {
-                return (
-                  <div className="bg-white rounded-2xl shadow-xl p-8 text-center">
-                    <p className="text-slate-600">Set up your pay schedule first to see bill stream</p>
-                  </div>
-                );
-              }
-
-              const paychecks = [];
-              let currentDate = new Date(paySchedule.nextPayDate);
-              for (let i = 0; i < 3; i++) {
-                paychecks.push(new Date(currentDate));
-                switch (paySchedule.frequency) {
-                  case 'weekly': currentDate.setDate(currentDate.getDate() + 7); break;
-                  case 'biweekly': currentDate.setDate(currentDate.getDate() + 14); break;
-                  case 'semimonthly':
-                    currentDate.setDate(currentDate.getDate() <= 15 ? 15 : 1);
-                    if (currentDate.getDate() === 1) currentDate.setMonth(currentDate.getMonth() + 1);
-                    break;
-                  case 'monthly': currentDate.setMonth(currentDate.getMonth() + 1); break;
-                }
-              }
-
-              const assignments = getPaycheckAssignments();
-
-              const check3Bills = [];
-              const check2Date = paychecks[1];
-              const check3Date = paychecks[2];
-
-              bills.forEach(bill => {
-                if (bill.payFromCheck === 'check1' || bill.payFromCheck === 'check2') return;
-
-                const dueDay = parseInt(bill.dueDate);
-                const check2Month = check2Date.getMonth();
-                const check2Year = check2Date.getFullYear();
-                const check3Month = check3Date.getMonth();
-                const check3Year = check3Date.getFullYear();
-
-                let billDueCheck2Month = new Date(check2Year, check2Month, dueDay);
-                if (dueDay < check2Date.getDate()) {
-                  billDueCheck2Month.setMonth(billDueCheck2Month.getMonth() + 1);
-                }
-
-                let billDueCheck3Month = new Date(check3Year, check3Month, dueDay);
-                if (dueDay < check3Date.getDate()) {
-                  billDueCheck3Month.setMonth(billDueCheck3Month.getMonth() + 1);
-                }
-
-                const inCheck2Window = billDueCheck2Month > check2Date && billDueCheck2Month <= check3Date;
-                const inCheck3Window = billDueCheck3Month > check2Date;
-
-                if (!inCheck2Window && inCheck3Window) {
-                  check3Bills.push(bill);
-                }
-              });
-
-              const streamData = [
-                { paycheck: paychecks[0], bills: assignments.check1 },
-                { paycheck: paychecks[1], bills: assignments.check2 },
-                { paycheck: paychecks[2], bills: check3Bills }
-              ];
-
-              return (
-                <div className="space-y-6">
-                  {streamData.map(({ paycheck, bills: assignedBills }, idx) => {
-                    const total = assignedBills.reduce((sum, b) => sum + parseFloat(b.amount), 0);
-                    const perCheck = parseFloat(paySchedule.payAmount);
-                    const leftover = (perCheck - perCheckEnvelopeSum()) - total;
-
-                    return (
-                      <div key={idx} className="bg-white/10 backdrop-blur-sm rounded-2xl p-6">
-                        <div className="flex items-center justify-between mb-4">
-                          <h3 className="text-2xl font-bold text-white">
-                            {paycheck.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                          </h3>
-                          <div className="text-right">
-                            <p className="text-white/70 text-sm">Bills: ${total.toFixed(2)}</p>
-                            <p className={`text-lg font-bold ${leftover >= 0 ? 'text-emerald-300' : 'text-red-300'}`}>
-                              Free after envelopes: ${leftover.toFixed(2)}
-                            </p>
-                          </div>
-                        </div>
-                        <div className="grid grid-cols-1 gap-3">
-                          {assignedBills.map(bill => (
-                            <div key={bill.id + (bill.effectiveDueDate || bill.nextDueDate)} className="bg-white rounded-xl p-4 flex items-center gap-3">
-                              <button
-                                onClick={() => togglePaid(bill.id)}
-                                className={`p-2 rounded-lg transition-colors flex-shrink-0 ${bill.paidThisMonth
-                                  ? 'bg-green-500 text-white'
-                                  : 'bg-slate-100 text-slate-400 hover:bg-slate-200'
-                                  }`}
-                                title={bill.paidThisMonth ? 'Mark unpaid' : 'Mark paid'}
-                              >
-                                <Check size={20} />
-                              </button>
-                              <div className="flex-1">
-                                <p className={`font-semibold ${bill.paidThisMonth ? 'line-through text-green-600' : 'text-slate-800'}`}>
-                                  {bill.name}
-                                </p>
-                                <p className="text-sm text-slate-600">
-                                  {new Date(bill.effectiveDueDate || bill.nextDueDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                                </p>
-                              </div>
-                              <div className="flex items-center gap-3">
-                                <p className="text-lg font-bold text-slate-800">${bill.amount}</p>
-                                {bill.autopay && (
-                                  <span className="px-2 py-1 bg-blue-100 text-blue-700 text-xs font-bold rounded">AUTO</span>
-                                )}
-                                <button
-                                  onClick={() => setEditingBill(bill)}
-                                  className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                                  title="Edit bill"
-                                >
-                                  <Edit2 size={16} />
-                                </button>
-                              </div>
-                            </div>
-                          ))}
-                          {assignedBills.length === 0 && (
-                            <p className="text-white/70 text-center py-4 text-sm">No bills due before next paycheck</p>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              );
-            })()}
-
-            {bills.length === 0 && (
-              <div className="bg-white rounded-2xl shadow-xl p-12 text-center">
-                <Receipt className="mx-auto mb-4 text-slate-300" size={64} />
-                <h3 className="text-xl font-bold text-slate-800 mb-2">No Bills Yet</h3>
-                <p className="text-slate-600 mb-6">Start by adding your first recurring bill</p>
-                <button
-                  onClick={() => setShowBillForm(true)}
-                  className="px-6 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-semibold"
-                  title="Add your first bill"
-                >
-                  Add Your First Bill
-                </button>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Assets View */}
-        {view === 'assets' && (
-          <div>
-            <div className="flex items-center justify-between mb-6">
-              <h2 className="text-3xl font-black text-white">Assets & Loans</h2>
-              <button
-                onClick={() => setShowAssetForm(true)}
-                className="px-6 py-3 bg-white hover:bg-emerald-50 text-emerald-600 rounded-xl font-semibold shadow-lg transition-colors flex items-center gap-2"
-                title="Add asset"
-              >
-                <Plus size={20} />
-                Add Asset
-              </button>
-            </div>
-
-            <div className="grid grid-cols-1 gap-4">
-              {assets.map(asset => {
-                const amortization = calculateAmortization(asset);
-                return (
-                  <div key={asset.id} className="bg-white rounded-2xl shadow-xl p-6">
-                    <div className="flex items-start gap-4">
-                      <div className="p-3 bg-blue-100 rounded-xl">
-                        <Building2 className="text-blue-600" size={24} />
-                      </div>
-
-                      <div className="flex-1">
-                        <div className="flex items-center gap-3 mb-2">
-                          <h3 className="text-2xl font-bold text-slate-800">{asset.name}</h3>
-                          <span className="px-3 py-1 bg-slate-100 text-slate-700 text-xs font-bold rounded-full uppercase">
-                            {asset.type}
-                          </span>
-                        </div>
-
-                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
-                          <div>
-                            <p className="text-xs text-slate-500">Loan Amount</p>
-                            <p className="text-lg font-bold text-slate-800">${parseFloat(asset.loanAmount).toFixed(2)}</p>
-                          </div>
-                          <div>
-                            <p className="text-xs text-slate-500">Payment</p>
-                            <p className="text-lg font-bold text-slate-800">${parseFloat(asset.paymentAmount).toFixed(2)}</p>
-                          </div>
-                          <div>
-                            <p className="text-xs text-slate-500">Interest Rate</p>
-                            <p className="text-lg font-bold text-slate-800">{asset.interestRate}%</p>
-                          </div>
-                          <div>
-                            <p className="text-xs text-slate-500">Payoff Date</p>
-                            <p className="text-lg font-bold text-slate-800">
-                              {new Date(amortization.payoffDate).toLocaleDateString()}
-                            </p>
-                          </div>
-                        </div>
-
-                        <button
-                          onClick={() => setShowAmortizationView(asset)}
-                          className="text-blue-600 hover:text-blue-700 font-semibold text-sm flex items-center gap-1"
-                          title="View amortization schedule"
-                        >
-                          View Amortization Schedule
-                          <ChevronRight size={16} />
-                        </button>
-                      </div>
-
-                      <div className="flex gap-2">
-                        <button
-                          onClick={() => setEditingAsset(asset)}
-                          className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                          title="Edit asset"
-                        >
-                          <Edit2 size={18} />
-                        </button>
-                        <button
-                          onClick={() => {
-                            if (confirm(`Delete ${asset.name}?`)) {
-                              deleteAsset(asset.id);
-                            }
-                          }}
-                          className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                          title="Delete asset"
-                        >
-                          <Trash2 size={18} />
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-
-              {assets.length === 0 && (
-                <div className="bg-white rounded-2xl shadow-xl p-12 text-center">
-                  <Building2 className="mx-auto mb-4 text-slate-300" size={64} />
-                  <h3 className="text-xl font-bold text-slate-800 mb-2">No Assets Yet</h3>
-                  <p className="text-slate-600 mb-6">Track loans, mortgages, and other financed assets</p>
-                  <button
-                    onClick={() => setShowAssetForm(true)}
-                    className="px-6 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-semibold"
-                    title="Add your first asset"
-                  >
-                    Add Your First Asset
-                  </button>
-                </div>
-              )}
             </div>
           </div>
         )}
