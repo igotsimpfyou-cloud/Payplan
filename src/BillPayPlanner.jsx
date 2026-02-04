@@ -1802,8 +1802,11 @@ const BillPayPlanner = () => {
         {view === 'bills' && (
           <div>
             <div className="flex items-center justify-between mb-6">
-              <h2 className="text-3xl font-black text-white">
-                {new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' })} Bills
+              <h2 className="text-2xl font-bold text-white">
+                {billsViewMode === 'monthly' 
+                  ? new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) + ' Bills'
+                  : 'Bill Stream'
+                }
               </h2>
               <div className="flex gap-3">
                 <div className="flex bg-white/20 rounded-xl p-1">
@@ -2169,10 +2172,26 @@ const BillPayPlanner = () => {
               // Assign bills to paychecks using nextDueDate
               const streamAssignments = paychecks.map((paycheck, idx) => {
                 const nextPaycheck = paychecks[idx + 1] || new Date(paycheck.getTime() + 30*24*60*60*1000);
-                const assigned = bills.filter(bill => {
-                  const dueDate = new Date(bill.nextDueDate);
-                  return dueDate > paycheck && dueDate <= nextPaycheck;
+                const assigned = [];
+                
+                bills.forEach(bill => {
+                  // Check if bill's nextDueDate falls in this period
+                  let dueDate = new Date(bill.nextDueDate);
+                  
+                  // For recurring bills, check if ANY occurrence falls in this period
+                  if (bill.frequency === 'monthly') {
+                    // Check up to 2 months forward
+                    for (let m = 0; m < 2; m++) {
+                      const checkDate = new Date(dueDate);
+                      checkDate.setMonth(checkDate.getMonth() + m);
+                      if (checkDate > paycheck && checkDate <= nextPaycheck) {
+                        assigned.push({ ...bill, effectiveDueDate: checkDate.toISOString().split('T')[0] });
+                        break;
+                      }
+                    }
+                  }
                 });
+                
                 return { paycheck, bills: assigned };
               });
 
@@ -2198,11 +2217,11 @@ const BillPayPlanner = () => {
                         </div>
                         <div className="grid grid-cols-1 gap-3">
                           {assignedBills.map(bill => (
-                            <div key={bill.id} className="bg-white rounded-xl p-4 flex items-center justify-between">
-                              <div>
+                            <div key={bill.id + (bill.effectiveDueDate || bill.nextDueDate)} className="bg-white rounded-xl p-4 flex items-center justify-between">
+                              <div className="flex-1">
                                 <p className="font-semibold text-slate-800">{bill.name}</p>
                                 <p className="text-sm text-slate-600">
-                                  Due: {new Date(bill.nextDueDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                                  Due: {new Date(bill.effectiveDueDate || bill.nextDueDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
                                 </p>
                               </div>
                               <div className="flex items-center gap-3">
@@ -2210,6 +2229,12 @@ const BillPayPlanner = () => {
                                 {bill.autopay && (
                                   <span className="px-2 py-1 bg-blue-100 text-blue-700 text-xs font-bold rounded">AUTO</span>
                                 )}
+                                <button
+                                  onClick={() => setEditingBill(bill)}
+                                  className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                                >
+                                  <Edit2 size={16} />
+                                </button>
                               </div>
                             </div>
                           ))}
