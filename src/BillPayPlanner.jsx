@@ -510,16 +510,61 @@ const BillPayPlanner = () => {
           dueDateForCheck2.setMonth(dueDateForCheck2.getMonth() + 1);
         }
         
-        // Assign to check that comes before due date
-        // If check1 can pay it (comes before due date), use check1
-        // Otherwise use check2
-        if (check1Date < dueDateForCheck1 && dueDateForCheck1 <= check2Date) {
+        // Store with assignment info for balancing
+        bill._originalCheck = (check1Date < dueDateForCheck1 && dueDateForCheck1 <= check2Date) ? 1 : 2;
+        bill._dueDate = bill._originalCheck === 1 ? dueDateForCheck1 : dueDateForCheck2;
+        
+        // Initially assign to original check
+        if (bill._originalCheck === 1) {
           check1Bills.push(bill);
         } else {
           check2Bills.push(bill);
         }
       }
     });
+    
+    // Balance leftovers by pulling check2 bills forward to check1 (pay early)
+    if (paySchedule) {
+      const perCheck = parseFloat(paySchedule.payAmount);
+      let check1Total = check1Bills.reduce((sum, b) => sum + parseFloat(b.amount), 0);
+      let check2Total = check2Bills.reduce((sum, b) => sum + parseFloat(b.amount), 0);
+      let leftover1 = perCheck - check1Total;
+      let leftover2 = perCheck - check2Total;
+      
+      // Only balance if check1 has significantly more leftover
+      while (leftover1 - leftover2 > 200) {
+        // Find non-autopay bills in check2 that can be paid early with check1
+        const movable = check2Bills.filter(b => 
+          !b.autopay && 
+          b.payFromCheck === 'auto' &&
+          parseInt(b.dueDate) > check1Date.getDate() // Due after check1
+        );
+        
+        if (movable.length === 0) break;
+        
+        // Pick bill closest to half the difference
+        const targetAmount = (leftover1 - leftover2) / 2;
+        movable.sort((a, b) => 
+          Math.abs(parseFloat(a.amount) - targetAmount) - Math.abs(parseFloat(b.amount) - targetAmount)
+        );
+        
+        const billToMove = movable[0];
+        
+        // Move bill from check2 to check1 (pay early)
+        const fromIndex = check2Bills.indexOf(billToMove);
+        check2Bills.splice(fromIndex, 1);
+        check1Bills.push(billToMove);
+        
+        // Recalculate
+        check1Total = check1Bills.reduce((sum, b) => sum + parseFloat(b.amount), 0);
+        check2Total = check2Bills.reduce((sum, b) => sum + parseFloat(b.amount), 0);
+        leftover1 = perCheck - check1Total;
+        leftover2 = perCheck - check2Total;
+        
+        // Stop if only one bill or no improvement
+        if (movable.length === 1) break;
+      }
+    }
 
     return { 
       check1: check1Bills, 
@@ -1538,17 +1583,6 @@ const BillPayPlanner = () => {
                   const perCheck = paySchedule ? parseFloat(paySchedule.payAmount) : 0;
                   const leftover1 = perCheck - check1Total;
                   const leftover2 = perCheck - check2Total;
-                  const difference = Math.abs(leftover1 - leftover2);
-                  
-                  // Find non-autopay bills in check with more leftover that could move
-                  const movableBills = leftover1 > leftover2 
-                    ? assignments.check1.filter(b => !b.autopay && b.payFromCheck === 'auto')
-                    : assignments.check2.filter(b => !b.autopay && b.payFromCheck === 'auto');
-                  
-                  const targetDiff = difference / 2;
-                  const suggestion = movableBills.find(b => 
-                    parseFloat(b.amount) >= targetDiff * 0.5 && parseFloat(b.amount) <= targetDiff * 1.5
-                  );
                   
                   return (
                     <>
@@ -1570,16 +1604,6 @@ const BillPayPlanner = () => {
                             </span>
                           </div>
                         </div>
-                        
-                        {difference > 100 && suggestion && (
-                          <div className="p-3 bg-amber-50 border-2 border-amber-200 rounded-xl">
-                            <p className="text-xs font-semibold text-amber-800 mb-2">💡 Balance Suggestion</p>
-                            <p className="text-xs text-amber-700">
-                              Pay <strong>{suggestion.name}</strong> (${suggestion.amount}) early with Check {leftover1 > leftover2 ? '1' : '2'} to balance leftovers
-                            </p>
-                          </div>
-                        )}
-                        
                         <div className="p-3 bg-slate-50 rounded-xl border-2 border-slate-200">
                           <div className="flex justify-between items-center">
                             <span className="text-sm font-semibold text-slate-700">Total Monthly</span>
