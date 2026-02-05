@@ -1,109 +1,410 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  DollarSign, Calendar, Plus, Check, AlertCircle, Trash2, Edit2, X, Clock, TrendingUp, Home,
-  Settings, List, BarChart3, ChevronRight, ChevronLeft, RefreshCw, Building2, Receipt, Download,
-  Upload, Flame
+  DollarSign, Calendar, Plus, Check, AlertCircle, Trash2, Edit2, X, Clock, TrendingUp, Home, Settings, List,
+  BarChart3, ChevronRight, ChevronLeft, RefreshCw, Building2, Receipt, Download, Upload, Flame
 } from 'lucide-react';
 
+/**
+ * PayPlan Pro — Full merged file (instances model + original modules)
+ * - billTemplates: recurring definitions (replaces legacy `bills`)
+ * - billInstances: dated rows generated from templates (current month + 2 forward)
+ * - Assignment: next 4 checks from paySchedule
+ * - Checklist: current month
+ * - Submit: variable bills "Actual Paid" (updates last year's same month history)
+ * - Retire template: removes future instances from last paid onward
+ * - Preserves: Assets + amortization, One-Time bills, Propane tracker, Analytics, Backup/Restore, Calendar placeholder
+ */
+
+// ---------- Utilities ----------
+const toYMD = (d) => {
+  const dt = new Date(d);
+  const y = dt.getFullYear();
+  const m = String(dt.getMonth() + 1).padStart(2, '0');
+  const day = String(dt.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+};
+const startOfMonth = (d) => new Date(d.getFullYear(), d.getMonth(), 1);
+const addMonths = (d, n) => { const x = new Date(d); x.setMonth(x.getMonth() + n); return x; };
+const sameMonth = (a, b) => a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth();
+const idForInstance = (name, dueDate) => `${name.replace(/\s+/g, '_')}_${toYMD(dueDate)}`;
+const parseAmt = (v) => parseFloat(v || 0) || 0;
+
+// ---------- Storage Keys ----------
+const LS_TEMPLATES = 'ppp.billTemplates';
+const LS_INSTANCES = 'ppp.billInstances';
+const LS_ASSETS = 'assets';
+const LS_ONETIME = 'oneTimeBills';
+const LS_PAY = 'paySchedule';
+const LS_CAL = 'calendarConnected';
+const LS_PROPANE = 'propaneFills';
+const LS_EMERGENCY = 'emergencyFund';
+const LS_DEBTS = 'debtPayoff';
+const LS_ENVELOPES = 'ppp.envelopes';
+const LS_BUDGETS = 'ppp.budgets';
+
+// ---------- Components ----------
 const BillPayPlanner = () => {
   const [view, setView] = useState('dashboard');
-  const [bills, setBills] = useState([]);
+
+  // Core (instances model)
+  const [billTemplates, setBillTemplates] = useState([]);
+  const [billInstances, setBillInstances] = useState([]);
+
+  // Original modules
   const [assets, setAssets] = useState([]);
   const [oneTimeBills, setOneTimeBills] = useState([]);
   const [paySchedule, setPaySchedule] = useState(null);
   const [propaneFills, setPropaneFills] = useState([]);
-  const [editingBill, setEditingBill] = useState(null);
-  const [editingAsset, setEditingAsset] = useState(null);
-  const [editingOneTime, setEditingOneTime] = useState(null);
-  const [showBillForm, setShowBillForm] = useState(false);
-  const [showAssetForm, setShowAssetForm] = useState(false);
-  const [showOneTimeForm, setShowOneTimeForm] = useState(false);
-  const [showPayScheduleForm, setShowPayScheduleForm] = useState(false);
-  const [showHistoricalForm, setShowHistoricalForm] = useState(null);
-  const [showAmortizationView, setShowAmortizationView] = useState(null);
-  const [showClearDataModal, setShowClearDataModal] = useState(false);
-  const [clearDataCountdown, setClearDataCountdown] = useState(5);
-  const [showPropaneForm, setShowPropaneForm] = useState(false);
-  const [collapseCheck1, setCollapseCheck1] = useState(false);
-  const [collapseCheck2, setCollapseCheck2] = useState(false);
-  const [billsViewMode, setBillsViewMode] = useState('monthly'); // 'monthly' or 'stream'
+  const [calendarConnected, setCalendarConnected] = useState(false);
   const [emergencyFund, setEmergencyFund] = useState({ target: 0, current: 0 });
   const [debtPayoff, setDebtPayoff] = useState([]);
+  const [envelopes, setEnvelopes] = useState([]);
+  const [budgets, setBudgets] = useState({ utilities: 0, subscription: 0, insurance: 0, loan: 0, rent: 0, other: 0 });
+
+  // UI modals
+  const [showTemplateForm, setShowTemplateForm] = useState(false);
+  const [editingTemplate, setEditingTemplate] = useState(null);
+  const [showPayForm, setShowPayForm] = useState(false);
+  const [showAssetForm, setShowAssetForm] = useState(false);
+  const [editingAsset, setEditingAsset] = useState(null);
+  const [showOneTimeForm, setShowOneTimeForm] = useState(false);
+  const [editingOneTime, setEditingOneTime] = useState(null);
+  const [showPropaneForm, setShowPropaneForm] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [calendarConnected, setCalendarConnected] = useState(false);
-
-  // === NEW: Budgets & Envelopes ===
-  const [budgets, setBudgets] = useState(() => {
-    const v = localStorage.getItem('budgets');
-    return v ? JSON.parse(v) : { utilities: 0, subscription: 0, insurance: 0, loan: 0, rent: 0, other: 0 };
-  });
-  const [envelopes, setEnvelopes] = useState(() => {
-    const v = localStorage.getItem('envelopes');
-    return v ? JSON.parse(v) : [
-      { id: 1, name: 'Groceries', perCheck: 0 },
-      { id: 2, name: 'Gas', perCheck: 0 },
-      { id: 3, name: 'Fun', perCheck: 0 },
-    ];
-  });
-
-  useEffect(() => localStorage.setItem('budgets', JSON.stringify(budgets)), [budgets]);
-  useEffect(() => localStorage.setItem('envelopes', JSON.stringify(envelopes)), [envelopes]);
 
   // Backup / Restore
   const backupFileInputRef = useRef(null);
 
-  // Backup/Restore functions
+  // ---------- Load & migrate ----------
+  useEffect(() => {
+    try {
+      const t = localStorage.getItem(LS_TEMPLATES);
+      const i = localStorage.getItem(LS_INSTANCES);
+      const a = localStorage.getItem(LS_ASSETS);
+      const o = localStorage.getItem(LS_ONETIME);
+      const p = localStorage.getItem(LS_PAY);
+      const c = localStorage.getItem(LS_CAL);
+      const pr = localStorage.getItem(LS_PROPANE);
+      const e = localStorage.getItem(LS_EMERGENCY);
+      const d = localStorage.getItem(LS_DEBTS);
+      const env = localStorage.getItem(LS_ENVELOPES);
+      const bud = localStorage.getItem(LS_BUDGETS);
+
+      // MIGRATION: if old 'bills' exists, migrate to templates
+      const legacyBills = localStorage.getItem('bills');
+      if (!t && legacyBills) {
+        const legacy = JSON.parse(legacyBills);
+        const asTemplates = legacy.map(b => ({
+          id: b.id || Date.now() + Math.random(),
+          name: b.name,
+          amount: parseAmt(b.amount),
+          isVariable: !!b.isVariable,
+          category: b.category || 'utilities',
+          autopay: !!b.autopay,
+          frequency: b.frequency || 'monthly',
+          dueDay: parseInt(b.dueDate, 10),
+          firstDueDate: b.nextDueDate || new Date().toISOString().split('T')[0],
+          historicalPayments: b.historicalPayments || []
+        }));
+        localStorage.setItem(LS_TEMPLATES, JSON.stringify(asTemplates));
+        localStorage.removeItem('bills');
+      }
+
+      if (localStorage.getItem(LS_TEMPLATES)) setBillTemplates(JSON.parse(localStorage.getItem(LS_TEMPLATES)));
+      if (i) setBillInstances(JSON.parse(i));
+      if (a) setAssets(JSON.parse(a));
+      if (o) setOneTimeBills(JSON.parse(o));
+      if (p) setPaySchedule(JSON.parse(p));
+      if (c) setCalendarConnected(JSON.parse(c));
+      if (pr) setPropaneFills(JSON.parse(pr));
+      if (e) setEmergencyFund(JSON.parse(e));
+      if (d) setDebtPayoff(JSON.parse(d));
+      if (env) setEnvelopes(JSON.parse(env));
+      if (bud) setBudgets(JSON.parse(bud));
+    } catch (err) {
+      console.warn('Load error', err);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  // ---------- Persist ----------
+  useEffect(() => localStorage.setItem(LS_TEMPLATES, JSON.stringify(billTemplates)), [billTemplates]);
+  useEffect(() => localStorage.setItem(LS_INSTANCES, JSON.stringify(billInstances)), [billInstances]);
+  useEffect(() => localStorage.setItem(LS_ASSETS, JSON.stringify(assets)), [assets]);
+  useEffect(() => localStorage.setItem(LS_ONETIME, JSON.stringify(oneTimeBills)), [oneTimeBills]);
+  useEffect(() => localStorage.setItem(LS_PAY, JSON.stringify(paySchedule)), [paySchedule]);
+  useEffect(() => localStorage.setItem(LS_CAL, JSON.stringify(calendarConnected)), [calendarConnected]);
+  useEffect(() => localStorage.setItem(LS_PROPANE, JSON.stringify(propaneFills)), [propaneFills]);
+  useEffect(() => localStorage.setItem(LS_EMERGENCY, JSON.stringify(emergencyFund)), [emergencyFund]);
+  useEffect(() => localStorage.setItem(LS_DEBTS, JSON.stringify(debtPayoff)), [debtPayoff]);
+  useEffect(() => localStorage.setItem(LS_ENVELOPES, JSON.stringify(envelopes)), [envelopes]);
+  useEffect(() => localStorage.setItem(LS_BUDGETS, JSON.stringify(budgets)), [budgets]);
+
+  // ---------- Instance generation (current month + 2 forward) ----------
+  useEffect(() => {
+    if (!billTemplates.length) return;
+    const now = new Date();
+    const end = startOfMonth(addMonths(now, 2));
+    const updated = [...billInstances];
+    let changed = false;
+
+    const ensureInstance = (tmpl, due) => {
+      const id = idForInstance(tmpl.name, due);
+      if (!updated.find(x => x.id === id)) {
+        updated.push({
+          id,
+          templateId: tmpl.id,
+          name: tmpl.name,
+          category: tmpl.category,
+          autopay: !!tmpl.autopay,
+          isVariable: !!tmpl.isVariable,
+          frequency: tmpl.frequency,
+          dueDate: toYMD(due),
+          amountEstimate: parseAmt(tmpl.amount),
+          actualPaid: null,
+          paid: false,
+          assignedCheck: null,
+          assignedPayDate: null,
+        });
+        changed = true;
+      }
+    };
+
+    billTemplates.forEach(tmpl => {
+      const first = new Date(tmpl.firstDueDate);
+      if (isNaN(first)) return;
+      let cursor = startOfMonth(first) < startOfMonth(now) ? startOfMonth(now) : startOfMonth(first);
+      while (cursor <= end) {
+        const day = Math.min(parseInt(tmpl.dueDay, 10), new Date(cursor.getFullYear(), cursor.getMonth() + 1, 0).getDate());
+        const due = new Date(cursor.getFullYear(), cursor.getMonth(), day);
+        if (due >= first) ensureInstance(tmpl, due);
+        cursor = addMonths(cursor, 1);
+      }
+    });
+
+    if (changed) {
+      updated.sort((a, b) => new Date(a.dueDate) - new Date(b.dueDate));
+      setBillInstances(updated);
+    }
+    // eslint-disable-next-line
+  }, [billTemplates]);
+
+  const ensureNextMonthForTemplate = (tmpl, paidDueDate) => {
+    const paid = new Date(paidDueDate);
+    const next = addMonths(paid, 1);
+    const day = Math.min(parseInt(tmpl.dueDay, 10), new Date(next.getFullYear(), next.getMonth() + 1, 0).getDate());
+    const due = new Date(next.getFullYear(), next.getMonth(), day);
+    const id = idForInstance(tmpl.name, due);
+    if (!billInstances.find(x => x.id === id)) {
+      setBillInstances(prev => [...prev, {
+        id,
+        templateId: tmpl.id,
+        name: tmpl.name,
+        category: tmpl.category,
+        autopay: !!tmpl.autopay,
+        isVariable: !!tmpl.isVariable,
+        frequency: tmpl.frequency,
+        dueDate: toYMD(due),
+        amountEstimate: parseAmt(tmpl.amount),
+        actualPaid: null,
+        paid: false,
+        assignedCheck: null,
+        assignedPayDate: null,
+      }].sort((a, b) => new Date(a.dueDate) - new Date(b.dueDate)));
+    }
+  };
+
+  // ---------- Next 4 checks + assignment ----------
+  const nextPayDates = useMemo(() => {
+    if (!paySchedule?.nextPayDate) return [];
+    const dates = [];
+    const freq = paySchedule.frequency || 'biweekly';
+    let d = new Date(paySchedule.nextPayDate);
+    dates.push(new Date(d));
+    for (let i = 0; i < 10; i++) {
+      const x = new Date(d);
+      switch (freq) {
+        case 'weekly': x.setDate(x.getDate() + 7); break;
+        case 'biweekly': x.setDate(x.getDate() + 14); break;
+        case 'semimonthly':
+          if (x.getDate() <= 15) x.setDate(15);
+          else { x.setMonth(x.getMonth() + 1); x.setDate(1); }
+          break;
+        case 'monthly': x.setMonth(x.getMonth() + 1); break;
+        default: x.setDate(x.getDate() + 14);
+      }
+      dates.push(x);
+      d = x;
+    }
+    return dates;
+  }, [paySchedule]);
+
+  const assignInstancesToChecks = () => {
+    if (!nextPayDates.length) return;
+    const checks = nextPayDates.slice(0, 4);
+    const today = new Date();
+
+    setBillInstances(prev => prev.map(inst => {
+      const due = new Date(inst.dueDate);
+      let idx = null;
+      for (let i = 0; i < checks.length; i++) {
+        const prevCut = i === 0 ? today : checks[i - 1];
+        if (due > prevCut && due <= checks[i]) { idx = i + 1; break; }
+      }
+      if (!idx) idx = (due > checks[checks.length - 1]) ? 4 : 1;
+      return { ...inst, assignedCheck: idx, assignedPayDate: toYMD(checks[idx - 1]) };
+    }));
+  };
+  useEffect(() => { assignInstancesToChecks(); /* eslint-disable-next-line */ }, [billInstances.length, paySchedule]);
+
+  // ---------- Template CRUD ----------
+  const addBillTemplate = async (billData) => {
+    const tmpl = {
+      id: Date.now(),
+      name: billData.name.trim(),
+      amount: parseAmt(billData.amount),
+      isVariable: !!billData.isVariable,
+      category: billData.category || 'utilities',
+      autopay: !!billData.autopay,
+      frequency: billData.frequency || 'monthly',
+      dueDay: parseInt(billData.dueDate, 10),
+      firstDueDate: (() => {
+        const today = new Date();
+        const d = parseInt(billData.dueDate, 10);
+        const monthLen = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
+        const real = Math.min(d, monthLen);
+        let dt = new Date(today.getFullYear(), today.getMonth(), real);
+        if (dt < today) dt = addMonths(dt, 1);
+        return toYMD(dt);
+      })(),
+      historicalPayments: billData.historicalPayments || []
+    };
+    setBillTemplates(prev => [...prev, tmpl]);
+    setShowTemplateForm(false);
+  };
+
+  const updateBillTemplate = async (billData) => {
+    setBillTemplates(prev => prev.map(t => t.id === editingTemplate.id ? {
+      ...t,
+      name: billData.name,
+      amount: parseAmt(billData.amount),
+      isVariable: !!billData.isVariable,
+      category: billData.category,
+      autopay: !!billData.autopay,
+      frequency: billData.frequency,
+      dueDay: parseInt(billData.dueDate, 10),
+    } : t));
+    setEditingTemplate(null);
+  };
+
+  const retireTemplate = async (tmplId) => {
+    const tmpl = billTemplates.find(t => t.id === tmplId);
+    if (!tmpl) return;
+    if (!confirm(`Retire "${tmpl.name}"?\nFuture instances will be removed from the last paid month onward.`)) return;
+
+    const related = billInstances.filter(i => i.templateId === tmplId);
+    const lastPaid = related.filter(i => i.paid).sort((a, b) => new Date(b.dueDate) - new Date(a.dueDate))[0];
+    const cutoff = lastPaid ? new Date(lastPaid.dueDate) : new Date(0);
+
+    setBillInstances(prev => prev.filter(i => i.templateId !== tmplId || new Date(i.dueDate) < cutoff));
+    setBillTemplates(prev => prev.filter(t => t.id !== tmplId));
+  };
+
+  // ---------- Mark paid (instances) ----------
+  const toggleInstancePaid = async (instanceId) => {
+    const inst = billInstances.find(i => i.id === instanceId);
+    if (!inst) return;
+
+    if (inst.autopay) {
+      const ok = confirm('This bill is on Auto-pay. Mark paid/unpaid anyway?');
+      if (!ok) return;
+    }
+    const nowPaid = !inst.paid;
+    setBillInstances(prev => prev.map(i => i.id === instanceId ? { ...i, paid: nowPaid } : i));
+
+    if (nowPaid) {
+      const tmpl = billTemplates.find(t => t.id === inst.templateId);
+      if (tmpl && sameMonth(new Date(inst.dueDate), new Date())) {
+        ensureNextMonthForTemplate(tmpl, new Date(inst.dueDate));
+      }
+    }
+  };
+
+  // ---------- Submit Actuals (variable) ----------
+  const submitActualPaid = (instanceId, value) => {
+    const inst = billInstances.find(x => x.id === instanceId);
+    if (!inst) return;
+    const tmpl = billTemplates.find(t => t.id === inst.templateId);
+    if (!tmpl) return;
+
+    const actual = parseAmt(value);
+    // set on instance
+    setBillInstances(prev => prev.map(x => x.id === instanceId ? ({ ...x, actualPaid: actual }) : x));
+
+    // update previous year's same month history
+    const instDate = new Date(inst.dueDate);
+    const lastYear = new Date(instDate.getFullYear() - 1, instDate.getMonth(), 1);
+    const key = toYMD(lastYear).slice(0, 7);
+    const history = Array.isArray(tmpl.historicalPayments) ? [...tmpl.historicalPayments] : [];
+    const idx = history.findIndex(h => (h.date || '').startsWith(key));
+    if (idx >= 0) history[idx] = { date: `${key}-01`, amount: actual };
+    else history.push({ date: `${key}-01`, amount: actual });
+
+    // recompute estimate
+    let estimate = tmpl.amount;
+    const nums = history.map(h => parseAmt(h.amount)).filter(n => n > 0);
+    if (nums.length) estimate = nums.reduce((s, n) => s + n, 0) / nums.length;
+
+    // save template
+    setBillTemplates(prev => prev.map(t => t.id === tmpl.id ? ({ ...t, historicalPayments: history, amount: estimate }) : t));
+
+    // propagate to this month and future instances
+    const now = new Date();
+    setBillInstances(prev => prev.map(x => {
+      if (x.templateId !== tmpl.id) return x;
+      const xd = new Date(x.dueDate);
+      if (xd >= startOfMonth(now)) return { ...x, amountEstimate: estimate };
+      return x;
+    }));
+  };
+
+  // ---------- Helpers ----------
+  const perCheckEnvelopeSum = () => envelopes.reduce((s, e) => s + parseAmt(e.perCheck), 0);
+
+  // ---------- Backup / Restore ----------
   const exportBackup = () => {
     const payload = {
       app: 'PayPlan Pro',
-      version: 1,
+      version: 2,
       exportedAt: new Date().toISOString(),
-      data: { bills, assets, oneTimeBills, paySchedule, calendarConnected, budgets, envelopes, emergencyFund, debtPayoff, propaneFills },
+      data: {
+        billTemplates, billInstances, assets, oneTimeBills, paySchedule, propaneFills,
+        calendarConnected, emergencyFund, debtPayoff, envelopes, budgets
+      }
     };
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
     a.download = `payplan-backup-${new Date().toISOString().slice(0, 10)}.json`;
-    document.body.appendChild(a);
     a.click();
-    a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    URL.revokeObjectURL(url);
   };
 
   const applyBackup = async (payload) => {
     const d = payload?.data ?? payload;
-    const newBills = Array.isArray(d?.bills) ? d.bills : [];
-    const newAssets = Array.isArray(d?.assets) ? d.assets : [];
-    const newOneTimeBills = Array.isArray(d?.oneTimeBills) ? d.oneTimeBills : [];
-    const newPaySchedule = d?.paySchedule ?? null;
-    const newCalendarConnected = !!d?.calendarConnected;
-    const newBudgets = d?.budgets ?? budgets;
-    const newEnvelopes = d?.envelopes ?? envelopes;
-    const newEmergency = d?.emergencyFund ?? { target: 0, current: 0 };
-    const newDebt = d?.debtPayoff ?? [];
-
-    // Update state
-    setBills(newBills);
-    setAssets(newAssets);
-    setOneTimeBills(newOneTimeBills);
-    setPaySchedule(newPaySchedule);
-    setCalendarConnected(newCalendarConnected);
-    setBudgets(newBudgets);
-    setEnvelopes(newEnvelopes);
-    setEmergencyFund(newEmergency);
-    setDebtPayoff(newDebt);
-
-    // Persist to localStorage
-    localStorage.setItem('bills', JSON.stringify(newBills));
-    localStorage.setItem('assets', JSON.stringify(newAssets));
-    localStorage.setItem('oneTimeBills', JSON.stringify(newOneTimeBills));
-    localStorage.setItem('paySchedule', JSON.stringify(newPaySchedule));
-    localStorage.setItem('calendarConnected', JSON.stringify(newCalendarConnected));
-    localStorage.setItem('budgets', JSON.stringify(newBudgets));
-    localStorage.setItem('envelopes', JSON.stringify(newEnvelopes));
-    localStorage.setItem('emergencyFund', JSON.stringify(newEmergency));
-    localStorage.setItem('debtPayoff', JSON.stringify(newDebt));
+    setBillTemplates(Array.isArray(d?.billTemplates) ? d.billTemplates : []);
+    setBillInstances(Array.isArray(d?.billInstances) ? d.billInstances : []);
+    setAssets(Array.isArray(d?.assets) ? d.assets : []);
+    setOneTimeBills(Array.isArray(d?.oneTimeBills) ? d.oneTimeBills : []);
+    setPaySchedule(d?.paySchedule ?? null);
+    setPropaneFills(Array.isArray(d?.propaneFills) ? d.propaneFills : []);
+    setCalendarConnected(!!d?.calendarConnected);
+    setEmergencyFund(d?.emergencyFund || { target: 0, current: 0 });
+    setDebtPayoff(Array.isArray(d?.debtPayoff) ? d.debtPayoff : []);
+    setEnvelopes(Array.isArray(d?.envelopes) ? d.envelopes : []);
+    setBudgets(d?.budgets || { utilities: 0, subscription: 0, insurance: 0, loan: 0, rent: 0, other: 0 });
   };
 
   const importBackupFromFile = async (file) => {
@@ -116,133 +417,14 @@ const BillPayPlanner = () => {
         return;
       }
       await applyBackup(payload);
-      alert('Backup restored successfully! Your data has been loaded.');
-    } catch (error) {
-      console.error('Backup restore error:', error);
-      alert('Error restoring backup: ' + error.message + '\n\nPlease make sure you selected a valid backup file.');
+      alert('Backup restored successfully.');
+    } catch (e) {
+      alert('Error restoring backup: ' + e.message);
     }
   };
 
-  // Load data from persistent storage
-  useEffect(() => {
-    loadData();
-  }, []);
-
-  // Countdown timer for clear data modal
-  useEffect(() => {
-    let timer;
-    if (showClearDataModal && clearDataCountdown > 0) {
-      timer = setTimeout(() => {
-        setClearDataCountdown(clearDataCountdown - 1);
-      }, 1000);
-    }
-    return () => clearTimeout(timer);
-  }, [showClearDataModal, clearDataCountdown]);
-
-  const loadData = async () => {
-    try {
-      const billsData = localStorage.getItem('bills');
-      const assetsData = localStorage.getItem('assets');
-      const oneTimeData = localStorage.getItem('oneTimeBills');
-      const scheduleData = localStorage.getItem('paySchedule');
-      const calendarData = localStorage.getItem('calendarConnected');
-      const propaneData = localStorage.getItem('propaneFills');
-      const emergencyData = localStorage.getItem('emergencyFund');
-      const debtData = localStorage.getItem('debtPayoff');
-      const budgetsData = localStorage.getItem('budgets');
-      const envelopesData = localStorage.getItem('envelopes');
-
-      if (billsData) {
-        let loadedBills = JSON.parse(billsData);
-        // Migration: Add nextDueDate if missing
-        let needsSave = false;
-        loadedBills = loadedBills.map(bill => {
-          if (!bill.nextDueDate && bill.dueDate) {
-            const today = new Date();
-            const dueDay = parseInt(bill.dueDate);
-            let nextDue = new Date(today.getFullYear(), today.getMonth(), dueDay);
-            if (nextDue < today) {
-              nextDue.setMonth(nextDue.getMonth() + 1);
-            }
-            needsSave = true;
-            return { ...bill, nextDueDate: nextDue.toISOString().split('T')[0] };
-          }
-          return bill;
-        });
-        setBills(loadedBills);
-        if (needsSave) localStorage.setItem('bills', JSON.stringify(loadedBills));
-      }
-      if (assetsData) setAssets(JSON.parse(assetsData));
-      if (oneTimeData) setOneTimeBills(JSON.parse(oneTimeData));
-      if (scheduleData) setPaySchedule(JSON.parse(scheduleData));
-      if (calendarData) setCalendarConnected(JSON.parse(calendarData));
-      if (propaneData) setPropaneFills(JSON.parse(propaneData));
-      if (emergencyData) setEmergencyFund(JSON.parse(emergencyData));
-      if (debtData) setDebtPayoff(JSON.parse(debtData));
-      if (budgetsData) setBudgets(JSON.parse(budgetsData));
-      if (envelopesData) setEnvelopes(JSON.parse(envelopesData));
-    } catch (error) {
-      console.log('No existing data found', error);
-    }
-    setLoading(false);
-  };
-
-  const saveBills = async (updatedBills) => {
-    setBills(updatedBills);
-    localStorage.setItem('bills', JSON.stringify(updatedBills));
-  };
-
-  const saveAssets = async (updatedAssets) => {
-    setAssets(updatedAssets);
-    localStorage.setItem('assets', JSON.stringify(updatedAssets));
-  };
-
-  const saveOneTimeBills = async (updatedOneTime) => {
-    setOneTimeBills(updatedOneTime);
-    localStorage.setItem('oneTimeBills', JSON.stringify(updatedOneTime));
-  };
-
-  const savePaySchedule = async (schedule) => {
-    setPaySchedule(schedule);
-    localStorage.setItem('paySchedule', JSON.stringify(schedule));
-  };
-
-  const savePropaneFills = async (fills) => {
-    setPropaneFills(fills);
-    localStorage.setItem('propaneFills', JSON.stringify(fills));
-  };
-
-  const addPropaneFill = async (fill) => {
-    const newFill = { ...fill, id: Date.now() };
-    await savePropaneFills([...propaneFills, newFill]);
-  };
-
-  const deletePropaneFill = async (id) => {
-    await savePropaneFills(propaneFills.filter(f => f.id !== id));
-  };
-
-  const addBill = async (billData) => {
-    const today = new Date();
-    const dueDay = parseInt(billData.dueDate);
-    let nextDue = new Date(today.getFullYear(), today.getMonth(), dueDay);
-    if (nextDue < today) {
-      nextDue.setMonth(nextDue.getMonth() + 1);
-    }
-
-    const newBill = {
-      id: Date.now(),
-      ...billData,
-      reminderDays: parseInt(billData.reminderDays || 0, 10),
-      nextDueDate: nextDue.toISOString().split('T')[0],
-      paidThisMonth: false,
-      lastPaid: null,
-      lastPaidDate: null,
-      historicalPayments: billData.historicalPayments || []
-    };
-    await saveBills([...bills, newBill]);
-    setShowBillForm(false);
-  };
-
+  // ---------- Assets / Amortization ----------
+  const saveAssets = async (updated) => setAssets(updated);
   const addAsset = async (assetData) => {
     const newAsset = {
       id: Date.now(),
@@ -250,304 +432,34 @@ const BillPayPlanner = () => {
       startDate: assetData.startDate || new Date().toISOString().split('T')[0]
     };
     await saveAssets([...assets, newAsset]);
+    setShowAssetForm(false);
 
+    // Optional: create a linked template?
     if (assetData.createBill) {
-      const newBill = {
-        id: Date.now() + 1,
+      const tmpl = {
         name: assetData.name,
-        amount: assetData.paymentAmount,
-        dueDate: new Date(assetData.startDate).getDate().toString(),
-        frequency: assetData.paymentFrequency,
+        amount: parseAmt(assetData.paymentAmount),
+        isVariable: false,
         category: 'loan',
         autopay: false,
-        isVariable: false,
-        payFromCheck: 'auto',
-        paidThisMonth: false,
-        reminderDays: 0
+        frequency: assetData.paymentFrequency || 'monthly',
+        dueDate: new Date(assetData.startDate).getDate().toString(),
+        historicalPayments: []
       };
-      await saveBills([...bills, newBill]);
+      addBillTemplate(tmpl);
     }
-
-    setShowAssetForm(false);
   };
-
-  const addOneTimeBill = async (billData) => {
-    const newBill = {
-      id: Date.now(),
-      ...billData,
-      paid: false,
-      addedDate: new Date().toISOString()
-    };
-    await saveOneTimeBills([...oneTimeBills, newBill]);
-    setShowOneTimeForm(false);
-  };
-
-  const updateBill = async (billData) => {
-    const updatedBills = bills.map(b =>
-      b.id === editingBill.id ? { ...b, ...billData, reminderDays: parseInt(billData.reminderDays || 0, 10) } : b
-    );
-    await saveBills(updatedBills);
-    setEditingBill(null);
-  };
-
   const updateAsset = async (assetData) => {
-    const updatedAssets = assets.map(a =>
-      a.id === editingAsset.id ? { ...a, ...assetData } : a
-    );
-    await saveAssets(updatedAssets);
+    const updated = assets.map(a => a.id === editingAsset.id ? { ...a, ...assetData } : a);
+    await saveAssets(updated);
     setEditingAsset(null);
   };
+  const deleteAsset = async (assetId) => saveAssets(assets.filter(a => a.id !== assetId));
 
-  const updateOneTimeBill = async (billData) => {
-    const updatedOneTime = oneTimeBills.map(b =>
-      b.id === editingOneTime.id ? { ...b, ...billData } : b
-    );
-    await saveOneTimeBills(updatedOneTime);
-    setEditingOneTime(null);
-  };
-
-  const deleteBill = async (billId) => {
-    await saveBills(bills.filter(b => b.id !== billId));
-  };
-
-  const deleteAsset = async (assetId) => {
-    await saveAssets(assets.filter(a => a.id !== assetId));
-  };
-
-  const deleteOneTimeBill = async (billId) => {
-    await saveOneTimeBills(oneTimeBills.filter(b => b.id !== billId));
-  };
-
-  const resetMonthlyBills = async () => {
-    if (!confirm('Reset all bills for a new month? This will mark all recurring bills as unpaid.')) {
-      return;
-    }
-    const resetBills = bills.map(b => ({
-      ...b,
-      paidThisMonth: false
-    }));
-    await saveBills(resetBills);
-    alert('All bills have been reset for the new month!');
-  };
-
-  const clearAllData = () => {
-    setShowClearDataModal(true);
-    setClearDataCountdown(5);
-  };
-
-  const confirmClearAllData = () => {
-    setBills([]);
-    setAssets([]);
-    setOneTimeBills([]);
-    setPaySchedule(null);
-    setCalendarConnected(false);
-    setPropaneFills([]);
-    setEmergencyFund({ target: 0, current: 0 });
-    setDebtPayoff([]);
-    setBudgets({ utilities: 0, subscription: 0, insurance: 0, loan: 0, rent: 0, other: 0 });
-    setEnvelopes([]);
-
-    localStorage.removeItem('bills');
-    localStorage.removeItem('assets');
-    localStorage.removeItem('oneTimeBills');
-    localStorage.removeItem('paySchedule');
-    localStorage.removeItem('calendarConnected');
-    localStorage.removeItem('propaneFills');
-    localStorage.removeItem('emergencyFund');
-    localStorage.removeItem('debtPayoff');
-    localStorage.removeItem('budgets');
-    localStorage.removeItem('envelopes');
-
-    setShowClearDataModal(false);
-    alert('✓ All data cleared!');
-    window.location.reload();
-  };
-
-  // === Notifications & Reminders ===
-  const canNotify = () => ('Notification' in window);
-  const requestNotifyPermission = async () => {
-    if (!canNotify()) return false;
-    if (Notification.permission === 'granted') return true;
-    if (Notification.permission === 'denied') return false;
-    const res = await Notification.requestPermission();
-    return res === 'granted';
-  };
-  const toYMD = (d) => {
-    const dt = new Date(d);
-    const yyyy = dt.getFullYear();
-    const mm = String(dt.getMonth() + 1).padStart(2, '0');
-    const dd = String(dt.getDate()).padStart(2, '0');
-    return `${yyyy}-${mm}-${dd}`;
-  };
-  const pushBillNotify = (bill) => {
-    try {
-      new Notification('Upcoming bill', {
-        body: `${bill.name} due on ${toYMD(bill.nextDueDate)} for $${parseFloat(bill.amount).toFixed(2)}`,
-        silent: false
-      });
-    } catch { /* noop */ }
-  };
-  const dueSoon = (bill) => {
-    if (!bill.nextDueDate || !bill.reminderDays) return false;
-    const today = new Date(); today.setHours(0, 0, 0, 0);
-    const due = new Date(bill.nextDueDate); due.setHours(0, 0, 0, 0);
-    const diffDays = Math.round((due - today) / (1000 * 60 * 60 * 24));
-    return diffDays === parseInt(bill.reminderDays, 10);
-  };
-
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      if (!(await requestNotifyPermission())) return;
-      bills.forEach(b => {
-        if (!cancelled && dueSoon(b) && !b.paidThisMonth) {
-          pushBillNotify(b);
-        }
-      });
-    })();
-    const now = new Date();
-    const msUntilMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 0, 0) - now;
-    const t = setTimeout(() => {
-      bills.forEach(b => {
-        if (dueSoon(b) && !b.paidThisMonth) pushBillNotify(b);
-      });
-    }, Math.max(1000, msUntilMidnight));
-    return () => { cancelled = true; clearTimeout(t); };
-  }, [bills]);
-
-  // ICS export
-  const exportUpcomingICS = () => {
-    const lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//PayPlan Pro//Bills//EN'];
-    const now = new Date().toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
-    const in30 = new Date(); in30.setDate(in30.getDate() + 30);
-
-    const addEvent = (b, dateStr) => {
-      const dt = new Date(dateStr);
-      const dtStart = new Date(dt.getFullYear(), dt.getMonth(), dt.getDate(), 9, 0, 0);
-      const stamp = dtStart.toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
-      const uid = `${b.id}-${stamp}@payplanpro`;
-      lines.push(
-        'BEGIN:VEVENT',
-        `UID:${uid}`,
-        `DTSTAMP:${now}`,
-        `DTSTART:${stamp}`,
-        `SUMMARY:${b.name} - $${parseFloat(b.amount).toFixed(2)}`,
-        `DESCRIPTION:Category: ${b.category}${b.autopay ? ' (Autopay)' : ''}`,
-        'END:VEVENT'
-      );
-    };
-
-    bills.forEach(b => {
-      if (!b.nextDueDate) return;
-      const due = new Date(b.nextDueDate);
-      if (due <= in30) addEvent(b, b.nextDueDate);
-      if (b.reminderDays) {
-        const remind = new Date(due); remind.setDate(remind.getDate() - parseInt(b.reminderDays, 10));
-        if (remind <= in30 && remind >= new Date()) addEvent(b, toYMD(remind));
-      }
-    });
-
-    lines.push('END:VCALENDAR');
-    const blob = new Blob([lines.join('\r\n')], { type: 'text/calendar' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url; a.download = `payplan-upcoming-${toYMD(new Date())}.ics`; a.click();
-    URL.revokeObjectURL(url);
-  };
-
-  const togglePaid = async (billId) => {
-    const updatedBills = bills.map(b => {
-      if (b.id === billId) {
-        // Autopay lock (confirm)
-        if (b.autopay) {
-          const ok = confirm('This bill is on Auto-pay. Mark as paid/unpaid anyway?');
-          if (!ok) return b;
-        }
-        const nowPaid = !b.paidThisMonth;
-        let updates = {
-          ...b,
-          paidThisMonth: nowPaid,
-          lastPaid: nowPaid ? new Date().toISOString() : b.lastPaid,
-          lastPaidDate: nowPaid ? new Date().toISOString().split('T')[0] : b.lastPaidDate
-        };
-
-        // Advance nextDueDate when marking as paid
-        if (nowPaid && b.nextDueDate) {
-          const currentDue = new Date(b.nextDueDate);
-          let nextDue = new Date(currentDue);
-
-          if (b.frequency === 'monthly') {
-            nextDue.setMonth(nextDue.getMonth() + 1);
-          } else if (b.frequency === 'weekly') {
-            nextDue.setDate(nextDue.getDate() + 7);
-          } else if (b.frequency === 'biweekly') {
-            nextDue.setDate(nextDue.getDate() + 14);
-          } else if (b.frequency === 'quarterly') {
-            nextDue.setMonth(nextDue.getMonth() + 3);
-          } else if (b.frequency === 'annual') {
-            nextDue.setFullYear(nextDue.getFullYear() + 1);
-          }
-
-          updates.nextDueDate = nextDue.toISOString().split('T')[0];
-        }
-
-        return updates;
-      }
-      return b;
-    });
-    await saveBills(updatedBills);
-  };
-
-  const toggleOneTimePaid = async (billId) => {
-    const updatedOneTime = oneTimeBills.map(b =>
-      b.id === billId
-        ? { ...b, paid: !b.paid, paidDate: !b.paid ? new Date().toISOString() : null }
-        : b
-    );
-    await saveOneTimeBills(updatedOneTime);
-  };
-
-  const addHistoricalPayment = async (billId, payment) => {
-    const updatedBills = bills.map(b => {
-      if (b.id === billId) {
-        const historicalPayments = [...(b.historicalPayments || []), payment];
-        const average = historicalPayments.reduce((sum, p) => sum + parseFloat(p.amount), 0) / historicalPayments.length;
-        return {
-          ...b,
-          historicalPayments,
-          amount: average.toFixed(2),
-          isVariable: true
-        };
-      }
-      return b;
-    });
-    await saveBills(updatedBills);
-  };
-
-  const deleteHistoricalPayment = async (billId, paymentIndex) => {
-    const updatedBills = bills.map(b => {
-      if (b.id === billId) {
-        const historicalPayments = b.historicalPayments.filter((_, idx) => idx !== paymentIndex);
-        const average = historicalPayments.length > 0
-          ? historicalPayments.reduce((sum, p) => sum + parseFloat(p.amount), 0) / historicalPayments.length
-          : b.amount;
-        return {
-          ...b,
-          historicalPayments,
-          amount: average.toFixed(2)
-        };
-      }
-      return b;
-    });
-    await saveBills(updatedBills);
-  };
-
-  // Calculate amortization schedule for an asset
   const calculateAmortization = (asset) => {
-    const principal = parseFloat(asset.loanAmount);
-    const annualRate = parseFloat(asset.interestRate) / 100;
-    const payment = parseFloat(asset.paymentAmount);
-
+    const principal = parseAmt(asset.currentBalance || asset.loanAmount);
+    const annualRate = parseAmt(asset.interestRate) / 100;
+    const payment = parseAmt(asset.paymentAmount);
     let periodsPerYear;
     switch (asset.paymentFrequency) {
       case 'weekly': periodsPerYear = 52; break;
@@ -557,48 +469,34 @@ const BillPayPlanner = () => {
       case 'annual': periodsPerYear = 1; break;
       default: periodsPerYear = 12;
     }
-
     const periodicRate = annualRate / periodsPerYear;
-
     let balance = principal;
     const schedule = [];
     let period = 0;
     let totalInterest = 0;
-
     const startDate = new Date(asset.startDate);
 
     while (balance > 0.01 && period < 1000) {
       period++;
-
       const interestPayment = balance * periodicRate;
       const principalPayment = Math.min(payment - interestPayment, balance);
       const totalPayment = interestPayment + principalPayment;
-
       balance -= principalPayment;
       totalInterest += interestPayment;
 
       const paymentDate = new Date(startDate);
       switch (asset.paymentFrequency) {
-        case 'weekly':
-          paymentDate.setDate(startDate.getDate() + (period * 7));
-          break;
-        case 'biweekly':
-          paymentDate.setDate(startDate.getDate() + (period * 14));
-          break;
-        case 'monthly':
-          paymentDate.setMonth(startDate.getMonth() + period);
-          break;
-        case 'quarterly':
-          paymentDate.setMonth(startDate.getMonth() + (period * 3));
-          break;
-        case 'annual':
-          paymentDate.setFullYear(startDate.getFullYear() + period);
-          break;
+        case 'weekly': paymentDate.setDate(startDate.getDate() + (period * 7)); break;
+        case 'biweekly': paymentDate.setDate(startDate.getDate() + (period * 14)); break;
+        case 'monthly': paymentDate.setMonth(startDate.getMonth() + period); break;
+        case 'quarterly': paymentDate.setMonth(startDate.getMonth() + (period * 3)); break;
+        case 'annual': paymentDate.setFullYear(startDate.getFullYear() + period); break;
+        default: paymentDate.setMonth(startDate.getMonth() + period);
       }
 
       schedule.push({
         period,
-        date: paymentDate.toISOString().split('T')[0],
+        date: toYMD(paymentDate),
         payment: totalPayment,
         principal: principalPayment,
         interest: interestPayment,
@@ -606,376 +504,122 @@ const BillPayPlanner = () => {
       });
     }
 
-    return {
-      schedule,
-      totalInterest,
-      totalPayments: period,
-      payoffDate: schedule[schedule.length - 1]?.date
-    };
+    return { schedule, totalInterest, totalPayments: period, payoffDate: schedule[schedule.length - 1]?.date };
   };
 
-  // Google Calendar Integration (placeholder)
+  // ---------- One-Time Bills ----------
+  const saveOneTime = async (updated) => setOneTimeBills(updated);
+  const addOneTimeBill = async (billData) => {
+    const newBill = { id: Date.now(), ...billData, paid: false, addedDate: new Date().toISOString() };
+    await saveOneTime([...oneTimeBills, newBill]);
+    setShowOneTimeForm(false);
+  };
+  const updateOneTimeBill = async (billData) => {
+    const updated = oneTimeBills.map(b => b.id === editingOneTime.id ? { ...b, ...billData } : b);
+    await saveOneTime(updated);
+    setEditingOneTime(null);
+  };
+  const deleteOneTimeBill = async (billId) => saveOneTime(oneTimeBills.filter(b => b.id !== billId));
+  const toggleOneTimePaid = async (billId) => {
+    const updated = oneTimeBills.map(b => b.id === billId ? { ...b, paid: !b.paid, paidDate: !b.paid ? new Date().toISOString() : null } : b);
+    await saveOneTime(updated);
+  };
+
+  // ---------- Propane ----------
+  const savePropane = async (updated) => setPropaneFills(updated);
+  const addPropaneFill = async (fill) => {
+    const newFill = { ...fill, id: Date.now() };
+    await savePropane([...propaneFills, newFill]);
+  };
+  const deletePropaneFill = async (id) => savePropane(propaneFills.filter(f => f.id !== id));
+
+  // ---------- Calendar (placeholder) ----------
   const connectGoogleCalendar = async () => {
     const connected = !calendarConnected;
     setCalendarConnected(connected);
-    localStorage.setItem('calendarConnected', JSON.stringify(connected));
-    if (connected) {
-      alert('Calendar connected! (Demo mode)');
-    }
+    if (connected) alert('Calendar connected! (Demo mode)');
   };
+  const syncToCalendar = async () => alert('Syncing bills to calendar... (Demo mode)');
 
-  const syncToCalendar = async () => {
-    alert('Syncing bills to calendar... (Demo mode)');
-  };
-
-  // Calculate which paycheck pays which bills based on dates
-  const getPaycheckAssignments = () => {
-    if (!paySchedule || !paySchedule.nextPayDate) return { check1: [], check2: [], payDates: [] };
-
-    const nextPay = new Date(paySchedule.nextPayDate);
-
-    const payDates = [nextPay];
-    for (let i = 1; i < 4; i++) {
-      const nextDate = new Date(payDates[i - 1]);
-      switch (paySchedule.frequency) {
-        case 'weekly':
-          nextDate.setDate(nextDate.getDate() + 7);
-          break;
-        case 'biweekly':
-          nextDate.setDate(nextDate.getDate() + 14);
-          break;
-        case 'semimonthly':
-          if (nextDate.getDate() <= 15) {
-            nextDate.setDate(15);
-          } else {
-            nextDate.setMonth(nextDate.getMonth() + 1);
-            nextDate.setDate(1);
-          }
-          break;
-        case 'monthly':
-          nextDate.setMonth(nextDate.getMonth() + 1);
-          break;
-      }
-      payDates.push(new Date(nextDate));
-    }
-
-    const check1Date = payDates[0];
-    const check2Date = payDates[1];
-
-    const check1Bills = [];
-    const check2Bills = [];
-
-    bills.forEach(bill => {
-      const dueDay = parseInt(bill.dueDate);
-
-      if (bill.payFromCheck === 'check1') {
-        check1Bills.push(bill);
-      } else if (bill.payFromCheck === 'check2') {
-        check2Bills.push(bill);
-      } else {
-        const check1Month = check1Date.getMonth();
-        const check1Year = check1Date.getFullYear();
-        const check2Month = check2Date.getMonth();
-        const check2Year = check2Date.getFullYear();
-
-        let dueDateForCheck1 = new Date(check1Year, check1Month, dueDay);
-        let dueDateForCheck2 = new Date(check2Year, check2Month, dueDay);
-
-        if (dueDay < check1Date.getDate()) {
-          dueDateForCheck1.setMonth(dueDateForCheck1.getMonth() + 1);
-        }
-        if (dueDay < check2Date.getDate()) {
-          dueDateForCheck2.setMonth(dueDateForCheck2.getMonth() + 1);
-        }
-
-        bill._originalCheck = (check1Date < dueDateForCheck1 && dueDateForCheck1 <= check2Date) ? 1 : 2;
-        bill._dueDate = bill._originalCheck === 1 ? dueDateForCheck1 : dueDateForCheck2;
-
-        if (bill._originalCheck === 1) {
-          check1Bills.push(bill);
-        } else {
-          check2Bills.push(bill);
-        }
-      }
-    });
-
-    if (paySchedule) {
-      const perCheck = parseFloat(paySchedule.payAmount);
-      let check1Total = check1Bills.reduce((sum, b) => sum + parseFloat(b.amount), 0);
-      let check2Total = check2Bills.reduce((sum, b) => sum + parseFloat(b.amount), 0);
-      let leftover1 = perCheck - check1Total;
-      let leftover2 = perCheck - check2Total;
-
-      if (leftover1 - leftover2 > 200) {
-        const movable = check2Bills.filter(b =>
-          !b.autopay &&
-          b.payFromCheck === 'auto' &&
-          parseInt(b.dueDate) > check1Date.getDate()
-        );
-
-        let bestBill = null;
-        let bestDiff = Infinity;
-
-        for (const bill of movable) {
-          const billAmt = parseFloat(bill.amount);
-          const newLeftover1 = leftover1 - billAmt;
-          const newLeftover2 = leftover2 + billAmt;
-          const newDifference = Math.abs(newLeftover1 - newLeftover2);
-          if (newDifference < Math.abs(leftover1 - leftover2) && newDifference <= 200) {
-            if (newDifference < bestDiff) {
-              bestDiff = newDifference;
-              bestBill = bill;
-            }
-          }
-        }
-
-        if (bestBill) {
-          const fromIndex = check2Bills.indexOf(bestBill);
-          check2Bills.splice(fromIndex, 1);
-          check1Bills.push(bestBill);
-        }
-      }
-    }
-
-    return {
-      check1: check1Bills,
-      check2: check2Bills,
-      payDates: payDates.slice(0, 2)
-    };
-  };
-
-  // Helpers for analytics
-  const perCheckEnvelopeSum = () => envelopes.reduce((s, e) => s + (parseFloat(e.perCheck) || 0), 0);
-
-  const monthlyCategorySpend = () => {
-    const factor = (freq) => {
-      if (freq === 'monthly') return 1;
-      if (freq === 'weekly') return 4.33;
-      if (freq === 'biweekly') return 2.17;
-      if (freq === 'quarterly') return 1 / 3;
-      if (freq === 'annual') return 1 / 12;
-      return 1;
-    };
-    const spend = {};
-    bills.forEach(b => {
-      const amt = parseFloat(b.amount || 0) * factor(b.frequency);
-      spend[b.category] = (spend[b.category] || 0) + amt;
-    });
+  // ---------- Overview helpers ----------
+  const currentMonthInstances = useMemo(() => {
     const now = new Date();
-    oneTimeBills.forEach(o => {
-      if (!o.paid) {
-        const d = new Date(o.dueDate);
-        if (d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear()) {
-          spend[o.category || 'other'] = (spend[o.category || 'other'] || 0) + parseFloat(o.amount || 0);
-        }
-      }
-    });
-    return spend;
-  };
+    return billInstances
+      .filter(i => sameMonth(new Date(i.dueDate), now))
+      .sort((a, b) => new Date(a.dueDate) - new Date(b.dueDate));
+  }, [billInstances]);
 
-  // Calculate financial overview
-  const calculateOverview = () => {
-    const monthlyBills = bills.reduce((sum, bill) => {
-      if (bill.frequency === 'monthly') return sum + parseFloat(bill.amount);
-      if (bill.frequency === 'weekly') return sum + (parseFloat(bill.amount) * 4.33);
-      if (bill.frequency === 'biweekly') return sum + (parseFloat(bill.amount) * 2.17);
-      if (bill.frequency === 'quarterly') return sum + (parseFloat(bill.amount) / 3);
-      if (bill.frequency === 'annual') return sum + (parseFloat(bill.amount) / 12);
-      return sum;
-    }, 0);
+  const monthlyTotal = (instances) => instances.reduce((s, i) => s + parseAmt(i.actualPaid ?? i.amountEstimate), 0);
 
-    const upcomingOneTime = oneTimeBills
-      .filter(b => !b.paid)
-      .reduce((sum, bill) => sum + parseFloat(bill.amount), 0);
+  const overview = useMemo(() => {
+    // approximate monthly bills from instances of this month
+    const monthlyBills = monthlyTotal(currentMonthInstances);
 
-    const totalMonthly = monthlyBills;
+    // one-time upcoming (unpaid)
+    const upcomingOneTime = oneTimeBills.filter(b => !b.paid).reduce((s, b) => s + parseAmt(b.amount), 0);
 
+    // monthly income: count checks in current month
     let monthlyIncome = 0;
     let paychecksThisMonth = 0;
     let nextPaycheckDate = null;
     let daysUntilNextPaycheck = null;
-
-    if (paySchedule && paySchedule.nextPayDate) {
+    if (paySchedule?.nextPayDate) {
       const today = new Date();
       const currentMonth = today.getMonth();
       const currentYear = today.getFullYear();
-      const payAmount = parseFloat(paySchedule.payAmount);
-
-      const nextPay = new Date(paySchedule.nextPayDate);
-      const payDates = [nextPay];
-
-      for (let i = 1; i < 8; i++) {
-        const nextDate = new Date(payDates[i - 1]);
-
-        switch (paySchedule.frequency) {
-          case 'weekly':
-            nextDate.setDate(nextDate.getDate() + 7);
-            break;
-          case 'biweekly':
-            nextDate.setDate(nextDate.getDate() + 14);
-            break;
-          case 'semimonthly':
-            if (nextDate.getDate() <= 15) {
-              nextDate.setDate(15);
-            } else {
-              nextDate.setMonth(nextDate.getMonth() + 1);
-              nextDate.setDate(1);
-            }
-            break;
-          case 'monthly':
-            nextDate.setMonth(nextDate.getMonth() + 1);
-            break;
-        }
-
-        payDates.push(new Date(nextDate));
-      }
-
-      paychecksThisMonth = payDates.filter(date =>
-        date.getMonth() === currentMonth && date.getFullYear() === currentYear
-      ).length;
-
+      const payAmount = parseAmt(paySchedule.payAmount);
+      const nd = nextPayDates; // many
+      paychecksThisMonth = nd.filter(d => d.getMonth() === currentMonth && d.getFullYear() === currentYear).length;
       monthlyIncome = payAmount * paychecksThisMonth;
-
-      nextPaycheckDate = payDates.find(date => date >= today);
+      nextPaycheckDate = nd.find(d => d >= today);
       if (nextPaycheckDate) {
-        const timeDiff = nextPaycheckDate.getTime() - today.getTime();
-        daysUntilNextPaycheck = Math.ceil(timeDiff / (1000 * 3600 * 24));
+        const diff = nextPaycheckDate.getTime() - today.getTime();
+        daysUntilNextPaycheck = Math.ceil(diff / (1000 * 3600 * 24));
       }
     }
+    const leftover = monthlyIncome - monthlyBills;
 
-    const leftover = monthlyIncome - totalMonthly;
+    return { monthlyBills, totalMonthly: monthlyBills, upcomingOneTime, monthlyIncome, leftover, paychecksThisMonth, nextPaycheckDate, daysUntilNextPaycheck };
+  }, [currentMonthInstances, oneTimeBills, paySchedule, nextPayDates]);
 
-    return {
-      monthlyBills,
-      totalMonthly,
-      upcomingOneTime,
-      monthlyIncome,
-      leftover,
-      paychecksThisMonth,
-      nextPaycheckDate,
-      daysUntilNextPaycheck
-    };
-  };
-
-  const overview = calculateOverview();
-
-  // Form Components
-  const BillForm = ({ bill, onSubmit, onCancel }) => {
-    const [formData, setFormData] = useState(bill || {
+  // ---------- Forms ----------
+  const TemplateForm = ({ defaultValue, onCancel, onSubmit }) => {
+    const [form, setForm] = useState(defaultValue || {
       name: '',
       amount: '',
-      dueDate: '',
-      frequency: 'monthly',
+      isVariable: false,
       category: 'utilities',
       autopay: false,
-      isVariable: false,
-      payFromCheck: 'auto',
-      reminderDays: 0
+      dueDate: 1,
+      frequency: 'monthly',
     });
-
-    const handleSubmit = (e) => {
-      e.preventDefault();
-      onSubmit(formData);
-    };
-
-    const historicalCount = bill?.historicalPayments?.length || 0;
-    const isVariableBill = formData.isVariable || historicalCount > 0;
-
     return (
       <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-        <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full max-h-[90vh] overflow-y-auto">
+        <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md">
           <div className="p-6">
-            <h2 className="text-2xl font-bold mb-6">{bill ? 'Edit Bill' : 'Add New Bill'}</h2>
-            <form onSubmit={handleSubmit} className="space-y-4">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-2xl font-bold">{defaultValue ? 'Edit Bill Template' : 'Add Bill Template'}</h2>
+              <button className="p-2 rounded-lg hover:bg-slate-100" onClick={onCancel}><X size={20} /></button>
+            </div>
+            <div className="space-y-4">
               <div>
-                <label className="block text-sm font-semibold mb-2">Bill Name</label>
-                <input
-                  type="text"
-                  value={formData.name}
-                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  className="w-full px-4 py-2 border-2 border-slate-200 rounded-xl focus:border-emerald-500 outline-none"
-                  required
-                />
+                <label className="text-sm font-semibold">Name</label>
+                <input className="w-full mt-1 px-3 py-2 border-2 rounded-xl"
+                  value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} required />
               </div>
-
-              <div className="flex items-center gap-2 mb-4">
-                <input
-                  type="checkbox"
-                  id="isVariable"
-                  checked={formData.isVariable}
-                  onChange={(e) => setFormData({ ...formData, isVariable: e.target.checked })}
-                  className="w-5 h-5"
-                />
-                <label htmlFor="isVariable" className="text-sm font-semibold">
-                  Variable amount (like water, electricity)
-                </label>
+              <div className="flex items-center gap-2">
+                <input type="checkbox" checked={form.isVariable} onChange={e => setForm({ ...form, isVariable: e.target.checked })} />
+                <span className="text-sm font-semibold">Variable amount</span>
               </div>
-
-              {isVariableBill && historicalCount > 0 && (
-                <div className="bg-blue-50 border-2 border-blue-200 rounded-xl p-3 mb-4">
-                  <p className="text-sm text-blue-800">
-                    📊 <strong>Estimated amount:</strong> ${formData.amount || '0.00'} (based on {historicalCount} month{historicalCount !== 1 ? 's' : ''})
-                  </p>
-                  <p className="text-xs text-blue-600 mt-1">
-                    Add more historical payments to improve accuracy
-                  </p>
-                </div>
-              )}
-
               <div>
-                <label className="block text-sm font-semibold mb-2">
-                  {isVariableBill ? 'Estimated Amount (or enter manually)' : 'Amount'}
-                </label>
-                <input
-                  type="number"
-                  step="0.01"
-                  value={formData.amount}
-                  onChange={(e) => setFormData({ ...formData, amount: e.target.value })}
-                  className="w-full px-4 py-2 border-2 border-slate-200 rounded-xl focus:border-emerald-500 outline-none"
-                  required
-                />
-                {isVariableBill && (
-                  <p className="text-xs text-slate-500 mt-1">
-                    This will be automatically updated based on historical payments
-                  </p>
-                )}
+                <label className="text-sm font-semibold">{form.isVariable ? 'Estimated Amount' : 'Amount'}</label>
+                <input type="number" step="0.01" className="w-full mt-1 px-3 py-2 border-2 rounded-xl"
+                  value={form.amount} onChange={e => setForm({ ...form, amount: e.target.value })} required />
               </div>
-
               <div>
-                <label className="block text-sm font-semibold mb-2">Due Date (Day of Month)</label>
-                <input
-                  type="number"
-                  min="1"
-                  max="31"
-                  value={formData.dueDate}
-                  onChange={(e) => setFormData({ ...formData, dueDate: e.target.value })}
-                  className="w-full px-4 py-2 border-2 border-slate-200 rounded-xl focus:border-emerald-500 outline-none"
-                  required
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-semibold mb-2">Frequency</label>
-                <select
-                  value={formData.frequency}
-                  onChange={(e) => setFormData({ ...formData, frequency: e.target.value })}
-                  className="w-full px-4 py-2 border-2 border-slate-200 rounded-xl focus:border-emerald-500 outline-none"
-                >
-                  <option value="weekly">Weekly</option>
-                  <option value="biweekly">Bi-weekly</option>
-                  <option value="monthly">Monthly</option>
-                  <option value="quarterly">Quarterly</option>
-                  <option value="annual">Annual</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-sm font-semibold mb-2">Category</label>
-                <select
-                  value={formData.category}
-                  onChange={(e) => setFormData({ ...formData, category: e.target.value })}
-                  className="w-full px-4 py-2 border-2 border-slate-200 rounded-xl focus:border-emerald-500 outline-none"
-                >
+                <label className="text-sm font-semibold">Category</label>
+                <select className="w-full mt-1 px-3 py-2 border-2 rounded-xl"
+                  value={form.category} onChange={e => setForm({ ...form, category: e.target.value })}>
                   <option value="utilities">Utilities</option>
                   <option value="subscription">Subscription</option>
                   <option value="insurance">Insurance</option>
@@ -984,66 +628,65 @@ const BillPayPlanner = () => {
                   <option value="other">Other</option>
                 </select>
               </div>
-
               <div className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  id="autopay"
-                  checked={formData.autopay}
-                  onChange={(e) => setFormData({ ...formData, autopay: e.target.checked })}
-                  className="w-5 h-5"
-                />
-                <label htmlFor="autopay" className="text-sm font-semibold">Auto-pay enabled</label>
+                <input type="checkbox" checked={form.autopay} onChange={e => setForm({ ...form, autopay: e.target.checked })} />
+                <span className="text-sm font-semibold">Auto-pay</span>
               </div>
-              {formData.autopay && (
-                <p className="text-xs text-amber-600 mt-1">Autopay lock: manual pay toggle will be disabled (or require confirmation).</p>
-              )}
-
-              {/* Reminder lead time */}
               <div>
-                <label className="block text-sm font-semibold mb-2">Reminder (days before due)</label>
-                <input
-                  type="number"
-                  min="0"
-                  value={formData.reminderDays || 0}
-                  onChange={(e) => setFormData({ ...formData, reminderDays: e.target.value })}
-                  className="w-full px-4 py-2 border-2 border-slate-200 rounded-xl focus:border-emerald-500 outline-none"
-                />
-                <p className="text-xs text-slate-500 mt-1">Uses browser notifications (no email/SMS).</p>
+                <label className="text-sm font-semibold">Due Day (1–31)</label>
+                <input type="number" min={1} max={31} className="w-full mt-1 px-3 py-2 border-2 rounded-xl"
+                  value={form.dueDate} onChange={e => setForm({ ...form, dueDate: e.target.value })} required />
               </div>
+              <div className="flex gap-3 pt-2">
+                <button className="flex-1 px-4 py-3 bg-slate-100 hover:bg-slate-200 rounded-xl font-semibold" onClick={onCancel}>Cancel</button>
+                <button className="flex-1 px-4 py-3 bg-emerald-600 hover:bg-emerald-700 rounded-xl text-white font-semibold"
+                  onClick={() => defaultValue ? updateBillTemplate(form) : addBillTemplate(form)}
+                >{defaultValue ? 'Update' : 'Add'}</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
 
+  const PayForm = ({ defaultValue, onCancel, onSubmit }) => {
+    const [form, setForm] = useState(defaultValue || { frequency: 'biweekly', payAmount: '', nextPayDate: '' });
+    return (
+      <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+        <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md">
+          <div className="p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-2xl font-bold">Pay Schedule</h2>
+              <button className="p-2 rounded-lg hover:bg-slate-100" onClick={onCancel}><X size={20} /></button>
+            </div>
+            <div className="space-y-4">
               <div>
-                <label className="block text-sm font-semibold mb-2">Pay From Paycheck</label>
-                <select
-                  value={formData.payFromCheck}
-                  onChange={(e) => setFormData({ ...formData, payFromCheck: e.target.value })}
-                  className="w-full px-4 py-2 border-2 border-slate-200 rounded-xl focus:border-emerald-500 outline-none"
-                >
-                  <option value="auto">Auto (based on due date)</option>
-                  <option value="check1">First Paycheck (1st-15th)</option>
-                  <option value="check2">Second Paycheck (16th-31st)</option>
+                <label className="text-sm font-semibold">Frequency</label>
+                <select className="w-full mt-1 px-3 py-2 border-2 rounded-xl"
+                  value={form.frequency} onChange={e => setForm({ ...form, frequency: e.target.value })}>
+                  <option value="weekly">Weekly</option>
+                  <option value="biweekly">Bi-weekly</option>
+                  <option value="semimonthly">Semi-monthly</option>
+                  <option value="monthly">Monthly</option>
                 </select>
-                <p className="text-xs text-slate-500 mt-1">
-                  Auto will assign based on your due date and pay schedule
-                </p>
               </div>
-
-              <div className="flex gap-3 pt-4">
-                <button
-                  type="button"
-                  onClick={onCancel}
-                  className="flex-1 px-4 py-3 bg-slate-100 hover:bg-slate-200 rounded-xl font-semibold transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="flex-1 px-4 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-semibold transition-colors"
-                >
-                  {bill ? 'Update' : 'Add'} Bill
-                </button>
+              <div>
+                <label className="text-sm font-semibold">Pay Amount (per check)</label>
+                <input type="number" step="0.01" className="w-full mt-1 px-3 py-2 border-2 rounded-xl"
+                  value={form.payAmount} onChange={e => setForm({ ...form, payAmount: e.target.value })} required />
               </div>
-            </form>
+              <div>
+                <label className="text-sm font-semibold">Next Pay Date</label>
+                <input type="date" className="w-full mt-1 px-3 py-2 border-2 rounded-xl"
+                  value={form.nextPayDate} onChange={e => setForm({ ...form, nextPayDate: e.target.value })} required />
+              </div>
+              <div className="flex gap-3 pt-2">
+                <button className="flex-1 px-4 py-3 bg-slate-100 hover:bg-slate-200 rounded-xl font-semibold" onClick={onCancel}>Cancel</button>
+                <button className="flex-1 px-4 py-3 bg-emerald-600 hover:bg-emerald-700 rounded-xl text-white font-semibold"
+                  onClick={() => onSubmit(form)}>Save</button>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -1051,7 +694,7 @@ const BillPayPlanner = () => {
   };
 
   const AssetForm = ({ asset, onSubmit, onCancel }) => {
-    const [formData, setFormData] = useState(asset || {
+    const [form, setForm] = useState(asset || {
       name: '',
       type: 'mortgage',
       loanAmount: '',
@@ -1061,38 +704,24 @@ const BillPayPlanner = () => {
       paymentAmount: '',
       paymentFrequency: 'monthly',
       startDate: new Date().toISOString().split('T')[0],
-      createBill: true
+      createBill: false
     });
-
-    const handleSubmit = (e) => {
-      e.preventDefault();
-      onSubmit(formData);
-    };
-
     return (
       <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-        <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full max-h-[90vh] overflow-y-auto">
+        <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full">
           <div className="p-6">
-            <h2 className="text-2xl font-bold mb-6">{asset ? 'Edit Asset' : 'Add New Asset'}</h2>
-            <form onSubmit={handleSubmit} className="space-y-4">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-2xl font-bold">{asset ? 'Edit Asset' : 'Add Asset'}</h2>
+              <button className="p-2 rounded-lg hover:bg-slate-100" onClick={onCancel}><X size={20} /></button>
+            </div>
+            <form onSubmit={(e) => { e.preventDefault(); onSubmit(form); }} className="space-y-3">
               <div>
-                <label className="block text-sm font-semibold mb-2">Asset Name</label>
-                <input
-                  type="text"
-                  value={formData.name}
-                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  className="w-full px-4 py-2 border-2 border-slate-200 rounded-xl focus:border-emerald-500 outline-none"
-                  required
-                />
+                <label className="text-sm font-semibold">Name</label>
+                <input className="w-full mt-1 px-3 py-2 border-2 rounded-xl" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} required />
               </div>
-
               <div>
-                <label className="block text-sm font-semibold mb-2">Type</label>
-                <select
-                  value={formData.type}
-                  onChange={(e) => setFormData({ ...formData, type: e.target.value })}
-                  className="w-full px-4 py-2 border-2 border-slate-200 rounded-xl focus:border-emerald-500 outline-none"
-                >
+                <label className="text-sm font-semibold">Type</label>
+                <select className="w-full mt-1 px-3 py-2 border-2 rounded-xl" value={form.type} onChange={e => setForm({ ...form, type: e.target.value })}>
                   <option value="mortgage">Mortgage</option>
                   <option value="auto">Auto Loan</option>
                   <option value="student">Student Loan</option>
@@ -1101,117 +730,49 @@ const BillPayPlanner = () => {
                   <option value="other">Other</option>
                 </select>
               </div>
-
-              <div>
-                <label className="block text-sm font-semibold mb-2">Total Loan Amount</label>
-                <input
-                  type="number"
-                  step="0.01"
-                  value={formData.loanAmount}
-                  onChange={(e) => setFormData({ ...formData, loanAmount: e.target.value })}
-                  className="w-full px-4 py-2 border-2 border-slate-200 rounded-xl focus:border-emerald-500 outline-none"
-                  required
-                />
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-sm font-semibold">Loan Amount</label>
+                  <input type="number" step="0.01" className="w-full mt-1 px-3 py-2 border-2 rounded-xl" value={form.loanAmount} onChange={e => setForm({ ...form, loanAmount: e.target.value })} required />
+                </div>
+                <div>
+                  <label className="text-sm font-semibold">Current Balance</label>
+                  <input type="number" step="0.01" className="w-full mt-1 px-3 py-2 border-2 rounded-xl" value={form.currentBalance} onChange={e => setForm({ ...form, currentBalance: e.target.value })} required />
+                </div>
+                <div>
+                  <label className="text-sm font-semibold">Loan Term (months)</label>
+                  <input type="number" className="w-full mt-1 px-3 py-2 border-2 rounded-xl" value={form.loanTerm} onChange={e => setForm({ ...form, loanTerm: e.target.value })} required />
+                </div>
+                <div>
+                  <label className="text-sm font-semibold">Interest Rate (%)</label>
+                  <input type="number" step="0.01" className="w-full mt-1 px-3 py-2 border-2 rounded-xl" value={form.interestRate} onChange={e => setForm({ ...form, interestRate: e.target.value })} required />
+                </div>
+                <div>
+                  <label className="text-sm font-semibold">Payment Amount</label>
+                  <input type="number" step="0.01" className="w-full mt-1 px-3 py-2 border-2 rounded-xl" value={form.paymentAmount} onChange={e => setForm({ ...form, paymentAmount: e.target.value })} required />
+                </div>
+                <div>
+                  <label className="text-sm font-semibold">Payment Frequency</label>
+                  <select className="w-full mt-1 px-3 py-2 border-2 rounded-xl" value={form.paymentFrequency} onChange={e => setForm({ ...form, paymentFrequency: e.target.value })}>
+                    <option value="weekly">Weekly</option>
+                    <option value="biweekly">Bi-weekly</option>
+                    <option value="monthly">Monthly</option>
+                    <option value="quarterly">Quarterly</option>
+                    <option value="annual">Annual</option>
+                  </select>
+                </div>
               </div>
-
               <div>
-                <label className="block text-sm font-semibold mb-2">Current Balance Remaining</label>
-                <input
-                  type="number"
-                  step="0.01"
-                  value={formData.currentBalance}
-                  onChange={(e) => setFormData({ ...formData, currentBalance: e.target.value })}
-                  className="w-full px-4 py-2 border-2 border-slate-200 rounded-xl focus:border-emerald-500 outline-none"
-                  required
-                />
+                <label className="text-sm font-semibold">Start Date</label>
+                <input type="date" className="w-full mt-1 px-3 py-2 border-2 rounded-xl" value={form.startDate} onChange={e => setForm({ ...form, startDate: e.target.value })} required />
               </div>
-
-              <div>
-                <label className="block text-sm font-semibold mb-2">Loan Term (months)</label>
-                <input
-                  type="number"
-                  value={formData.loanTerm}
-                  onChange={(e) => setFormData({ ...formData, loanTerm: e.target.value })}
-                  className="w-full px-4 py-2 border-2 border-slate-200 rounded-xl focus:border-emerald-500 outline-none"
-                  required
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-semibold mb-2">Interest Rate (%)</label>
-                <input
-                  type="number"
-                  step="0.01"
-                  value={formData.interestRate}
-                  onChange={(e) => setFormData({ ...formData, interestRate: e.target.value })}
-                  className="w-full px-4 py-2 border-2 border-slate-200 rounded-xl focus:border-emerald-500 outline-none"
-                  required
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-semibold mb-2">Payment Amount</label>
-                <input
-                  type="number"
-                  step="0.01"
-                  value={formData.paymentAmount}
-                  onChange={(e) => setFormData({ ...formData, paymentAmount: e.target.value })}
-                  className="w-full px-4 py-2 border-2 border-slate-200 rounded-xl focus:border-emerald-500 outline-none"
-                  required
-                />
-              </div>
-
               <div className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  id="createBill"
-                  checked={formData.createBill}
-                  onChange={(e) => setFormData({ ...formData, createBill: e.target.checked })}
-                  className="w-5 h-5"
-                />
-                <label htmlFor="createBill" className="text-sm font-semibold">Add as recurring bill</label>
+                <input type="checkbox" checked={form.createBill} onChange={e => setForm({ ...form, createBill: e.target.checked })} />
+                <span className="text-sm font-semibold">Create linked recurring bill</span>
               </div>
-
-              <div>
-                <label className="block text-sm font-semibold mb-2">Payment Frequency</label>
-                <select
-                  value={formData.paymentFrequency}
-                  onChange={(e) => setFormData({ ...formData, paymentFrequency: e.target.value })}
-                  className="w-full px-4 py-2 border-2 border-slate-200 rounded-xl focus:border-emerald-500 outline-none"
-                >
-                  <option value="weekly">Weekly</option>
-                  <option value="biweekly">Bi-weekly</option>
-                  <option value="monthly">Monthly</option>
-                  <option value="quarterly">Quarterly</option>
-                  <option value="annual">Annual</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-sm font-semibold mb-2">Start Date</label>
-                <input
-                  type="date"
-                  value={formData.startDate}
-                  onChange={(e) => setFormData({ ...formData, startDate: e.target.value })}
-                  className="w-full px-4 py-2 border-2 border-slate-200 rounded-xl focus:border-emerald-500 outline-none"
-                  required
-                />
-              </div>
-
-              <div className="flex gap-3 pt-4">
-                <button
-                  type="button"
-                  onClick={onCancel}
-                  className="flex-1 px-4 py-3 bg-slate-100 hover:bg-slate-200 rounded-xl font-semibold transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="flex-1 px-4 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-semibold transition-colors"
-                >
-                  {asset ? 'Update' : 'Add'} Asset
-                </button>
+              <div className="flex gap-3 pt-2">
+                <button type="button" onClick={onCancel} className="flex-1 px-4 py-3 bg-slate-100 hover:bg-slate-200 rounded-xl font-semibold">Cancel</button>
+                <button type="submit" className="flex-1 px-4 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-semibold">{asset ? 'Update' : 'Add'}</button>
               </div>
             </form>
           </div>
@@ -1221,89 +782,35 @@ const BillPayPlanner = () => {
   };
 
   const OneTimeBillForm = ({ bill, onSubmit, onCancel }) => {
-    const [formData, setFormData] = useState(bill || {
-      name: '',
-      amount: '',
-      dueDate: '',
-      description: '',
-      category: 'other'
-    });
-
-    const handleSubmit = (e) => {
-      e.preventDefault();
-      onSubmit(formData);
-    };
-
+    const [form, setForm] = useState(bill || { name: '', amount: '', dueDate: '', description: '' });
     return (
       <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
         <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full">
           <div className="p-6">
-            <h2 className="text-2xl font-bold mb-6">{bill ? 'Edit One-Time Bill' : 'Add One-Time Bill'}</h2>
-            <form onSubmit={handleSubmit} className="space-y-4">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-2xl font-bold">{bill ? 'Edit One-Time Bill' : 'Add One-Time Bill'}</h2>
+              <button className="p-2 rounded-lg hover:bg-slate-100" onClick={onCancel}><X size={20} /></button>
+            </div>
+            <form onSubmit={(e) => { e.preventDefault(); onSubmit(form); }} className="space-y-3">
               <div>
-                <label className="block text-sm font-semibold mb-2">Bill Name</label>
-                <input
-                  type="text"
-                  value={formData.name}
-                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  className="w-full px-4 py-2 border-2 border-slate-200 rounded-xl focus:border-emerald-500 outline-none"
-                  required
-                />
+                <label className="text-sm font-semibold">Name</label>
+                <input className="w-full mt-1 px-3 py-2 border-2 rounded-xl" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} required />
               </div>
-
               <div>
-                <label className="block text-sm font-semibold mb-2">Amount</label>
-                <input
-                  type="number"
-                  step="0.01"
-                  value={formData.amount}
-                  onChange={(e) => setFormData({ ...formData, amount: e.target.value })}
-                  className="w-full px-4 py-2 border-2 border-slate-200 rounded-xl focus:border-emerald-500 outline-none"
-                  required
-                />
+                <label className="text-sm font-semibold">Amount</label>
+                <input type="number" step="0.01" className="w-full mt-1 px-3 py-2 border-2 rounded-xl" value={form.amount} onChange={e => setForm({ ...form, amount: e.target.value })} required />
               </div>
-
               <div>
-                <label className="block text-sm font-semibold mb-2">Due Date</label>
-                <input
-                  type="date"
-                  value={formData.dueDate}
-                  onChange={(e) => setFormData({ ...formData, dueDate: e.target.value })}
-                  className="w-full px-4 py-2 border-2 border-slate-200 rounded-xl focus:border-emerald-500 outline-none"
-                  required
-                />
+                <label className="text-sm font-semibold">Due Date</label>
+                <input type="date" className="w-full mt-1 px-3 py-2 border-2 rounded-xl" value={form.dueDate} onChange={e => setForm({ ...form, dueDate: e.target.value })} required />
               </div>
-
               <div>
-                <label className="block text-sm font-semibold mb-2">Category</label>
-                <select
-                  value={formData.category}
-                  onChange={(e) => setFormData({ ...formData, category: e.target.value })}
-                  className="w-full px-4 py-2 border-2 border-slate-200 rounded-xl focus:border-emerald-500 outline-none"
-                >
-                  <option value="utilities">Utilities</option>
-                  <option value="subscription">Subscription</option>
-                  <option value="insurance">Insurance</option>
-                  <option value="loan">Loan</option>
-                  <option value="rent">Rent/Mortgage</option>
-                  <option value="other">Other</option>
-                </select>
+                <label className="text-sm font-semibold">Description (Optional)</label>
+                <textarea rows={3} className="w-full mt-1 px-3 py-2 border-2 rounded-xl" value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} />
               </div>
-
-              <div className="flex gap-3 pt-4">
-                <button
-                  type="button"
-                  onClick={onCancel}
-                  className="flex-1 px-4 py-3 bg-slate-100 hover:bg-slate-200 rounded-xl font-semibold transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="flex-1 px-4 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-semibold transition-colors"
-                >
-                  {bill ? 'Update' : 'Add'} Bill
-                </button>
+              <div className="flex gap-3 pt-2">
+                <button type="button" onClick={onCancel} className="flex-1 px-4 py-3 bg-slate-100 hover:bg-slate-200 rounded-xl font-semibold">Cancel</button>
+                <button type="submit" className="flex-1 px-4 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-semibold">{bill ? 'Update' : 'Add'}</button>
               </div>
             </form>
           </div>
@@ -1312,323 +819,745 @@ const BillPayPlanner = () => {
     );
   };
 
-  const PayScheduleForm = ({ schedule, onSubmit, onCancel }) => {
-    const [formData, setFormData] = useState(schedule || {
-      frequency: 'biweekly',
-      payAmount: '',
-      nextPayDate: '',
-      payDates: []
-    });
+  // ---------- Header ----------
+  const Header = () => (
+    <div className="flex items-center justify-between mb-6">
+      <div>
+        <h1 className="text-4xl md:text-5xl font-black text-white">PayPlan Pro</h1>
+        <p className="text-emerald-100">Instances-based bill planning (2+ months ahead)</p>
+      </div>
+      <div className="flex gap-2">
+        <button onClick={() => setView('dashboard')} className={`px-4 py-2 rounded-xl font-semibold flex items-center gap-2 ${view === 'dashboard' ? 'bg-white text-emerald-600' : 'bg-white/20 text-white hover:bg-white/30'}`}><Home size={18}/>Dashboard</button>
+        <button onClick={() => setView('checklist')} className={`px-4 py-2 rounded-xl font-semibold flex items-center gap-2 ${view === 'checklist' ? 'bg-white text-emerald-600' : 'bg-white/20 text-white hover:bg-white/30'}`}><List size={18}/>Checklist</button>
+        <button onClick={() => setView('submit')} className={`px-4 py-2 rounded-xl font-semibold flex items-center gap-2 ${view === 'submit' ? 'bg-white text-emerald-600' : 'bg-white/20 text-white hover:bg-white/30'}`}><Check size={18}/>Submit</button>
+        <button onClick={() => setView('bills')} className={`px-4 py-2 rounded-xl font-semibold flex items-center gap-2 ${view === 'bills' ? 'bg-white text-emerald-600' : 'bg-white/20 text-white hover:bg-white/30'}`}><Receipt size={18}/>Bills</button>
+        <button onClick={() => setView('assets')} className={`px-4 py-2 rounded-xl font-semibold flex items-center gap-2 ${view === 'assets' ? 'bg-white text-emerald-600' : 'bg-white/20 text-white hover:bg-white/30'}`}><Building2 size={18}/>Assets</button>
+        <button onClick={() => setView('onetime')} className={`px-4 py-2 rounded-xl font-semibold flex items-center gap-2 ${view === 'onetime' ? 'bg-white text-emerald-600' : 'bg-white/20 text-white hover:bg-white/30'}`}><Calendar size={18}/>One-Time</button>
+        <button onClick={() => setView('propane')} className={`px-4 py-2 rounded-xl font-semibold flex items-center gap-2 ${view === 'propane' ? 'bg-white text-emerald-600' : 'bg-white/20 text-white hover:bg-white/30'}`}><Flame size={18}/>Propane</button>
+        <button onClick={() => setView('analytics')} className={`px-4 py-2 rounded-xl font-semibold flex items-center gap-2 ${view === 'analytics' ? 'bg-white text-emerald-600' : 'bg-white/20 text-white hover:bg-white/30'}`}><BarChart3 size={18}/>Analytics</button>
+        <button onClick={() => setView('settings')} className={`px-4 py-2 rounded-xl font-semibold flex items-center gap-2 ${view === 'settings' ? 'bg-white text-emerald-600' : 'bg-white/20 text-white hover:bg-white/30'}`}><Settings size={18}/>Settings</button>
+      </div>
+    </div>
+  );
 
-    const handleSubmit = (e) => {
-      e.preventDefault();
-      onSubmit(formData);
-      onCancel();
-    };
+  // ---------- Derived check groups ----------
+  const fourCheckPlan = useMemo(() => {
+    const checks = nextPayDates.slice(0, 4);
+    if (!checks.length) return { checks: [], groups: [] };
+    const groups = [1, 2, 3, 4].map(idx =>
+      billInstances.filter(i => i.assignedCheck === idx).sort((a, b) => new Date(a.dueDate) - new Date(b.dueDate))
+    );
+    return { checks, groups };
+  }, [billInstances, nextPayDates]);
 
+  // ---------- Views ----------
+  const Dashboard = () => {
     return (
-      <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-        <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full">
-          <div className="p-6">
-            <h2 className="text-2xl font-bold mb-6">Pay Schedule</h2>
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div>
-                <label className="block text-sm font-semibold mb-2">Pay Frequency</label>
-                <select
-                  value={formData.frequency}
-                  onChange={(e) => setFormData({ ...formData, frequency: e.target.value })}
-                  className="w-full px-4 py-2 border-2 border-slate-200 rounded-xl focus:border-emerald-500 outline-none"
-                >
-                  <option value="weekly">Weekly</option>
-                  <option value="biweekly">Bi-weekly</option>
-                  <option value="semimonthly">Semi-monthly</option>
-                  <option value="monthly">Monthly</option>
-                </select>
+      <div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+          <div className="bg-white rounded-2xl shadow-xl p-6">
+            <div className="flex items-center gap-3 mb-2">
+              <div className="p-3 bg-emerald-100 rounded-xl"><DollarSign className="text-emerald-600" size={24} /></div>
+              <div className="flex-1">
+                <p className="text-slate-500 text-sm">{new Date().toLocaleDateString('en-US', { month: 'long' })} Income</p>
+                <p className="text-3xl font-black text-slate-800">${overview.monthlyIncome.toFixed(2)}</p>
+                {overview.paychecksThisMonth > 0 && (
+                  <p className="text-xs text-slate-500 mt-1">
+                    {overview.paychecksThisMonth} paycheck{overview.paychecksThisMonth !== 1 ? 's' : ''} this month
+                  </p>
+                )}
               </div>
-
-              <div>
-                <label className="block text-sm font-semibold mb-2">Pay Amount (per paycheck)</label>
-                <input
-                  type="number"
-                  step="0.01"
-                  value={formData.payAmount}
-                  onChange={(e) => setFormData({ ...formData, payAmount: e.target.value })}
-                  className="w-full px-4 py-2 border-2 border-slate-200 rounded-xl focus:border-emerald-500 outline-none"
-                  required
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-semibold mb-2">Next Pay Date</label>
-                <input
-                  type="date"
-                  value={formData.nextPayDate}
-                  onChange={(e) => setFormData({ ...formData, nextPayDate: e.target.value })}
-                  className="w-full px-4 py-2 border-2 border-slate-200 rounded-xl focus:border-emerald-500 outline-none"
-                  required
-                />
-                <p className="text-xs text-slate-500 mt-1">
-                  When is your next paycheck? (e.g., this Friday)
+            </div>
+            {overview.nextPaycheckDate && (
+              <div className="mt-3 pt-3 border-t border-slate-100">
+                <p className="text-xs text-slate-500">Next paycheck:</p>
+                <p className="text-sm font-semibold text-emerald-600">
+                  {overview.nextPaycheckDate.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' })}
+                  {overview.daysUntilNextPaycheck !== null && (
+                    <span className="text-slate-500 ml-1">({overview.daysUntilNextPaycheck} day{overview.daysUntilNextPaycheck !== 1 ? 's' : ''})</span>
+                  )}
                 </p>
               </div>
-
-              <div className="flex gap-3 pt-4">
-                <button
-                  type="button"
-                  onClick={onCancel}
-                  className="flex-1 px-4 py-3 bg-slate-100 hover:bg-slate-200 rounded-xl font-semibold transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="flex-1 px-4 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-semibold transition-colors"
-                >
-                  Save Schedule
-                </button>
-              </div>
-            </form>
+            )}
           </div>
-        </div>
-      </div>
-    );
-  };
 
-  const HistoricalPaymentsForm = ({ bill, onClose }) => {
-    const [newPayment, setNewPayment] = useState({ date: '', amount: '' });
-
-    const handleAddPayment = (e) => {
-      e.preventDefault();
-      const currentPayments = bill.historicalPayments || [];
-      if (currentPayments.length >= 12) {
-        alert('Maximum 12 months of historical data. Delete an old entry to add a new one.');
-        return;
-      }
-      addHistoricalPayment(bill.id, newPayment);
-      setNewPayment({ date: '', amount: '' });
-    };
-
-    const historicalPayments = bill.historicalPayments || [];
-    the average = historicalPayments.length > 0
-      ? historicalPayments.reduce((sum, p) => sum + parseFloat(p.amount), 0) / historicalPayments.length
-      : 0;
-
-    return (
-      <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-        <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-          <div className="p-6">
-            <div className="flex items-center justify-between mb-6">
+          <div className="bg-white rounded-2xl shadow-xl p-6">
+            <div className="flex items-center gap-3 mb-2">
+              <div className="p-3 bg-red-100 rounded-xl"><TrendingUp className="text-red-600" size={24} /></div>
               <div>
-                <h2 className="text-2xl font-bold">Payment History - {bill.name}</h2>
-                <p className="text-sm text-slate-600">Track up to 12 months to estimate future bills</p>
+                <p className="text-slate-500 text-sm">Monthly Expenses</p>
+                <p className="text-3xl font-black text-slate-800">${overview.totalMonthly.toFixed(2)}</p>
               </div>
-              <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-lg" title="Close">
-                <X size={24} />
-              </button>
             </div>
+          </div>
 
-            {historicalPayments.length > 0 && (
-              <div className="mb-6 p-4 bg-gradient-to-r from-emerald-50 to-blue-50 border-2 border-emerald-200 rounded-xl">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-slate-600 mb-1">Current Estimated Amount</p>
-                    <p className="text-3xl font-black text-emerald-600">${average.toFixed(2)}</p>
-                    <p className="text-xs text-slate-500 mt-1">
-                      Based on {historicalPayments.length} month{historicalPayments.length !== 1 ? 's' : ''} of data
-                    </p>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-sm text-slate-600">Data completeness</p>
-                    <div className="flex gap-1 mt-2">
-                      {[...Array(12)].map((_, i) => (
-                        <div
-                          key={i}
-                          className={`w-2 h-8 rounded ${i < historicalPayments.length ? 'bg-emerald-500' : 'bg-slate-200'}`}
-                        />
-                      ))}
+          <div className="bg-white rounded-2xl shadow-xl p-6">
+            {(() => {
+              const perCheck = parseAmt(paySchedule?.payAmount);
+              const g1 = billInstances.filter(i => i.assignedCheck === 1).reduce((s, i) => s + parseAmt(i.amountEstimate), 0);
+              const g2 = billInstances.filter(i => i.assignedCheck === 2).reduce((s, i) => s + parseAmt(i.amountEstimate), 0);
+              const leftover1 = perCheck - perCheckEnvelopeSum() - g1;
+              const leftover2 = perCheck - perCheckEnvelopeSum() - g2;
+              return (
+                <>
+                  <h3 className="text-lg font-bold mb-3">Leftover Per Check</h3>
+                  <div className="space-y-3">
+                    <div className="p-3 bg-emerald-50 rounded-xl">
+                      <div className="flex justify-between items-center">
+                        <span className="text-sm text-slate-600">Check 1 Leftover</span>
+                        <span className={`text-xl font-bold ${leftover1 >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>${leftover1.toFixed(2)}</span>
+                      </div>
                     </div>
-                    <p className="text-xs text-slate-500 mt-1">{historicalPayments.length}/12 months</p>
+                    <div className="p-3 bg-blue-50 rounded-xl">
+                      <div className="flex justify-between items-center">
+                        <span className="text-sm text-slate-600">Check 2 Leftover</span>
+                        <span className={`text-xl font-bold ${leftover2 >= 0 ? 'text-blue-600' : 'text-red-600'}`}>${leftover2.toFixed(2)}</span>
+                      </div>
+                    </div>
+                    <div className="p-3 bg-slate-50 rounded-xl border-2 border-slate-200">
+                      <div className="flex justify-between items-center">
+                        <span className="text-sm font-semibold text-slate-700">Total Monthly</span>
+                        <span className={`text-xl font-bold ${overview.leftover >= 0 ? 'text-slate-800' : 'text-red-600'}`}>${overview.leftover.toFixed(2)}</span>
+                      </div>
+                    </div>
+                  </div>
+                </>
+              );
+            })()}
+          </div>
+        </div>
+
+        {/* Next 4 checks */}
+        <div className="bg-white rounded-2xl shadow-xl p-6">
+          <h3 className="text-xl font-bold mb-4">Next 4 Checks</h3>
+          {!fourCheckPlan.checks.length ? (
+            <p className="text-slate-600">Set your pay schedule in Settings.</p>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {fourCheckPlan.checks.map((d, idx) => {
+                const bucket = fourCheckPlan.groups[idx] || [];
+                const total = bucket.reduce((s, i) => s + parseAmt(i.amountEstimate), 0);
+                const free = parseAmt(paySchedule?.payAmount) - perCheckEnvelopeSum() - total;
+                return (
+                  <div key={idx} className="p-4 bg-slate-50 rounded-xl">
+                    <div className="flex items-center justify-between">
+                      <div className="font-semibold">Check {idx + 1} • {new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</div>
+                      <div className={`font-bold ${free >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>Free: ${free.toFixed(2)}</div>
+                    </div>
+                    <div className="text-sm text-slate-600 mt-1">{bucket.length} bills • Total ${total.toFixed(2)}</div>
+                    <div className="mt-2 space-y-1">
+                      {bucket.slice(0, 5).map(b => (
+                        <div key={b.id} className="flex items-center justify-between text-sm">
+                          <span>{b.name}</span>
+                          <span>${parseAmt(b.amountEstimate).toFixed(2)}</span>
+                        </div>
+                      ))}
+                      {bucket.length > 5 && <div className="text-xs text-slate-500 mt-1">+{bucket.length - 5} more…</div>}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  const BillsTemplates = () => (
+    <div>
+      <div className="flex items-center justify-between mb-4">
+        <h2 className="text-2xl font-bold text-white">Bill Templates</h2>
+        <button onClick={() => { setEditingTemplate(null); setShowTemplateForm(true); }} className="px-4 py-3 bg-white text-emerald-600 rounded-xl font-semibold flex items-center gap-2"><Plus size={18} />Add Template</button>
+      </div>
+      <div className="grid grid-cols-1 gap-3">
+        {billTemplates.length ? billTemplates.map((t) => (
+          <div key={t.id} className="bg-white rounded-xl p-4 shadow">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <div className="flex items-center gap-2 mb-1">
+                  <div className="font-bold text-lg">{t.name}</div>
+                  {t.isVariable && <span className="text-xs font-bold px-2 py-0.5 bg-yellow-100 text-yellow-700 rounded-full">VARIABLE</span>}
+                  {t.autopay && <span className="text-xs font-bold px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full">AUTO</span>}
+                </div>
+                <div className="text-sm text-slate-600 flex flex-wrap gap-4">
+                  <span><DollarSign className="inline mr-1" size={14} /> Est. ${parseAmt(t.amount).toFixed(2)}</span>
+                  <span><Calendar className="inline mr-1" size={14} /> Due day {t.dueDay}</span>
+                  <span>Category: {t.category}</span>
+                  <span>First due: {new Date(t.firstDueDate).toLocaleDateString()}</span>
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <button className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg" onClick={() => { setEditingTemplate(t); setShowTemplateForm(true); }} title="Edit"><Edit2 size={18} /></button>
+                <button className="p-2 text-red-600 hover:bg-red-50 rounded-lg" onClick={() => retireTemplate(t.id)} title="Retire"><Trash2 size={18} /></button>
+              </div>
+            </div>
+            <div className="mt-3 text-sm text-slate-600">
+              Upcoming:{' '}
+              {billInstances
+                .filter(i => i.templateId === t.id && new Date(i.dueDate) >= startOfMonth(new Date()))
+                .slice(0, 3)
+                .map(i => new Date(i.dueDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }))
+                .join(' • ') || '—'}
+            </div>
+          </div>
+        )) : (
+          <div className="bg-white rounded-xl p-8 text-center text-slate-600">No templates yet. Click “Add Template”.</div>
+        )}
+      </div>
+    </div>
+  );
+
+  const Checklist = () => (
+    <div>
+      <div className="flex items-center justify-between mb-4">
+        <h2 className="text-2xl font-bold text-white">{new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' })} Checklist</h2>
+        <button onClick={assignInstancesToChecks} className="px-4 py-2 rounded-xl bg-white/20 text-white hover:bg-white/30 font-semibold flex items-center gap-2"><RefreshCw size={16} />Re-assign</button>
+      </div>
+      <div className="grid grid-cols-1 gap-3">
+        {currentMonthInstances.length ? currentMonthInstances.map((i) => (
+          <div key={i.id} className="bg-white rounded-xl p-4 shadow flex items-start gap-3">
+            <button onClick={() => toggleInstancePaid(i.id)} className={`p-2 rounded-lg ${i.paid ? 'bg-green-500 text-white' : 'bg-slate-100 text-slate-400 hover:bg-slate-200'}`} title={i.paid ? 'Mark unpaid' : 'Mark paid'}>
+              <Check size={18} />
+            </button>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 mb-1">
+                <div className={`font-semibold ${i.paid ? 'line-through text-green-700' : 'text-slate-800'}`}>{i.name}</div>
+                {i.isVariable && <span className="text-xs font-bold px-2 py-0.5 bg-yellow-100 text-yellow-700 rounded-full">VAR</span>}
+                {i.autopay && <span className="text-xs font-bold px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full">AUTO</span>}
+              </div>
+              <div className="text-sm text-slate-600 flex flex-wrap gap-4">
+                <span><Calendar size={14} className="inline mr-1" /> {new Date(i.dueDate).toLocaleDateString()}</span>
+                <span><DollarSign size={14} className="inline mr-1" /> Est. ${parseAmt(i.amountEstimate).toFixed(2)}</span>
+                {i.actualPaid != null && <span>Actual ${parseAmt(i.actualPaid).toFixed(2)}</span>}
+                {i.assignedPayDate && <span><Clock size={14} className="inline mr-1" /> Check {i.assignedCheck} • {new Date(i.assignedPayDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>}
+              </div>
+            </div>
+          </div>
+        )) : (
+          <div className="bg-white rounded-2xl shadow-xl p-12 text-center">
+            <Receipt className="mx-auto mb-4 text-slate-300" size={64} />
+            <h3 className="text-xl font-bold text-slate-800 mb-2">No Bills This Month</h3>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+
+  const SubmitActuals = () => {
+    const thisMonthVars = currentMonthInstances.filter(i => i.isVariable);
+    const [values, setValues] = useState(() => {
+      const obj = {};
+      thisMonthVars.forEach(i => { obj[i.id] = i.actualPaid != null ? i.actualPaid : ''; });
+      return obj;
+    });
+    return (
+      <div>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-2xl font-bold text-white">Submit Actuals (Variable Bills)</h2>
+          <div className="text-emerald-100 text-sm">Updates last year's same month to keep estimates accurate.</div>
+        </div>
+        {thisMonthVars.length ? (
+          <div className="grid grid-cols-1 gap-3">
+            {thisMonthVars.map((i) => (
+              <div key={i.id} className="bg-white rounded-xl p-4 shadow flex items-center justify-between gap-3">
+                <div>
+                  <div className="font-semibold">{i.name}</div>
+                  <div className="text-sm text-slate-600">Due {new Date(i.dueDate).toLocaleDateString()} • Est. ${parseAmt(i.amountEstimate).toFixed(2)}</div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <input type="number" step="0.01" placeholder="Actual Paid" className="px-3 py-2 border-2 rounded-xl w-40"
+                    value={values[i.id] ?? ''} onChange={e => setValues({ ...values, [i.id]: e.target.value })} />
+                  <button className="px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold" onClick={() => submitActualPaid(i.id, values[i.id])}>Save</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="bg-white rounded-xl p-8 text-center text-slate-600">No variable bills this month.</div>
+        )}
+      </div>
+    );
+  };
+    const AssetsView = () => (
+    <div>
+      <div className="flex items-center justify-between mb-6">
+        <h2 className="text-3xl font-black text-white">Assets & Loans</h2>
+        <button onClick={() => setShowAssetForm(true)} className="px-6 py-3 bg-white hover:bg-emerald-50 text-emerald-600 rounded-xl font-semibold shadow-lg transition-colors flex items-center gap-2">
+          <Plus size={20} />Add Asset
+        </button>
+      </div>
+      <div className="grid grid-cols-1 gap-4">
+        {assets.map(asset => {
+          const amort = calculateAmortization(asset);
+          return (
+            <div key={asset.id} className="bg-white rounded-2xl shadow-xl p-6">
+              <div className="flex items-start gap-4">
+                <div className="p-3 bg-blue-100 rounded-xl"><Building2 className="text-blue-600" size={24} /></div>
+                <div className="flex-1">
+                  <div className="flex items-center gap-3 mb-2">
+                    <h3 className="text-2xl font-bold text-slate-800">{asset.name}</h3>
+                    <span className="px-3 py-1 bg-slate-100 text-slate-700 text-xs font-bold rounded-full uppercase">{asset.type}</span>
+                  </div>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+                    <div><p className="text-xs text-slate-500">Loan Amount</p><p className="text-lg font-bold text-slate-800">${parseAmt(asset.loanAmount).toFixed(2)}</p></div>
+                    <div><p className="text-xs text-slate-500">Payment</p><p className="text-lg font-bold text-slate-800">${parseAmt(asset.paymentAmount).toFixed(2)}</p></div>
+                    <div><p className="text-xs text-slate-500">Interest Rate</p><p className="text-lg font-bold text-slate-800">{asset.interestRate}%</p></div>
+                    <div><p className="text-xs text-slate-500">Payoff Date</p><p className="text-lg font-bold text-slate-800">{amort.payoffDate ? new Date(amort.payoffDate).toLocaleDateString() : '—'}</p></div>
+                  </div>
+                  <details className="mt-2">
+                    <summary className="cursor-pointer text-blue-600 font-semibold">View Amortization Schedule</summary>
+                    <div className="overflow-x-auto mt-3 border rounded-xl">
+                      <table className="w-full text-sm">
+                        <thead className="bg-slate-100">
+                          <tr>
+                            <th className="px-3 py-2 text-left">#</th>
+                            <th className="px-3 py-2 text-left">Date</th>
+                            <th className="px-3 py-2 text-right">Payment</th>
+                            <th className="px-3 py-2 text-right">Principal</th>
+                            <th className="px-3 py-2 text-right">Interest</th>
+                            <th className="px-3 py-2 text-right">Balance</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {amort.schedule.map(row => (
+                            <tr key={row.period} className="border-b">
+                              <td className="px-3 py-2">{row.period}</td>
+                              <td className="px-3 py-2">{new Date(row.date).toLocaleDateString()}</td>
+                              <td className="px-3 py-2 text-right">${row.payment.toFixed(2)}</td>
+                              <td className="px-3 py-2 text-right">${row.principal.toFixed(2)}</td>
+                              <td className="px-3 py-2 text-right">${row.interest.toFixed(2)}</td>
+                              <td className="px-3 py-2 text-right font-semibold">${row.balance.toFixed(2)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </details>
+                </div>
+                <div className="flex gap-2">
+                  <button onClick={() => setEditingAsset(asset)} className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"><Edit2 size={18} /></button>
+                  <button onClick={() => { if (confirm(`Delete ${asset.name}?`)) deleteAsset(asset.id); }} className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"><Trash2 size={18} /></button>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+        {!assets.length && (
+          <div className="bg-white rounded-2xl shadow-xl p-12 text-center">
+            <Building2 className="mx-auto mb-4 text-slate-300" size={64} />
+            <h3 className="text-xl font-bold text-slate-800 mb-2">No Assets Yet</h3>
+            <p className="text-slate-600 mb-6">Track loans, mortgages, and other financed assets</p>
+            <button onClick={() => setShowAssetForm(true)} className="px-6 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-semibold">Add Your First Asset</button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+
+  const OneTimeView = () => {
+    const upcomingTotal = oneTimeBills.filter(b => !b.paid).reduce((s, b) => s + parseAmt(b.amount), 0);
+    return (
+      <div>
+        <div className="flex items-center justify-between mb-6">
+          <h2 className="text-3xl font-black text-white">One-Time Bills</h2>
+          <button onClick={() => setShowOneTimeForm(true)} className="px-6 py-3 bg-white hover:bg-emerald-50 text-emerald-600 rounded-xl font-semibold shadow-lg transition-colors flex items-center gap-2">
+            <Plus size={20} />Add One-Time Bill
+          </button>
+        </div>
+
+        <div className="mb-6 bg-white/20 backdrop-blur-sm rounded-2xl p-4">
+          <div className="flex items-center gap-3">
+            <AlertCircle className="text-white" size={24} />
+            <div>
+              <p className="text-white font-semibold">Upcoming Total</p>
+              <p className="text-2xl font-black text-white">${upcomingTotal.toFixed(2)}</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 gap-4">
+          {oneTimeBills.length ? oneTimeBills.map(bill => {
+            const dueDate = new Date(bill.dueDate);
+            const today = new Date();
+            const isOverdue = !bill.paid && dueDate < today;
+            return (
+              <div key={bill.id} className={`bg-white rounded-2xl shadow-xl p-6 ${isOverdue ? 'border-4 border-red-500' : ''}`}>
+                <div className="flex items-start gap-4">
+                  <button onClick={() => toggleOneTimePaid(bill.id)} className={`p-3 rounded-xl ${bill.paid ? 'bg-green-500 text-white' : 'bg-slate-100 text-slate-400 hover:bg-slate-200'}`}><Check size={24} /></button>
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2 mb-2">
+                      <h3 className={`text-xl font-bold ${bill.paid ? 'text-green-800 line-through' : 'text-slate-800'}`}>{bill.name}</h3>
+                      {isOverdue && <span className="px-2 py-1 bg-red-500 text-white text-xs font-bold rounded-full">OVERDUE</span>}
+                    </div>
+                    <div className="flex items-center gap-4 text-sm text-slate-600 mb-2">
+                      <span className="flex items-center gap-1"><Calendar size={14} />Due: {new Date(bill.dueDate).toLocaleDateString()}</span>
+                      <span className="flex items-center gap-1"><DollarSign size={14} />${bill.amount}</span>
+                      {bill.paid && bill.paidDate && <span className="text-green-600 flex items-center gap-1"><Check size={14} />Paid {new Date(bill.paidDate).toLocaleDateString()}</span>}
+                    </div>
+                    {bill.description && <p className="text-sm text-slate-600 italic">{bill.description}</p>}
+                  </div>
+                  <div className="flex gap-2">
+                    <button onClick={() => setEditingOneTime(bill)} className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"><Edit2 size={18} /></button>
+                    <button onClick={() => { if (confirm(`Delete ${bill.name}?`)) deleteOneTimeBill(bill.id); }} className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"><Trash2 size={18} /></button>
                   </div>
                 </div>
               </div>
-            )}
-
-            <form onSubmit={handleAddPayment} className="mb-6 p-4 bg-slate-50 rounded-xl">
-              <h3 className="font-semibold mb-3 flex items-center gap-2">
-                <Plus size={18} />
-                Add Payment ({12 - historicalPayments.length} slots remaining)
-              </h3>
-              <div className="flex gap-3">
-                <div className="flex-1">
-                  <label className="block text-xs text-slate-600 mb-1">Payment Date</label>
-                  <input
-                    type="date"
-                    value={newPayment.date}
-                    onChange={(e) => setNewPayment({ ...newPayment, date: e.target.value })}
-                    className="w-full px-4 py-2 border-2 border-slate-200 rounded-xl focus:border-emerald-500 outline-none"
-                    required
-                  />
-                </div>
-                <div className="flex-1">
-                  <label className="block text-xs text-slate-600 mb-1">Amount Paid</label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    placeholder="Amount"
-                    value={newPayment.amount}
-                    onChange={(e) => setNewPayment({ ...newPayment, amount: e.target.value })}
-                    className="w-full px-4 py-2 border-2 border-slate-200 rounded-xl focus:border-emerald-500 outline-none"
-                    required
-                  />
-                </div>
-                <button
-                  type="submit"
-                  className="px-6 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-semibold self-end"
-                  disabled={historicalPayments.length >= 12}
-                  title="Add payment"
-                >
-                  Add
-                </button>
-              </div>
-              {historicalPayments.length >= 12 && (
-                <p className="text-xs text-amber-600 mt-2">
-                  ⚠️ Maximum 12 months reached. Delete an old payment to add a new one.
-                </p>
-              )}
-            </form>
-
-            <div className="space-y-2">
-              <h3 className="font-semibold mb-3">Payment History</h3>
-              {historicalPayments.length > 0 ? (
-                <div className="space-y-2">
-                  {historicalPayments
-                    .sort((a, b) => new Date(b.date) - new Date(a.date))
-                    .map((payment, idx) => {
-                      const originalIdx = historicalPayments.findIndex(p => p === payment);
-                      return (
-                        <div key={idx} className="flex items-center justify-between p-3 bg-slate-50 rounded-xl hover:bg-slate-100 transition-colors">
-                          <div className="flex items-center gap-3">
-                            <div className="p-2 bg-emerald-100 rounded-lg">
-                              <Calendar size={16} className="text-emerald-600" />
-                            </div>
-                            <div>
-                              <span className="font-semibold">{new Date(payment.date).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}</span>
-                              <span className="ml-4 text-slate-600">${parseFloat(payment.amount).toFixed(2)}</span>
-                            </div>
-                          </div>
-                          <button
-                            onClick={() => deleteHistoricalPayment(bill.id, originalIdx)}
-                            className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                            title="Delete this payment"
-                          >
-                            <Trash2 size={18} />
-                          </button>
-                        </div>
-                      );
-                    })}
-                </div>
-              ) : (
-                <div className="text-center py-8 bg-slate-50 rounded-xl">
-                  <BarChart3 className="mx-auto mb-3 text-slate-300" size={48} />
-                  <p className="text-slate-500 font-semibold">No historical payments yet</p>
-                  <p className="text-slate-400 text-sm mt-1">
-                    Add your past payments to generate an estimated amount
-                  </p>
-                </div>
-              )}
+            );
+          }) : (
+            <div className="bg-white rounded-2xl shadow-xl p-12 text-center">
+              <Calendar className="mx-auto mb-4 text-slate-300" size={64} />
+              <h3 className="text-xl font-bold text-slate-800 mb-2">No One-Time Bills</h3>
+              <p className="text-slate-600 mb-6">Track non-recurring expenses like medical bills or repairs</p>
+              <button onClick={() => setShowOneTimeForm(true)} className="px-6 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-semibold">Add Your First One-Time Bill</button>
             </div>
-
-            {historicalPayments.length > 1 && (
-              <div className="mt-6 grid grid-cols-3 gap-3">
-                <div className="p-3 bg-blue-50 rounded-xl text-center">
-                  <p className="text-xs text-slate-600">Lowest</p>
-                  <p className="text-lg font-bold text-blue-600">
-                    ${Math.min(...historicalPayments.map(p => parseFloat(p.amount))).toFixed(2)}
-                  </p>
-                </div>
-                <div className="p-3 bg-emerald-50 rounded-xl text-center">
-                  <p className="text-xs text-slate-600">Average</p>
-                  <p className="text-lg font-bold text-emerald-600">
-                    ${average.toFixed(2)}
-                  </p>
-                </div>
-                <div className="p-3 bg-red-50 rounded-xl text-center">
-                  <p className="text-xs text-slate-600">Highest</p>
-                  <p className="text-lg font-bold text-red-600">
-                    ${Math.max(...historicalPayments.map(p => parseFloat(p.amount))).toFixed(2)}
-                  </p>
-                </div>
-              </div>
-            )}
-          </div>
+          )}
         </div>
       </div>
     );
   };
 
-  const AmortizationView = ({ asset, onClose }) => {
-    const amortization = calculateAmortization(asset);
+  const PropaneView = () => {
+    const sorted = [...propaneFills].sort((a, b) => new Date(b.date) - new Date(a.date));
+    const latest = sorted[0];
+    const totalGallons = propaneFills.reduce((sum, f) => sum + parseAmt(f.gallons), 0);
+    const totalCost = propaneFills.reduce((sum, f) => sum + parseAmt(f.totalCost), 0);
+    const avgPricePerGal = totalGallons ? totalCost / totalGallons : 0;
+    const fillsWithUsage = sorted.map((fill, idx) => {
+      if (idx === sorted.length - 1) return { ...fill, daysLasted: null, dailyUsage: null };
+      const nextFill = sorted[idx + 1];
+      const days = Math.max(1, Math.floor((new Date(fill.date) - new Date(nextFill.date)) / (1000 * 60 * 60 * 24)));
+      const dailyUsage = parseAmt(fill.gallons) / days;
+      return { ...fill, daysLasted: days, dailyUsage };
+    });
 
     return (
-      <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-        <div className="bg-white rounded-2xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
-          <div className="p-6">
-            <div className="flex items-center justify-between mb-6">
-              <h2 className="text-2xl font-bold">Amortization Schedule - {asset.name}</h2>
-              <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-lg" title="Close">
-                <X size={24} />
-              </button>
+      <div>
+        <div className="flex items-center justify-between mb-6">
+          <h2 className="text-3xl font-black text-white">Propane Usage Tracker</h2>
+          <button onClick={() => setShowPropaneForm(true)} className="px-6 py-3 bg-white hover:bg-emerald-50 text-emerald-600 rounded-xl font-semibold shadow-lg transition-colors flex items-center gap-2">
+            <Plus size={20} />Add Fill
+          </button>
+        </div>
+
+        {propaneFills.length > 0 ? (
+          <div className="space-y-6">
+            <div className="bg-white rounded-2xl shadow-xl p-6">
+              <h3 className="text-xl font-bold mb-4">Latest Fill</h3>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div><p className="text-sm text-slate-500">Date</p><p className="text-lg font-bold">{latest ? new Date(latest.date).toLocaleDateString() : '—'}</p></div>
+                <div><p className="text-sm text-slate-500">Gallons</p><p className="text-lg font-bold text-emerald-600">{latest?.gallons ?? '—'}</p></div>
+                <div><p className="text-sm text-slate-500">Price/Gal</p><p className="text-lg font-bold">${latest?.pricePerGal ?? '—'}</p></div>
+                <div><p className="text-sm text-slate-500">Total Cost</p><p className="text-lg font-bold text-red-600">${latest?.totalCost ?? '—'}</p></div>
+              </div>
+              {fillsWithUsage[0]?.daysLasted && (
+                <div className="mt-4 pt-4 border-t">
+                  <p className="text-sm text-slate-600">Lasted <span className="font-bold">{fillsWithUsage[0].daysLasted} days</span> • Avg <span className="font-bold">{fillsWithUsage[0].dailyUsage.toFixed(1)} gal/day</span></p>
+                </div>
+              )}
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-              <div className="bg-emerald-50 p-4 rounded-xl">
-                <p className="text-sm text-slate-600">Total Interest</p>
-                <p className="text-2xl font-bold text-emerald-700">${amortization.totalInterest.toFixed(2)}</p>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="bg-white rounded-2xl shadow-xl p-6">
+                <p className="text-sm text-slate-500 mb-1">Total Spent (All Time)</p>
+                <p className="text-3xl font-black text-red-600">${totalCost.toFixed(2)}</p>
               </div>
-              <div className="bg-blue-50 p-4 rounded-xl">
-                <p className="text-sm text-slate-600">Total Payments</p>
-                <p className="text-2xl font-bold text-blue-700">{amortization.totalPayments}</p>
+              <div className="bg-white rounded-2xl shadow-xl p-6">
+                <p className="text-sm text-slate-500 mb-1">Total Gallons</p>
+                <p className="text-3xl font-black text-emerald-600">{totalGallons.toFixed(0)}</p>
               </div>
-              <div className="bg-purple-50 p-4 rounded-xl">
-                <p className="text-sm text-slate-600">Payoff Date</p>
-                <p className="text-2xl font-bold text-purple-700">
-                  {new Date(amortization.payoffDate).toLocaleDateString()}
-                </p>
+              <div className="bg-white rounded-2xl shadow-xl p-6">
+                <p className="text-sm text-slate-500 mb-1">Avg Price/Gal</p>
+                <p className="text-3xl font-black text-slate-800">${avgPricePerGal.toFixed(2)}</p>
               </div>
             </div>
 
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead className="bg-slate-100">
-                  <tr>
-                    <th className="px-4 py-2 text-left">#</th>
-                    <th className="px-4 py-2 text-left">Date</th>
-                    <th className="px-4 py-2 text-right">Payment</th>
-                    <th className="px-4 py-2 text-right">Principal</th>
-                    <th className="px-4 py-2 text-right">Interest</th>
-                    <th className="px-4 py-2 text-right">Balance</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {amortization.schedule.map((row) => (
-                    <tr key={row.period} className="border-b border-slate-100 hover:bg-slate-50">
-                      <td className="px-4 py-2">{row.period}</td>
-                      <td className="px-4 py-2">{new Date(row.date).toLocaleDateString()}</td>
-                      <td className="px-4 py-2 text-right">${row.payment.toFixed(2)}</td>
-                      <td className="px-4 py-2 text-right">${row.principal.toFixed(2)}</td>
-                      <td className="px-4 py-2 text-right">${row.interest.toFixed(2)}</td>
-                      <td className="px-4 py-2 text-right font-semibold">${row.balance.toFixed(2)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            <div className="bg-white rounded-2xl shadow-xl p-6">
+              <h3 className="text-xl font-bold mb-4">Fill History</h3>
+              <div className="space-y-2">
+                {fillsWithUsage.map(fill => (
+                  <div key={fill.id} className="flex items-center justify-between p-4 bg-slate-50 rounded-xl hover:bg-slate-100 transition-colors">
+                    <div className="flex-1">
+                      <p className="font-semibold">{new Date(fill.date).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}</p>
+                      <p className="text-sm text-slate-600">
+                        {fill.gallons} gal @ ${fill.pricePerGal}/gal = ${fill.totalCost}
+                        {fill.daysLasted && ` • Lasted ${fill.daysLasted} days (${fill.dailyUsage.toFixed(1)} gal/day)`}
+                      </p>
+                    </div>
+                    <button onClick={() => deletePropaneFill(fill.id)} className="p-2 text-red-600 hover:bg-red-50 rounded-lg"><Trash2 size={18} /></button>
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
+        ) : (
+          <div className="bg-white rounded-2xl shadow-xl p-12 text-center">
+            <Flame className="mx-auto mb-4 text-slate-300" size={64} />
+            <h3 className="text-xl font-bold text-slate-800 mb-2">No Fills Tracked Yet</h3>
+            <p className="text-slate-600 mb-6">Start tracking to see usage patterns and costs</p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+
+  const AnalyticsView = () => {
+    const categories = ['utilities', 'subscription', 'insurance', 'loan', 'rent', 'other'];
+    const thisMonthByCategory = categories.map(cat => {
+      const sum = currentMonthInstances.filter(i => i.category === cat).reduce((s, i) => s + parseAmt(i.actualPaid ?? i.amountEstimate), 0);
+      return { cat, sum, cap: parseAmt(budgets[cat] || 0) };
+    });
+    const totalThisMonth = thisMonthByCategory.reduce((s, r) => s + r.sum, 0);
+    return (
+      <div>
+        <h2 className="text-3xl font-black text-white mb-6">Financial Analytics</h2>
+
+        {/* Income vs Expenses */}
+        <div className="bg-white rounded-2xl shadow-xl p-6 mb-6">
+          <h3 className="text-xl font-bold mb-4">Income vs Expenses</h3>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+            <div className="text-center p-4 bg-emerald-50 rounded-xl">
+              <p className="text-xs text-slate-600 mb-1">Monthly Income</p>
+              <p className="text-xl md:text-2xl font-bold text-emerald-600 break-all">${overview.monthlyIncome.toFixed(2)}</p>
+            </div>
+            <div className="text-center p-4 bg-red-50 rounded-xl">
+              <p className="text-xs text-slate-600 mb-1">Monthly Expenses</p>
+              <p className="text-xl md:text-2xl font-bold text-red-600 break-all">${overview.totalMonthly.toFixed(2)}</p>
+            </div>
+            <div className="text-center p-4 bg-blue-50 rounded-xl">
+              <p className="text-xs text-slate-600 mb-1">Net Savings</p>
+              <p className={`text-xl md:text-2xl font-bold break-all ${overview.leftover >= 0 ? 'text-blue-600' : 'text-red-600'}`}>
+                ${overview.leftover.toFixed(2)}
+              </p>
+            </div>
+          </div>
+          <div className="h-8 bg-slate-100 rounded-full overflow-hidden flex">
+            <div className="bg-emerald-500 flex items-center justify-center text-white text-xs font-bold"
+              style={{ width: `${overview.monthlyIncome > 0 ? Math.min((overview.totalMonthly / overview.monthlyIncome) * 100, 100) : 0}%` }}>
+              {overview.monthlyIncome > 0 ? ((overview.totalMonthly / overview.monthlyIncome) * 100).toFixed(0) : 0}%
+            </div>
+          </div>
+          <p className="text-xs text-slate-500 mt-2 text-center">
+            {overview.totalMonthly > overview.monthlyIncome ? '⚠️ Spending exceeds income' : '✓ Under budget'}
+          </p>
+        </div>
+
+        {/* Category budgets */}
+        <div className="bg-white rounded-2xl shadow-xl p-6 mb-6">
+          <h3 className="text-xl font-bold mb-4">Category Budgets</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {thisMonthByCategory.map(({ cat, sum, cap }) => {
+              const pct = cap > 0 ? Math.min(sum / cap * 100, 100) : 0;
+              const over = cap > 0 && sum > cap;
+              return (
+                <div key={cat} className="p-4 bg-slate-50 rounded-xl">
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="font-semibold capitalize">{cat}</div>
+                    <div className={`text-sm ${over ? 'text-red-600 font-bold' : 'text-slate-700'}`}>${sum.toFixed(2)} / ${cap.toFixed(2)}</div>
+                  </div>
+                  <div className="h-3 bg-white rounded-full overflow-hidden border">
+                    <div className={`h-full ${over ? 'bg-red-500' : 'bg-emerald-500'}`} style={{ width: `${pct}%` }} />
+                  </div>
+                  {over && <div className="text-xs text-red-600 mt-1">Over by ${(sum - cap).toFixed(2)}</div>}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Debts quick view */}
+        <div className="bg-white rounded-2xl shadow-xl p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-xl font-bold">Debt Payoff Tracker</h3>
+            <button
+              className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-sm font-semibold"
+              onClick={() => {
+                const name = prompt('Debt name (e.g., Credit Card):');
+                if (!name) return;
+                const balance = parseAmt(prompt('Current balance:') || 0);
+                const rate = parseAmt(prompt('Interest rate % (e.g., 18.5):') || 0);
+                const payment = parseAmt(prompt('Monthly payment:') || 0);
+                const debt = { id: Date.now(), name, balance, rate, payment };
+                setDebtPayoff([...debtPayoff, debt]);
+              }}
+            >Add Debt</button>
+          </div>
+          {debtPayoff.length ? (
+            <div className="space-y-3">
+              {debtPayoff.map(debt => {
+                const monthsToPayoff = debt.payment > 0 ? Math.ceil(debt.balance / debt.payment) : 0;
+                const totalInterest = debt.payment > 0 ? (debt.payment * monthsToPayoff) - debt.balance : 0;
+                return (
+                  <div key={debt.id} className="p-4 bg-slate-50 rounded-xl">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="font-semibold">{debt.name}</span>
+                      <button className="text-red-600 hover:bg-red-50 p-1 rounded transition-colors" onClick={() => setDebtPayoff(debtPayoff.filter(d => d.id !== debt.id))}><X size={16} /></button>
+                    </div>
+                    <p className="text-sm text-slate-600">Balance: ${debt.balance.toFixed(2)} @ {debt.rate}%</p>
+                    <p className="text-sm text-slate-600">Payment: ${debt.payment.toFixed(2)}/mo</p>
+                    <p className="text-sm font-semibold text-emerald-600 mt-2">Payoff: {monthsToPayoff} months | Interest: ${totalInterest.toFixed(2)}</p>
+                  </div>
+                );
+              })}
+            </div>
+          ) : <p className="text-slate-500">Add debts to track payoff timeline</p>}
         </div>
       </div>
     );
   };
 
+  const SettingsView = () => (
+    <div>
+      {/* Pay Schedule */}
+      <div className="bg-white rounded-2xl shadow-xl p-6 mb-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="text-xl font-bold">Pay Schedule</h3>
+            {paySchedule ? (
+              <div className="text-sm text-slate-600 mt-1">
+                {paySchedule.frequency} • ${parseAmt(paySchedule.payAmount).toFixed(2)} per check • Next {new Date(paySchedule.nextPayDate).toLocaleDateString()}
+              </div>
+            ) : <div className="text-sm text-slate-600 mt-1">Not set.</div>}
+          </div>
+          <button className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold" onClick={() => setShowPayForm(true)}>{paySchedule ? 'Edit' : 'Set up'}</button>
+        </div>
+      </div>
+
+      {/* Envelopes */}
+      <div className="bg-white rounded-2xl shadow-xl p-6 mb-6">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-xl font-bold">Envelopes</h3>
+          <button className="px-3 py-2 rounded-xl bg-emerald-100 text-emerald-700 font-semibold"
+            onClick={() => {
+              const name = prompt('Envelope name:');
+              if (!name) return;
+              const amt = parseAmt(prompt('Amount per check:') || 0);
+              setEnvelopes([...envelopes, { id: Date.now(), name, perCheck: amt }]);
+            }}
+          >Add</button>
+        </div>
+        {envelopes.length ? (
+          <div className="space-y-2">
+            {envelopes.map(e => (
+              <div key={e.id} className="p-3 bg-slate-50 rounded-xl flex items-center justify-between">
+                <div className="font-semibold">{e.name}</div>
+                <div className="flex items-center gap-2">
+                  <div className="text-slate-600">${parseAmt(e.perCheck).toFixed(2)} / check</div>
+                  <button className="px-2 py-1 text-blue-700 bg-blue-100 rounded-lg"
+                    onClick={() => {
+                      const v = parseAmt(prompt(`New amount for "${e.name}":`, e.perCheck) || 0);
+                      setEnvelopes(envelopes.map(x => x.id === e.id ? { ...x, perCheck: v } : x));
+                    }}
+                  >Edit</button>
+                  <button className="px-2 py-1 text-red-700 bg-red-100 rounded-lg" onClick={() => setEnvelopes(envelopes.filter(x => x.id !== e.id))}>Remove</button>
+                </div>
+              </div>
+            ))}
+            <div className="text-sm text-slate-600">Total reserved per check: <b>${perCheckEnvelopeSum().toFixed(2)}</b></div>
+          </div>
+        ) : <div className="text-slate-600">No envelopes yet.</div>}
+      </div>
+
+      {/* Category Budgets */}
+      <div className="bg-white rounded-2xl shadow-xl p-6 mb-6">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-xl font-bold">Category Budgets</h3>
+          <button className="px-3 py-2 rounded-xl bg-emerald-100 text-emerald-700 font-semibold"
+            onClick={() => {
+              const cat = prompt('Category (utilities, subscription, insurance, loan, rent, other):');
+              if (!cat) return;
+              const cap = parseAmt(prompt('Monthly cap:') || 0);
+              setBudgets({ ...budgets, [cat]: cap });
+            }}
+          >Set/Update</button>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-2 text-sm">
+          {Object.entries(budgets).map(([k, v]) => (
+            <div key={k} className="p-3 bg-slate-50 rounded-xl flex items-center justify-between">
+              <span className="font-semibold capitalize">{k}</span>
+              <span>${parseAmt(v).toFixed(2)}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Google Calendar */}
+      <div className="bg-white rounded-2xl shadow-xl p-6 mb-6">
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h3 className="text-xl font-bold text-slate-800">Google Calendar Integration</h3>
+            <p className="text-slate-600 text-sm">Sync your bills and payment dates to your calendar</p>
+          </div>
+          <div className="flex items-center gap-2">
+            {calendarConnected && (
+              <button onClick={syncToCalendar} className="px-4 py-2 bg-blue-100 hover:bg-blue-200 text-blue-700 rounded-xl font-semibold flex items-center gap-2"><RefreshCw size={16} />Sync Now</button>
+            )}
+            <button onClick={connectGoogleCalendar} className={`px-4 py-2 rounded-xl font-semibold ${calendarConnected ? 'bg-green-100 text-green-700' : 'bg-emerald-600 hover:bg-emerald-700 text-white'}`}>
+              {calendarConnected ? '✓ Connected' : 'Connect'}
+            </button>
+          </div>
+        </div>
+        {calendarConnected && <div className="bg-green-50 border-2 border-green-200 rounded-xl p-4 text-green-800 text-sm">✓ Calendar is connected. (Demo mode)</div>}
+      </div>
+
+      {/* Backup & Restore */}
+      <div className="bg-white rounded-2xl shadow-xl p-6 mb-6">
+        <div className="mb-4">
+          <h3 className="text-xl font-bold text-slate-800">Backup & Restore</h3>
+          <p className="text-slate-600 text-sm">Export your data or restore from a backup file</p>
+        </div>
+        <div className="flex gap-3">
+          <button onClick={exportBackup} className="flex-1 px-4 py-3 bg-blue-100 hover:bg-blue-200 text-blue-700 rounded-xl font-semibold transition-colors flex items-center justify-center gap-2">
+            <Download size={18} />Export Backup
+          </button>
+          <button onClick={() => backupFileInputRef.current?.click()} className="flex-1 px-4 py-3 bg-emerald-100 hover:bg-emerald-200 text-emerald-700 rounded-xl font-semibold transition-colors flex items-center justify-center gap-2">
+            <Upload size={18} />Restore Backup
+          </button>
+          <input ref={backupFileInputRef} type="file" accept=".json" onChange={(e) => {
+            const file = e.target.files?.[0];
+            if (file) { importBackupFromFile(file); e.target.value = ''; }
+          }} className="hidden" />
+        </div>
+        <div className="mt-4 bg-amber-50 border-2 border-amber-200 rounded-xl p-4">
+          <p className="text-amber-800 text-sm"><strong>Note:</strong> Backups include templates, instances, assets, one-time bills, and settings. Keep them secure.</p>
+        </div>
+      </div>
+    </div>
+  );
+
+  // ---------- Propane Modal ----------
+  const PropaneModal = () => (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full">
+        <div className="p-6">
+          <h2 className="text-2xl font-bold mb-6">Add Propane Fill</h2>
+          <form onSubmit={(e) => {
+            e.preventDefault();
+            const fd = new FormData(e.target);
+            const gallons = parseAmt(fd.get('gallons'));
+            const pricePerGal = parseAmt(fd.get('pricePerGal'));
+            addPropaneFill({
+              date: fd.get('date'),
+              gallons: gallons.toFixed(2),
+              pricePerGal: pricePerGal.toFixed(2),
+              totalCost: (gallons * pricePerGal).toFixed(2)
+            });
+            setShowPropaneForm(false);
+          }} className="space-y-4">
+            <div><label className="block text-sm font-semibold mb-2">Fill Date</label><input type="date" name="date" required className="w-full px-4 py-2 border-2 border-slate-200 rounded-xl focus:border-emerald-500 outline-none" /></div>
+            <div><label className="block text-sm font-semibold mb-2">Gallons Delivered</label><input type="number" step="0.1" name="gallons" required className="w-full px-4 py-2 border-2 border-slate-200 rounded-xl focus:border-emerald-500 outline-none" /></div>
+            <div><label className="block text-sm font-semibold mb-2">Price per Gallon</label><input type="number" step="0.01" name="pricePerGal" required className="w-full px-4 py-2 border-2 border-slate-200 rounded-xl focus:border-emerald-500 outline-none" /></div>
+            <div className="flex gap-3 pt-4">
+              <button type="button" onClick={() => setShowPropaneForm(false)} className="flex-1 px-4 py-3 bg-slate-100 hover:bg-slate-200 rounded-xl font-semibold">Cancel</button>
+              <button type="submit" className="flex-1 px-4 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-semibold">Add Fill</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+  );
+
+  // ---------- Shell & Routing ----------
   if (loading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-emerald-500 via-teal-500 to-cyan-600 flex items-center justify-center">
@@ -1640,1698 +1569,77 @@ const BillPayPlanner = () => {
   return (
     <div className="min-h-screen bg-gradient-to-br from-emerald-500 via-teal-500 to-cyan-600 p-4 md:p-8">
       <div className="max-w-7xl mx-auto">
-        {/* Header */}
-        <div className="flex items-center justify-between mb-8">
-          <div>
-            <h1 className="text-4xl md:text-5xl font-black text-white mb-2">PayPlan Pro</h1>
-            <p className="text-emerald-100 text-lg">Your complete financial planning dashboard</p>
-          </div>
-        </div>
+        <Header />
 
-        {/* Navigation */}
-        <div className="flex gap-2 mb-6 overflow-x-auto pb-2">
-          <button
-            onClick={() => setView('dashboard')}
-            className={`px-6 py-3 rounded-xl font-semibold transition-all flex items-center gap-2 whitespace-nowrap ${view === 'dashboard'
-              ? 'bg-white text-emerald-600 shadow-lg'
-              : 'bg-white/20 text-white hover:bg-white/30'}`}
-            title="Dashboard"
-          >
-            <Home size={20} />
-            Dashboard
-          </button>
-          <button
-            onClick={() => setView('bills')}
-            className={`px-6 py-3 rounded-xl font-semibold transition-all flex items-center gap-2 whitespace-nowrap ${view === 'bills'
-              ? 'bg-white text-emerald-600 shadow-lg'
-              : 'bg-white/20 text-white hover:bg-white/30'}`}
-            title="Bills"
-          >
-            <Receipt size={20} />
-            Bills
-          </button>
-          <button
-            onClick={() => setView('assets')}
-            className={`px-6 py-3 rounded-xl font-semibold transition-all flex items-center gap-2 whitespace-nowrap ${view === 'assets'
-              ? 'bg-white text-emerald-600 shadow-lg'
-              : 'bg-white/20 text-white hover:bg-white/30'}`}
-            title="Assets"
-          >
-            <Building2 size={20} />
-            Assets
-          </button>
-          <button
-            onClick={() => setView('onetime')}
-            className={`px-6 py-3 rounded-xl font-semibold transition-all flex items-center gap-2 whitespace-nowrap ${view === 'onetime'
-              ? 'bg-white text-emerald-600 shadow-lg'
-              : 'bg-white/20 text-white hover:bg-white/30'}`}
-            title="One-time"
-          >
-            <Calendar size={20} />
-            One-Time
-          </button>
-          <button
-            onClick={() => setView('propane')}
-            className={`px-6 py-3 rounded-xl font-semibold transition-all flex items-center gap-2 whitespace-nowrap ${view === 'propane'
-              ? 'bg-white text-emerald-600 shadow-lg'
-              : 'bg-white/20 text-white hover:bg-white/30'}`}
-            title="Propane"
-          >
-            <Flame size={20} />
-            Propane
-          </button>
-          <button
-            onClick={() => setView('analytics')}
-            className={`px-6 py-3 rounded-xl font-semibold transition-all flex items-center gap-2 whitespace-nowrap ${view === 'analytics'
-              ? 'bg-white text-emerald-600 shadow-lg'
-              : 'bg-white/20 text-white hover:bg-white/30'}`}
-            title="Analytics"
-          >
-            <BarChart3 size={20} />
-            Analytics
-          </button>
-          <button
-            onClick={() => setView('settings')}
-            className={`px-6 py-3 rounded-xl font-semibold transition-all flex items-center gap-2 whitespace-nowrap ${view === 'settings'
-              ? 'bg-white text-emerald-600 shadow-lg'
-              : 'bg-white/20 text-white hover:bg-white/30'}`}
-            title="Settings"
-          >
-            <Settings size={20} />
-            Settings
-          </button>
-        </div>
-
-        {/* Bills View */}
-        {view === 'bills' && (
-          <div>
-            {/*
-              Use the NEXT paycheck month for the Monthly header.
-              If no pay schedule, fall back to the current month.
-            */}
-            {(() => {
-              const billAssignments = getPaycheckAssignments();
-              const headerAnchor = billAssignments.payDates?.[0] || new Date();
-              const headerLabel = headerAnchor.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
-
-              return (
-                <>
-                  <div className="flex items-center justify-between mb-6">
-                    <h2 className="text-2xl font-bold text-white">
-                      {billsViewMode === 'monthly'
-                        ? `${headerLabel} Bills`
-                        : 'Bill Stream'
-                      }
-                    </h2>
-                    <div className="flex gap-3">
-                      <div className="flex bg-white/20 rounded-xl p-1">
-                        <button
-                          onClick={() => setBillsViewMode('monthly')}
-                          className={`px-4 py-2 rounded-lg text-sm font-semibold transition-colors ${billsViewMode === 'monthly'
-                            ? 'bg-white text-emerald-600'
-                            : 'text-white hover:bg-white/20'
-                            }`}
-                          title="Monthly"
-                        >
-                          Monthly
-                        </button>
-                        <button
-                          onClick={() => setBillsViewMode('stream')}
-                          className={`px-4 py-2 rounded-lg text-sm font-semibold transition-colors ${billsViewMode === 'stream'
-                            ? 'bg-white text-emerald-600'
-                            : 'text-white hover:bg-white/20'
-                            }`}
-                          title="Stream"
-                        >
-                          Stream
-                        </button>
-                      </div>
-                      {billsViewMode === 'monthly' && (
-                        <button
-                          onClick={resetMonthlyBills}
-                          className="px-6 py-3 bg-white/20 hover:bg-white/30 text-white rounded-xl font-semibold shadow-lg transition-colors flex items-center gap-2"
-                          title="Reset current month"
-                        >
-                          <RefreshCw size={20} />
-                          Reset Month
-                        </button>
-                      )}
-                      <button
-                        onClick={exportUpcomingICS}
-                        className="px-6 py-3 bg-white/20 hover:bg-white/30 text-white rounded-xl font-semibold shadow-lg transition-colors flex items-center gap-2"
-                        title="Export upcoming bills to calendar (.ics)"
-                      >
-                        <Calendar size={20} />
-                        Export ICS
-                      </button>
-                      <button
-                        onClick={() => setShowBillForm(true)}
-                        className="px-6 py-3 bg-white hover:bg-emerald-50 text-emerald-600 rounded-xl font-semibold shadow-lg transition-colors flex items-center gap-2"
-                        title="Add bill"
-                      >
-                        <Plus size={20} />
-                        Add Bill
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Monthly Checklist View */}
-                  {billsViewMode === 'monthly' && bills.length > 0 && (() => {
-                    const assignments = billAssignments; // reuse
-                    const formatDate = (date) => {
-                      if (!date) return '';
-                      const d = new Date(date);
-                      return d.toLocaleDateString('en-US', {
-                        month: 'short',
-                        day: 'numeric',
-                        timeZone: 'UTC'
-                      });
-                    };
-
-                    return (
-                      <div className="space-y-6">
-                        {/* First Paycheck Bills */}
-                        <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-6">
-                          <div className="flex items-center justify-between mb-2 cursor-pointer" onClick={() => setCollapseCheck1(!collapseCheck1)}>
-                            <h3 className="text-2xl font-bold text-white flex items-center gap-2">
-                              <DollarSign size={24} />
-                              {assignments.payDates[0] && formatDate(assignments.payDates[0])}
-                            </h3>
-                            <ChevronRight size={24} className={`text-white transition-transform ${collapseCheck1 ? '' : 'rotate-90'}`} />
-                          </div>
-                          {!collapseCheck1 && (
-                            <>
-                              <p className="text-white/70 text-sm mb-6">
-                                Bills to pay with your next paycheck
-                              </p>
-                              <div className="grid grid-cols-1 gap-4">
-                                {assignments.check1.map(bill => (
-                                  <div key={bill.id} className="bg-white rounded-xl shadow-lg p-4">
-                                    <div className="flex items-start gap-3">
-                                      <button
-                                        onClick={() => togglePaid(bill.id)}
-                                        className={`p-2 rounded-lg transition-colors flex-shrink-0 ${bill.paidThisMonth
-                                          ? 'bg-green-500 text-white'
-                                          : 'bg-slate-100 text-slate-400 hover:bg-slate-200'
-                                          }`}
-                                        title={bill.paidThisMonth ? 'Mark unpaid' : 'Mark paid'}
-                                      >
-                                        <Check size={20} />
-                                      </button>
-
-                                      <div className="flex-1 min-w-0">
-                                        <div className="flex items-center gap-2 mb-2 flex-wrap">
-                                          <h3 className={`text-lg font-bold ${bill.paidThisMonth ? 'text-green-600 line-through' : 'text-slate-800'}`}>
-                                            {bill.name}
-                                          </h3>
-                                          {bill.isVariable && (
-                                            <span className="px-2 py-1 bg-yellow-100 text-yellow-700 text-xs font-bold rounded-full">
-                                              VARIABLE
-                                            </span>
-                                          )}
-                                          {bill.autopay && (
-                                            <span className="px-2 py-1 bg-blue-100 text-blue-700 text-xs font-bold rounded-full">
-                                              AUTO-PAY
-                                            </span>
-                                          )}
-                                          {bill.reminderDays > 0 && (
-                                            <span className="px-2 py-1 bg-emerald-100 text-emerald-700 text-xs font-bold rounded-full">
-                                              REMIND {bill.reminderDays}d
-                                            </span>
-                                          )}
-                                        </div>
-
-                                        <div className="flex flex-wrap gap-3 text-sm text-slate-600">
-                                          <span className="flex items-center gap-1">
-                                            <DollarSign size={14} />
-                                            ${bill.amount}
-                                          </span>
-                                          <span className="flex items-center gap-1">
-                                            <Calendar size={14} />
-                                            Due: Day {bill.dueDate}
-                                          </span>
-                                          <span className="flex items-center gap-1">
-                                            <Clock size={14} />
-                                            {bill.frequency}
-                                          </span>
-                                        </div>
-                                      </div>
-
-                                      <div className="flex gap-2 flex-shrink-0">
-                                        {!bill.autopay && bill.payFromCheck === 'auto' && parseInt(bill.dueDate) > (assignments.payDates[0]?.getDate() || 0) && (
-                                          <button
-                                            onClick={() => {
-                                              const updated = bills.map(b =>
-                                                b.id === bill.id ? { ...b, payFromCheck: 'check2' } : b
-                                              );
-                                              setBills(updated);
-                                              localStorage.setItem('bills', JSON.stringify(updated));
-                                            }}
-                                            className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                                            title="Move to Check 2 (Pay Later)"
-                                          >
-                                            <ChevronRight size={16} />
-                                          </button>
-                                        )}
-                                        {bill.payFromCheck === 'check1' && (
-                                          <button
-                                            onClick={() => {
-                                              const updated = bills.map(b =>
-                                                b.id === bill.id ? { ...b, payFromCheck: 'auto' } : b
-                                              );
-                                              setBills(updated);
-                                              localStorage.setItem('bills', JSON.stringify(updated));
-                                            }}
-                                            className="p-2 text-slate-600 hover:bg-slate-50 rounded-lg transition-colors"
-                                            title="Reset to Auto"
-                                          >
-                                            <RefreshCw size={16} />
-                                          </button>
-                                        )}
-                                        {bill.isVariable && (
-                                          <button
-                                            onClick={() => setShowHistoricalForm(bill)}
-                                            className="p-2 text-purple-600 hover:bg-purple-50 rounded-lg transition-colors"
-                                            title="View payment history"
-                                          >
-                                            <BarChart3 size={16} />
-                                          </button>
-                                        )}
-                                        <button
-                                          onClick={() => setEditingBill(bill)}
-                                          className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                                          title="Edit bill"
-                                        >
-                                          <Edit2 size={16} />
-                                        </button>
-                                        <button
-                                          onClick={() => {
-                                            if (confirm(`Delete ${bill.name}?`)) {
-                                              deleteBill(bill.id);
-                                            }
-                                          }}
-                                          className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                                          title="Delete bill"
-                                        >
-                                          <Trash2 size={16} />
-                                        </button>
-                                      </div>
-                                    </div>
-                                  </div>
-                                ))}
-                                {assignments.check1.length === 0 && (
-                                  <p className="text-white/70 text-center py-8 text-sm">No bills due before your next paycheck</p>
-                                )}
-                              </div>
-                            </>
-                          )}
-                        </div>
-
-                        {/* Second Paycheck Bills */}
-                        <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-6">
-                          <div className="flex items-center justify-between mb-2 cursor-pointer" onClick={() => setCollapseCheck2(!collapseCheck2)}>
-                            <h3 className="text-2xl font-bold text-white flex items-center gap-2">
-                              <DollarSign size={24} />
-                              {assignments.payDates[1] && formatDate(assignments.payDates[1])}
-                            </h3>
-                            <ChevronRight size={24} className={`text-white transition-transform ${collapseCheck2 ? '' : 'rotate-90'}`} />
-                          </div>
-                          {!collapseCheck2 && (
-                            <>
-                              <p className="text-white/70 text-sm mb-6">
-                                Bills to pay with your following paycheck
-                              </p>
-                              <div className="grid grid-cols-1 gap-4">
-                                {assignments.check2.map(bill => (
-                                  <div key={bill.id} className="bg-white rounded-xl shadow-lg p-4">
-                                    <div className="flex items-start gap-3">
-                                      <button
-                                        onClick={() => togglePaid(bill.id)}
-                                        className={`p-2 rounded-lg transition-colors flex-shrink-0 ${bill.paidThisMonth
-                                          ? 'bg-green-500 text-white'
-                                          : 'bg-slate-100 text-slate-400 hover:bg-slate-200'
-                                          }`}
-                                        title={bill.paidThisMonth ? 'Mark unpaid' : 'Mark paid'}
-                                      >
-                                        <Check size={20} />
-                                      </button>
-
-                                      <div className="flex-1 min-w-0">
-                                        <div className="flex items-center gap-2 mb-2 flex-wrap">
-                                          <h3 className={`text-lg font-bold ${bill.paidThisMonth ? 'text-green-600 line-through' : 'text-slate-800'}`}>
-                                            {bill.name}
-                                          </h3>
-                                          {bill.isVariable && (
-                                            <span className="px-2 py-1 bg-yellow-100 text-yellow-700 text-xs font-bold rounded-full">
-                                              VARIABLE
-                                            </span>
-                                          )}
-                                          {bill.autopay && (
-                                            <span className="px-2 py-1 bg-blue-100 text-blue-700 text-xs font-bold rounded-full">
-                                              AUTO-PAY
-                                            </span>
-                                          )}
-                                          {bill.reminderDays > 0 && (
-                                            <span className="px-2 py-1 bg-emerald-100 text-emerald-700 text-xs font-bold rounded-full">
-                                              REMIND {bill.reminderDays}d
-                                            </span>
-                                          )}
-                                        </div>
-
-                                        <div className="flex flex-wrap gap-3 text-sm text-slate-600">
-                                          <span className="flex items-center gap-1">
-                                            <DollarSign size={14} />
-                                            ${bill.amount}
-                                          </span>
-                                          <span className="flex items-center gap-1">
-                                            <Calendar size={14} />
-                                            Due: Day {bill.dueDate}
-                                          </span>
-                                          <span className="flex items-center gap-1">
-                                            <Clock size={14} />
-                                            {bill.frequency}
-                                          </span>
-                                        </div>
-                                      </div>
-
-                                      <div className="flex gap-2 flex-shrink-0">
-                                        {!bill.autopay && bill.payFromCheck === 'auto' && parseInt(bill.dueDate) > (assignments.payDates[0]?.getDate() || 0) && (
-                                          <button
-                                            onClick={() => {
-                                              const updated = bills.map(b =>
-                                                b.id === bill.id ? { ...b, payFromCheck: 'check1' } : b
-                                              );
-                                              setBills(updated);
-                                              localStorage.setItem('bills', JSON.stringify(updated));
-                                            }}
-                                            className="p-2 text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors"
-                                            title="Move to Check 1 (Pay Early)"
-                                          >
-                                            <ChevronLeft size={16} />
-                                          </button>
-                                        )}
-                                        {bill.payFromCheck === 'check2' && (
-                                          <button
-                                            onClick={() => {
-                                              const updated = bills.map(b =>
-                                                b.id === bill.id ? { ...b, payFromCheck: 'auto' } : b
-                                              );
-                                              setBills(updated);
-                                              localStorage.setItem('bills', JSON.stringify(updated));
-                                            }}
-                                            className="p-2 text-slate-600 hover:bg-slate-50 rounded-lg transition-colors"
-                                            title="Reset to Auto"
-                                          >
-                                            <RefreshCw size={16} />
-                                          </button>
-                                        )}
-                                        {bill.isVariable && (
-                                          <button
-                                            onClick={() => setShowHistoricalForm(bill)}
-                                            className="p-2 text-purple-600 hover:bg-purple-50 rounded-lg transition-colors"
-                                            title="View payment history"
-                                          >
-                                            <BarChart3 size={16} />
-                                          </button>
-                                        )}
-                                        <button
-                                          onClick={() => setEditingBill(bill)}
-                                          className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                                          title="Edit bill"
-                                        >
-                                          <Edit2 size={16} />
-                                        </button>
-                                        <button
-                                          onClick={() => {
-                                            if (confirm(`Delete ${bill.name}?`)) {
-                                              deleteBill(bill.id);
-                                            }
-                                          }}
-                                          className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                                          title="Delete bill"
-                                        >
-                                          <Trash2 size={16} />
-                                        </button>
-                                      </div>
-                                    </div>
-                                  </div>
-                                ))}
-                                {assignments.check2.length === 0 && (
-                                  <p className="text-white/70 text-center py-8 text-sm">No bills due before your second paycheck</p>
-                                )}
-                              </div>
-                            </>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })()}
-
-                  {/* Bill Stream View */}
-                  {billsViewMode === 'stream' && bills.length > 0 && (() => {
-                    if (!paySchedule || !paySchedule.nextPayDate) {
-                      return (
-                        <div className="bg-white rounded-2xl shadow-xl p-8 text-center">
-                          <p className="text-slate-600">Set up your pay schedule first to see bill stream</p>
-                        </div>
-                      );
-                    }
-
-                    // Reuse assignments for first two checks; compute third from anchor
-                    const assignments = billAssignments;
-                    const paychecks = [];
-                    let currentDate = new Date(paySchedule.nextPayDate);
-                    for (let i = 0; i < 3; i++) {
-                      paychecks.push(new Date(currentDate));
-                      switch (paySchedule.frequency) {
-                        case 'weekly': currentDate.setDate(currentDate.getDate() + 7); break;
-                        case 'biweekly': currentDate.setDate(currentDate.getDate() + 14); break;
-                        case 'semimonthly':
-                          currentDate.setDate(currentDate.getDate() <= 15 ? 15 : 1);
-                          if (currentDate.getDate() === 1) currentDate.setMonth(currentDate.getMonth() + 1);
-                          break;
-                        case 'monthly': currentDate.setMonth(currentDate.getMonth() + 1); break;
-                      }
-                    }
-
-                    const check3Bills = [];
-                    const check2Date = paychecks[1];
-                    const check3Date = paychecks[2];
-
-                    bills.forEach(bill => {
-                      if (bill.payFromCheck === 'check1' || bill.payFromCheck === 'check2') return;
-
-                      const dueDay = parseInt(bill.dueDate);
-                      const check2Month = check2Date.getMonth();
-                      const check2Year = check2Date.getFullYear();
-                      const check3Month = check3Date.getMonth();
-                      const check3Year = check3Date.getFullYear();
-
-                      let billDueCheck2Month = new Date(check2Year, check2Month, dueDay);
-                      if (dueDay < check2Date.getDate()) {
-                        billDueCheck2Month.setMonth(billDueCheck2Month.getMonth() + 1);
-                      }
-
-                      let billDueCheck3Month = new Date(check3Year, check3Month, dueDay);
-                      if (dueDay < check3Date.getDate()) {
-                        billDueCheck3Month.setMonth(billDueCheck3Month.getMonth() + 1);
-                      }
-
-                      const inCheck2Window = billDueCheck2Month > check2Date && billDueCheck2Month <= check3Date;
-                      const inCheck3Window = billDueCheck3Month > check2Date;
-
-                      if (!inCheck2Window && inCheck3Window) {
-                        check3Bills.push(bill);
-                      }
-                    });
-
-                    const streamData = [
-                      { paycheck: paychecks[0], bills: assignments.check1 },
-                      { paycheck: paychecks[1], bills: assignments.check2 },
-                      { paycheck: paychecks[2], bills: check3Bills }
-                    ];
-
-                    return (
-                      <div className="space-y-6">
-                        {streamData.map(({ paycheck, bills: assignedBills }, idx) => {
-                          const total = assignedBills.reduce((sum, b) => sum + parseFloat(b.amount), 0);
-                          const perCheck = parseFloat(paySchedule.payAmount);
-                          const leftover = (perCheck - perCheckEnvelopeSum()) - total;
-
-                          return (
-                            <div key={idx} className="bg-white/10 backdrop-blur-sm rounded-2xl p-6">
-                              <div className="flex items-center justify-between mb-4">
-                                <h3 className="text-2xl font-bold text-white">
-                                  {paycheck.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                                </h3>
-                                <div className="text-right">
-                                  <p className="text-white/70 text-sm">Bills: ${total.toFixed(2)}</p>
-                                  <p className={`text-lg font-bold ${leftover >= 0 ? 'text-emerald-300' : 'text-red-300'}`}>
-                                    Free after envelopes: ${leftover.toFixed(2)}
-                                  </p>
-                                </div>
-                              </div>
-                              <div className="grid grid-cols-1 gap-3">
-                                {assignedBills.map(bill => (
-                                  <div key={bill.id + (bill.effectiveDueDate || bill.nextDueDate)} className="bg-white rounded-xl p-4 flex items-center gap-3">
-                                    <button
-                                      onClick={() => togglePaid(bill.id)}
-                                      className={`p-2 rounded-lg transition-colors flex-shrink-0 ${bill.paidThisMonth
-                                        ? 'bg-green-500 text-white'
-                                        : 'bg-slate-100 text-slate-400 hover:bg-slate-200'
-                                        }`}
-                                      title={bill.paidThisMonth ? 'Mark unpaid' : 'Mark paid'}
-                                    >
-                                      <Check size={20} />
-                                    </button>
-                                    <div className="flex-1">
-                                      <p className={`font-semibold ${bill.paidThisMonth ? 'line-through text-green-600' : 'text-slate-800'}`}>
-                                        {bill.name}
-                                      </p>
-                                      <p className="text-sm text-slate-600">
-                                        {new Date(bill.effectiveDueDate || bill.nextDueDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                                      </p>
-                                    </div>
-                                    <div className="flex items-center gap-3">
-                                      <p className="text-lg font-bold text-slate-800">${bill.amount}</p>
-                                      {bill.autopay && (
-                                        <span className="px-2 py-1 bg-blue-100 text-blue-700 text-xs font-bold rounded">AUTO</span>
-                                      )}
-                                      <button
-                                        onClick={() => setEditingBill(bill)}
-                                        className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                                        title="Edit bill"
-                                      >
-                                        <Edit2 size={16} />
-                                      </button>
-                                    </div>
-                                  </div>
-                                ))}
-                                {assignedBills.length === 0 && (
-                                  <p className="text-white/70 text-center py-4 text-sm">No bills due before next paycheck</p>
-                                )}
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    );
-                  })()}
-                </>
-              );
-            })()}
-          </div>
-        )}
-
-        {/* Dashboard View */}
-        {view === 'dashboard' && (
-          <div>
-            {/* Financial Overview */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-              <div className="bg-white rounded-2xl shadow-xl p-6">
-                <div className="flex items-center gap-3 mb-2">
-                  <div className="p-3 bg-emerald-100 rounded-xl">
-                    <DollarSign className="text-emerald-600" size={24} />
-                  </div>
-                  <div className="flex-1">
-                    <p className="text-slate-500 text-sm">
-                      {new Date().toLocaleDateString('en-US', { month: 'long' })} Income
-                    </p>
-                    <p className="text-3xl font-black text-slate-800">
-                      ${overview.monthlyIncome.toFixed(2)}
-                    </p>
-                    {overview.paychecksThisMonth > 0 && (
-                      <p className="text-xs text-slate-500 mt-1">
-                        {overview.paychecksThisMonth} paycheck{overview.paychecksThisMonth !== 1 ? 's' : ''} this month
-                      </p>
-                    )}
-                  </div>
-                </div>
-                {overview.nextPaycheckDate && (
-                  <div className="mt-3 pt-3 border-t border-slate-100">
-                    <p className="text-xs text-slate-500">Next paycheck:</p>
-                    <p className="text-sm font-semibold text-emerald-600">
-                      {overview.nextPaycheckDate.toLocaleDateString('en-US', {
-                        weekday: 'short',
-                        month: 'short',
-                        day: 'numeric',
-                        timeZone: 'UTC'
-                      })}
-                      {overview.daysUntilNextPaycheck !== null && (
-                        <span className="text-slate-500 ml-1">
-                          ({overview.daysUntilNextPaycheck} day{overview.daysUntilNextPaycheck !== 1 ? 's' : ''})
-                        </span>
-                      )}
-                    </p>
-                  </div>
-                )}
-              </div>
-
-              <div className="bg-white rounded-2xl shadow-xl p-6">
-                <div className="flex items-center gap-3 mb-2">
-                  <div className="p-3 bg-red-100 rounded-xl">
-                    <TrendingUp className="text-red-600" size={24} />
-                  </div>
-                  <div>
-                    <p className="text-slate-500 text-sm">Monthly Expenses</p>
-                    <p className="text-3xl font-black text-slate-800">
-                      ${overview.totalMonthly.toFixed(2)}
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              <div className="bg-white rounded-2xl shadow-xl p-6">
-                {(() => {
-                  const assignments = getPaycheckAssignments();
-                  const check1Total = assignments.check1.reduce((sum, b) => sum + parseFloat(b.amount), 0);
-                  const check2Total = assignments.check2.reduce((sum, b) => sum + parseFloat(b.amount), 0);
-                  const perCheck = paySchedule ? parseFloat(paySchedule.payAmount) : 0;
-                  const reserves = perCheckEnvelopeSum();
-                  const leftover1 = (perCheck - reserves) - check1Total;
-                  const leftover2 = (perCheck - reserves) - check2Total;
-
-                  return (
-                    <>
-                      <h3 className="text-lg font-bold mb-3">Leftover Per Check</h3>
-                      <div className="space-y-3">
-                        <div className="p-3 bg-emerald-50 rounded-xl">
-                          <div className="flex justify-between items-center">
-                            <span className="text-sm text-slate-600">Check 1 Leftover</span>
-                            <span className={`text-xl font-bold ${leftover1 >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
-                              ${leftover1.toFixed(2)}
-                            </span>
-                          </div>
-                          <p className="text-xs text-slate-500 mt-1">Reserved envelopes per check: ${reserves.toFixed(2)}</p>
-                        </div>
-                        <div className="p-3 bg-blue-50 rounded-xl">
-                          <div className="flex justify-between items-center">
-                            <span className="text-sm text-slate-600">Check 2 Leftover</span>
-                            <span className={`text-xl font-bold ${leftover2 >= 0 ? 'text-blue-600' : 'text-red-600'}`}>
-                              ${leftover2.toFixed(2)}
-                            </span>
-                          </div>
-                          <p className="text-xs text-slate-500 mt-1">Reserved envelopes per check: ${reserves.toFixed(2)}</p>
-                        </div>
-                        <div className="p-3 bg-slate-50 rounded-xl border-2 border-slate-200">
-                          <div className="flex justify-between items-center">
-                            <span className="text-sm font-semibold text-slate-700">Total Monthly</span>
-                            <span className={`text-xl font-bold ${overview.leftover >= 0 ? 'text-slate-800' : 'text-red-600'}`}>
-                              ${overview.leftover.toFixed(2)}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-                    </>
-                  );
-                })()}
-              </div>
-            </div>
-
-            {/* Quick Stats */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-              <div className="bg-white rounded-2xl shadow-xl p-6">
-                <h3 className="text-xl font-bold mb-4">Paycheck Breakdown</h3>
-                {(() => {
-                  const assignments = getPaycheckAssignments();
-                  const check1Total = assignments.check1.reduce((sum, b) => sum + parseFloat(b.amount), 0);
-                  const check2Total = assignments.check2.reduce((sum, b) => sum + parseFloat(b.amount), 0);
-
-                  const today = new Date();
-                  const currentMonth = today.getMonth();
-                  const currentYear = today.getFullYear();
-                  let payDatesThisMonth = [];
-
-                  if (paySchedule && paySchedule.nextPayDate) {
-                    const nextPay = new Date(paySchedule.nextPayDate);
-                    const allPayDates = [nextPay];
-
-                    for (let i = 1; i < 8; i++) {
-                      const nextDate = new Date(allPayDates[i - 1]);
-                      switch (paySchedule.frequency) {
-                        case 'weekly': nextDate.setDate(nextDate.getDate() + 7); break;
-                        case 'biweekly': nextDate.setDate(nextDate.getDate() + 14); break;
-                        case 'semimonthly':
-                          if (nextDate.getDate() <= 15) {
-                            nextDate.setDate(15);
-                          } else {
-                            nextDate.setMonth(nextDate.getMonth() + 1);
-                            nextDate.setDate(1);
-                          }
-                          break;
-                        case 'monthly': nextDate.setMonth(nextDate.getMonth() + 1); break;
-                      }
-                      allPayDates.push(new Date(nextDate));
-                    }
-
-                    payDatesThisMonth = allPayDates.filter(date =>
-                      date.getMonth() === currentMonth && date.getFullYear() === currentYear
-                    );
-                  }
-
-                  return (
-                    <div className="space-y-3">
-                      {payDatesThisMonth.length > 0 && (
-                        <div className="p-3 bg-gradient-to-r from-emerald-50 to-blue-50 rounded-xl border-2 border-emerald-200">
-                          <div className="text-xs text-slate-600 mb-2">
-                            📅 Pay dates this month:
-                          </div>
-                          <div className="space-y-1">
-                            {payDatesThisMonth.map((date, idx) => (
-                              <div key={idx} className="text-sm font-semibold text-slate-800">
-                                • {date.toLocaleDateString('en-US', {
-                                  weekday: 'long',
-                                  month: 'short',
-                                  day: 'numeric',
-                                  timeZone: 'UTC'
-                                })}
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-
-                      <div className="p-3 bg-emerald-50 rounded-xl">
-                        <div className="flex items-center justify-between mb-2">
-                          <span className="font-semibold text-slate-700">First Paycheck (1st-15th)</span>
-                          <span className="text-emerald-600 font-bold">
-                            ${check1Total.toFixed(2)}
-                          </span>
-                        </div>
-                        <div className="text-xs text-slate-600">
-                          {assignments.check1.length} bills • Due before 16th
-                        </div>
-                      </div>
-                      <div className="p-3 bg-blue-50 rounded-xl">
-                        <div className="flex items-center justify-between mb-2">
-                          <span className="font-semibold text-slate-700">Second Paycheck (16th-31st)</span>
-                          <span className="text-blue-600 font-bold">
-                            ${check2Total.toFixed(2)}
-                          </span>
-                        </div>
-                        <div className="text-xs text-slate-600">
-                          {assignments.check2.length} bills • Due after 15th
-                        </div>
-                      </div>
-                      {paySchedule && (
-                        <div className="p-3 bg-slate-50 rounded-xl border-2 border-slate-200">
-                          <div className="text-xs text-slate-500 mb-1">Per Paycheck Income</div>
-                          <div className="text-2xl font-bold text-slate-800">
-                            ${parseFloat(paySchedule.payAmount).toFixed(2)}
-                          </div>
-                          <div className="text-xs text-slate-600 mt-1">
-                            Free after envelopes — Check 1: ${((parseFloat(paySchedule.payAmount) - perCheckEnvelopeSum()) - check1Total).toFixed(2)} •
-                            {' '}Check 2: ${((parseFloat(paySchedule.payAmount) - perCheckEnvelopeSum()) - check2Total).toFixed(2)}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })()}
-              </div>
-
-              <div className="bg-white rounded-2xl shadow-xl p-6">
-                <h3 className="text-xl font-bold mb-4">Assets Overview</h3>
-                <div className="space-y-3">
-                  {assets.slice(0, 5).map(asset => (
-                    <div key={asset.id} className="flex items-center justify-between p-3 bg-slate-50 rounded-xl">
-                      <span className="font-semibold">{asset.name}</span>
-                      <span className="text-slate-600">${asset.paymentAmount}</span>
-                    </div>
-                  ))}
-                  {assets.length === 0 && (
-                    <p className="text-slate-500 text-center py-4">No assets added yet</p>
-                  )}
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* One-Time Bills View */}
-        {view === 'onetime' && (
-          <div>
-            <div className="flex items-center justify-between mb-6">
-              <h2 className="text-3xl font-black text-white">One-Time Bills</h2>
-              <button
-                onClick={() => setShowOneTimeForm(true)}
-                className="px-6 py-3 bg-white hover:bg-emerald-50 text-emerald-600 rounded-xl font-semibold shadow-lg transition-colors flex items-center gap-2"
-                title="Add one-time bill"
-              >
-                <Plus size={20} />
-                Add One-Time Bill
-              </button>
-            </div>
-
-            <div className="mb-6 bg-white/20 backdrop-blur-sm rounded-2xl p-4">
-              <div className="flex items-center gap-3">
-                <AlertCircle className="text-white" size={24} />
-                <div>
-                  <p className="text-white font-semibold">Upcoming Total</p>
-                  <p className="text-2xl font-black text-white">${overview.upcomingOneTime.toFixed(2)}</p>
-                </div>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 gap-4">
-              {oneTimeBills.length > 0 ? (
-                oneTimeBills.map(bill => {
-                  const dueDate = new Date(bill.dueDate);
-                  const today = new Date();
-                  const isOverdue = !bill.paid && dueDate < today;
-
-                  return (
-                    <div key={bill.id} className={`bg-white rounded-2xl shadow-xl p-6 ${isOverdue ? 'border-4 border-red-500' : ''}`}>
-                      <div className="flex items-start gap-4">
-                        <button
-                          onClick={() => toggleOneTimePaid(bill.id)}
-                          className={`p-3 rounded-xl transition-colors ${bill.paid
-                            ? 'bg-green-500 text-white'
-                            : 'bg-slate-100 text-slate-400 hover:bg-slate-200'
-                            }`}
-                          title={bill.paid ? 'Mark unpaid' : 'Mark paid'}
-                        >
-                          <Check size={24} />
-                        </button>
-
-                        <div className="flex-1">
-                          <div className="flex items-center gap-2 mb-2">
-                            <h3 className={`text-xl font-bold ${bill.paid ? 'text-green-800 line-through' : 'text-slate-800'}`}>
-                              {bill.name}
-                            </h3>
-                            {isOverdue && (
-                              <span className="px-2 py-1 bg-red-500 text-white text-xs font-bold rounded-full">
-                                OVERDUE
-                              </span>
-                            )}
-                          </div>
-                          <div className="flex items-center gap-4 text-sm text-slate-600 mb-2">
-                            <span className="flex items-center gap-1">
-                              <Calendar size={14} />
-                              Due: {new Date(bill.dueDate).toLocaleDateString()}
-                            </span>
-                            <span className="flex items-center gap-1">
-                              <DollarSign size={14} />
-                              ${bill.amount}
-                            </span>
-                            {bill.category && (
-                              <span className="px-2 py-1 bg-slate-100 text-slate-700 text-xs font-bold rounded">
-                                {bill.category}
-                              </span>
-                            )}
-                            {bill.paid && bill.paidDate && (
-                              <span className="text-green-600 flex items-center gap-1">
-                                <Check size={14} />
-                                Paid {new Date(bill.paidDate).toLocaleDateString()}
-                              </span>
-                            )}
-                          </div>
-                          {bill.description && (
-                            <p className="text-sm text-slate-600 italic">{bill.description}</p>
-                          )}
-                        </div>
-
-                        <div className="flex gap-2">
-                          <button
-                            onClick={() => setEditingOneTime(bill)}
-                            className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                            title="Edit one-time bill"
-                          >
-                            <Edit2 size={18} />
-                          </button>
-                          <button
-                            onClick={() => {
-                              if (confirm(`Delete ${bill.name}?`)) {
-                                deleteOneTimeBill(bill.id);
-                              }
-                            }}
-                            className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                            title="Delete one-time bill"
-                          >
-                            <Trash2 size={18} />
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })
-              ) : (
-                <div className="bg-white rounded-2xl shadow-xl p-12 text-center">
-                  <Calendar className="mx-auto mb-4 text-slate-300" size={64} />
-                  <h3 className="text-xl font-bold text-slate-800 mb-2">No One-Time Bills</h3>
-                  <p className="text-slate-600 mb-6">Track non-recurring expenses like medical bills or repairs</p>
-                  <button
-                    onClick={() => setShowOneTimeForm(true)}
-                    className="px-6 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-semibold"
-                    title="Add your first one-time bill"
-                  >
-                    Add Your First One-Time Bill
-                  </button>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* Propane View */}
-        {view === 'propane' && (
-          <div>
-            <div className="flex items-center justify-between mb-6">
-              <h2 className="text-3xl font-black text-white">Propane Usage Tracker</h2>
-              <button onClick={() => setShowPropaneForm(true)} className="px-6 py-3 bg-white hover:bg-emerald-50 text-emerald-600 rounded-xl font-semibold shadow-lg transition-colors flex items-center gap-2" title="Add fill">
-                <Plus size={20} />
-                Add Fill
-              </button>
-            </div>
-
-            {propaneFills.length > 0 && (() => {
-              const sorted = [...propaneFills].sort((a, b) => new Date(b.date) - new Date(a.date));
-              const latest = sorted[0];
-              const totalGallons = propaneFills.reduce((sum, f) => sum + parseFloat(f.gallons), 0);
-              const totalCost = propaneFills.reduce((sum, f) => sum + parseFloat(f.totalCost), 0);
-              const avgPricePerGal = totalCost / totalGallons;
-
-              const fillsWithUsage = sorted.map((fill, idx) => {
-                if (idx === sorted.length - 1) return { ...fill, daysLasted: null, dailyUsage: null };
-                const nextFill = sorted[idx + 1];
-                const days = Math.floor((new Date(fill.date) - new Date(nextFill.date)) / (1000 * 60 * 60 * 24));
-                const dailyUsage = parseFloat(fill.gallons) / days;
-                return { ...fill, daysLasted: days, dailyUsage };
-              });
-
-              return (
-                <div className="space-y-6">
-                  <div className="bg-white rounded-2xl shadow-xl p-6">
-                    <h3 className="text-xl font-bold mb-4">Latest Fill</h3>
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                      <div>
-                        <p className="text-sm text-slate-500">Date</p>
-                        <p className="text-lg font-bold">{new Date(latest.date).toLocaleDateString()}</p>
-                      </div>
-                      <div>
-                        <p className="text-sm text-slate-500">Gallons</p>
-                        <p className="text-lg font-bold text-emerald-600">{latest.gallons}</p>
-                      </div>
-                      <div>
-                        <p className="text-sm text-slate-500">Price/Gal</p>
-                        <p className="text-lg font-bold">${latest.pricePerGal}</p>
-                      </div>
-                      <div>
-                        <p className="text-sm text-slate-500">Total Cost</p>
-                        <p className="text-lg font-bold text-red-600">${latest.totalCost}</p>
-                      </div>
-                    </div>
-                    {fillsWithUsage[0].daysLasted && (
-                      <div className="mt-4 pt-4 border-t">
-                        <p className="text-sm text-slate-600">Lasted <span className="font-bold">{fillsWithUsage[0].daysLasted} days</span> • Avg <span className="font-bold">{fillsWithUsage[0].dailyUsage.toFixed(1)} gal/day</span></p>
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div className="bg-white rounded-2xl shadow-xl p-6">
-                      <p className="text-sm text-slate-500 mb-1">Total Spent (All Time)</p>
-                      <p className="text-3xl font-black text-red-600">${totalCost.toFixed(2)}</p>
-                    </div>
-                    <div className="bg-white rounded-2xl shadow-xl p-6">
-                      <p className="text-sm text-slate-500 mb-1">Total Gallons</p>
-                      <p className="text-3xl font-black text-emerald-600">{totalGallons.toFixed(0)}</p>
-                    </div>
-                    <div className="bg-white rounded-2xl shadow-xl p-6">
-                      <p className="text-sm text-slate-500 mb-1">Avg Price/Gal</p>
-                      <p className="text-3xl font-black text-slate-800">${avgPricePerGal.toFixed(2)}</p>
-                    </div>
-                  </div>
-
-                  <div className="bg-white rounded-2xl shadow-xl p-6">
-                    <h3 className="text-xl font-bold mb-4">Fill History</h3>
-                    <div className="space-y-2">
-                      {fillsWithUsage.map(fill => (
-                        <div key={fill.id} className="flex items-center justify-between p-4 bg-slate-50 rounded-xl hover:bg-slate-100 transition-colors">
-                          <div className="flex-1">
-                            <p className="font-semibold">{new Date(fill.date).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}</p>
-                            <p className="text-sm text-slate-600">
-                              {fill.gallons} gal @ ${fill.pricePerGal}/gal = ${fill.totalCost}
-                              {fill.daysLasted && ` • Lasted ${fill.daysLasted} days (${fill.dailyUsage.toFixed(1)} gal/day)`}
-                            </p>
-                          </div>
-                          <button onClick={() => deletePropaneFill(fill.id)} className="p-2 text-red-600 hover:bg-red-50 rounded-lg" title="Delete fill">
-                            <Trash2 size={18} />
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              );
-            })()}
-
-            {propaneFills.length === 0 && (
-              <div className="bg-white rounded-2xl shadow-xl p-12 text-center">
-                <Flame className="mx-auto mb-4 text-slate-300" size={64} />
-                <h3 className="text-xl font-bold text-slate-800 mb-2">No Fills Tracked Yet</h3>
-                <p className="text-slate-600 mb-6">Start tracking your propane fills to see usage patterns and costs</p>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Analytics View */}
-        {view === 'analytics' && (
-          <div>
-            <h2 className="text-3xl font-black text-white mb-6">Financial Analytics</h2>
-
-            {/* Income vs Expenses */}
-            <div className="bg-white rounded-2xl shadow-xl p-6 mb-6">
-              <h3 className="text-xl font-bold mb-4">Income vs Expenses</h3>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-                <div className="text-center p-4 bg-emerald-50 rounded-xl">
-                  <p className="text-xs text-slate-600 mb-1">Monthly Income</p>
-                  <p className="text-xl md:text-2xl font-bold text-emerald-600 break-all">${overview.monthlyIncome.toFixed(2)}</p>
-                </div>
-                <div className="text-center p-4 bg-red-50 rounded-xl">
-                  <p className="text-xs text-slate-600 mb-1">Monthly Expenses</p>
-                  <p className="text-xl md:text-2xl font-bold text-red-600 break-all">${overview.totalMonthly.toFixed(2)}</p>
-                </div>
-                <div className="text-center p-4 bg-blue-50 rounded-xl">
-                  <p className="text-xs text-slate-600 mb-1">Net Savings</p>
-                  <p className={`text-xl md:text-2xl font-bold break-all ${overview.leftover >= 0 ? 'text-blue-600' : 'text-red-600'}`}>
-                    ${overview.leftover.toFixed(2)}
-                  </p>
-                </div>
-              </div>
-              <div className="h-8 bg-slate-100 rounded-full overflow-hidden flex">
-                <div
-                  className="bg-emerald-500 flex items-center justify-center text-white text-xs font-bold"
-                  style={{ width: `${Math.min((overview.totalMonthly / (overview.monthlyIncome || 1)) * 100, 100)}%` }}
-                >
-                  {overview.monthlyIncome > 0 ? ((overview.totalMonthly / overview.monthlyIncome) * 100).toFixed(0) : 0}%
-                </div>
-              </div>
-              <p className="text-xs text-slate-500 mt-2 text-center">
-                {overview.totalMonthly > overview.monthlyIncome ? '⚠️ Spending exceeds income' : '✓ Under budget'}
-              </p>
-            </div>
-
-            {/* Emergency Fund */}
-            <div className="bg-white rounded-2xl shadow-xl p-6 mb-6">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-xl font-bold">Emergency Fund</h3>
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    const target = window.prompt('Target emergency fund amount:', emergencyFund.target);
-                    const current = window.prompt('Current saved amount:', emergencyFund.current);
-                    if (target !== null && current !== null) {
-                      const fund = { target: parseFloat(target) || 0, current: parseFloat(current) || 0 };
-                      setEmergencyFund(fund);
-                      localStorage.setItem('emergencyFund', JSON.stringify(fund));
-                    }
-                  }}
-                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-sm font-semibold transition-colors"
-                >
-                  Update
-                </button>
-              </div>
-              {emergencyFund.target > 0 ? (
-                <>
-                  <div className="mb-4">
-                    <div className="flex justify-between text-sm mb-2">
-                      <span className="text-slate-600">Progress: ${emergencyFund.current.toFixed(2)} / ${emergencyFund.target.toFixed(2)}</span>
-                      <span className="font-bold text-emerald-600">{((emergencyFund.current / emergencyFund.target) * 100).toFixed(0)}%</span>
-                    </div>
-                    <div className="h-6 bg-slate-100 rounded-full overflow-hidden">
-                      <div
-                        className="h-full bg-gradient-to-r from-emerald-500 to-emerald-600 transition-all duration-500"
-                        style={{ width: `${Math.min((emergencyFund.current / emergencyFund.target) * 100, 100)}%` }}
-                      />
-                    </div>
-                  </div>
-                  <p className="text-sm text-slate-600">
-                    {emergencyFund.current >= emergencyFund.target
-                      ? '🎉 Goal reached!'
-                      : `$${(emergencyFund.target - emergencyFund.current).toFixed(2)} to go`}
-                  </p>
-                </>
-              ) : (
-                <p className="text-slate-500 text-center py-4">Set your emergency fund goal to start tracking</p>
-              )}
-            </div>
-
-            {/* Category Budgets */}
-            <div className="bg-white rounded-2xl shadow-xl p-6 mb-6">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-xl font-bold">Category Budgets</h3>
-                <button
-                  type="button"
-                  onClick={() => {
-                    const cats = ['utilities', 'subscription', 'insurance', 'loan', 'rent', 'other'];
-                    const next = { ...budgets };
-                    cats.forEach(c => {
-                      const v = window.prompt(`Monthly cap for "${c}" (0 for none):`, String(next[c] ?? 0));
-                      if (v !== null) next[c] = parseFloat(v) || 0;
-                    });
-                    setBudgets(next);
-                  }}
-                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-sm font-semibold"
-                >
-                  Edit Caps
-                </button>
-              </div>
-              {(() => {
-                const spend = monthlyCategorySpend();
-                const cats = Object.keys(budgets);
-                if (!cats.length) return <p className="text-slate-500">No budgets set.</p>;
-                return (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {cats.map(c => {
-                      const cap = budgets[c] || 0;
-                      const used = spend[c] || 0;
-                      const pct = cap > 0 ? Math.min(100, Math.round((used / cap) * 100)) : 0;
-                      const over = cap > 0 && used > cap;
-                      return (
-                        <div key={c} className={`p-4 rounded-xl ${over ? 'bg-red-50 border-2 border-red-200' : 'bg-slate-50'}`}>
-                          <div className="flex items-center justify-between mb-2">
-                            <span className="font-semibold capitalize">{c}</span>
-                            <span className={`text-sm font-bold ${over ? 'text-red-600' : 'text-slate-700'}`}>
-                              ${used.toFixed(2)}{cap > 0 && ` / $${cap.toFixed(2)}`}
-                            </span>
-                          </div>
-                          {cap > 0 ? (
-                            <>
-                              <div className="h-3 bg-white rounded-full overflow-hidden">
-                                <div className={`h-full ${over ? 'bg-red-500' : 'bg-emerald-500'}`} style={{ width: `${pct}%` }} />
-                              </div>
-                              {over && <p className="text-xs text-red-600 mt-1">Over budget by ${(used - cap).toFixed(2)}</p>}
-                            </>
-                          ) : (
-                            <p className="text-xs text-slate-500">No cap set</p>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                );
-              })()}
-            </div>
-
-            {/* Debt Payoff */}
-            <div className="bg-white rounded-2xl shadow-xl p-6 mb-6">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-xl font-bold">Debt Payoff Tracker</h3>
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    const name = window.prompt('Debt name (e.g., Credit Card):');
-                    if (!name) return;
-                    const balance = window.prompt('Current balance:');
-                    if (!balance) return;
-                    const rate = window.prompt('Interest rate % (e.g., 18.5):');
-                    if (!rate) return;
-                    const payment = window.prompt('Monthly payment:');
-                    if (!payment) return;
-
-                    const debt = {
-                      id: Date.now(),
-                      name,
-                      balance: parseFloat(balance),
-                      rate: parseFloat(rate),
-                      payment: parseFloat(payment)
-                    };
-                    const updated = [...debtPayoff, debt];
-                    setDebtPayoff(updated);
-                    localStorage.setItem('debtPayoff', JSON.stringify(updated));
-                  }}
-                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-sm font-semibold transition-colors"
-                >
-                  Add Debt
-                </button>
-              </div>
-              {debtPayoff.length > 0 ? (
-                <div className="space-y-3">
-                  {debtPayoff.map(debt => {
-                    const monthsToPayoff = Math.ceil(debt.balance / debt.payment);
-                    const totalInterest = (debt.payment * monthsToPayoff) - debt.balance;
-                    return (
-                      <div key={debt.id} className="p-4 bg-slate-50 rounded-xl">
-                        <div className="flex items-center justify-between mb-2">
-                          <span className="font-semibold">{debt.name}</span>
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.preventDefault();
-                              const updated = debtPayoff.filter(d => d.id !== debt.id);
-                              setDebtPayoff(updated);
-                              localStorage.setItem('debtPayoff', JSON.stringify(updated));
-                            }}
-                            className="text-red-600 hover:bg-red-50 p-1 rounded transition-colors"
-                            title="Remove"
-                          >
-                            <X size={16} />
-                          </button>
-                        </div>
-                        <p className="text-sm text-slate-600">Balance: ${debt.balance.toFixed(2)} @ {debt.rate}%</p>
-                        <p className="text-sm text-slate-600">Payment: ${debt.payment.toFixed(2)}/mo</p>
-                        <p className="text-sm font-semibold text-emerald-600 mt-2">
-                          Payoff: {monthsToPayoff} months | Interest: ${totalInterest.toFixed(2)}
-                        </p>
-                      </div>
-                    );
-                  })}
-                </div>
-              ) : (
-                <p className="text-slate-500 text-center py-4">Add debts to track payoff timeline</p>
-              )}
-            </div>
-
-            {/* Export Section */}
-            <div className="bg-white rounded-2xl shadow-xl p-6">
-              <h3 className="text-xl font-bold mb-4">Export Reports</h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    const csv = `PayPlan Pro Export - ${new Date().toLocaleDateString()}\n\n` +
-                      `Monthly Income,$${overview.monthlyIncome.toFixed(2)}\n` +
-                      `Monthly Expenses,$${overview.totalMonthly.toFixed(2)}\n` +
-                      `Net Savings,$${overview.leftover.toFixed(2)}\n\n` +
-                      `Bills:\nName,Amount,Due Date,Frequency\n` +
-                      bills.map(b => `${b.name},$${b.amount},${b.dueDate},${b.frequency}`).join('\n');
-                    const blob = new Blob([csv], { type: 'text/csv' });
-                    const url = URL.createObjectURL(blob);
-                    const a = document.createElement('a');
-                    a.href = url;
-                    a.download = `payplan-export-${Date.now()}.csv`;
-                    a.click();
-                    URL.revokeObjectURL(url);
-                  }}
-                  className="px-6 py-4 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-semibold transition-colors"
-                  title="Export CSV"
-                >
-                  📊 Export CSV
-                </button>
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    const data = { bills, assets, oneTimeBills, paySchedule, emergencyFund, debtPayoff, propaneFills, budgets, envelopes };
-                    const json = JSON.stringify(data, null, 2);
-                    const blob = new Blob([json], { type: 'application/json' });
-                    const url = URL.createObjectURL(blob);
-                    const a = document.createElement('a');
-                    a.href = url;
-                    a.download = `payplan-backup-${Date.now()}.json`;
-                    a.click();
-                    URL.revokeObjectURL(url);
-                  }}
-                  className="px-6 py-4 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-semibold transition-colors"
-                  title="Backup JSON"
-                >
-                  💾 Backup JSON
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Settings View */}
+        {view === 'dashboard' && <Dashboard />}
+        {view === 'bills' && <BillsTemplates />}
+        {view === 'checklist' && <Checklist />}
+        {view === 'submit' && <SubmitActuals />}
+        {view === 'assets' && <AssetsView />}
+        {view === 'onetime' && <OneTimeView />}
+        {view === 'propane' && <PropaneView />}
+        {view === 'analytics' && <AnalyticsView />}
         {view === 'settings' && (
-          <div>
-            <div className="flex items-center gap-4 mb-6">
-              <button
-                onClick={() => setView('dashboard')}
-                className="p-2 bg-white/10 hover:bg-white/20 rounded-xl transition-colors"
-                title="Back to dashboard"
-              >
-                <Home className="text-white" size={24} />
-              </button>
-              <h2 className="text-3xl font-black text-white">Settings</h2>
-            </div>
-
-            <div className="space-y-4">
-              {/* Pay Schedule */}
-              <div className="bg-white rounded-2xl shadow-xl p-6">
-                <div className="flex items-center justify-between mb-4">
-                  <div>
-                    <h3 className="text-xl font-bold text-slate-800">Pay Schedule</h3>
-                    <p className="text-slate-600 text-sm">Configure when and how much you get paid</p>
-                  </div>
-                  <button
-                    onClick={() => setShowPayScheduleForm(true)}
-                    className="px-4 py-2 bg-emerald-100 hover:bg-emerald-200 text-emerald-700 rounded-xl font-semibold transition-colors"
-                    title={paySchedule ? 'Edit pay schedule' : 'Set up pay schedule'}
-                  >
-                    {paySchedule ? 'Edit' : 'Set Up'}
-                  </button>
-                </div>
-
-                {paySchedule && (
-                  <div className="bg-slate-50 rounded-xl p-4">
-                    <div className="grid grid-cols-2 gap-4 text-sm">
-                      <div>
-                        <span className="text-slate-500">Frequency:</span>
-                        <span className="font-bold text-slate-800 ml-2 capitalize">{paySchedule.frequency}</span>
-                      </div>
-                      <div>
-                        <span className="text-slate-500">Pay Amount:</span>
-                        <span className="font-bold text-slate-800 ml-2">${paySchedule.payAmount}</span>
-                      </div>
-                      {paySchedule.nextPayDate && (
-                        <div className="col-span-2">
-                          <span className="text-slate-500">Next Pay Date:</span>
-                          <span className="font-bold text-emerald-600 ml-2">
-                            {new Date(paySchedule.nextPayDate).toLocaleDateString('en-US', {
-                              weekday: 'long',
-                              month: 'long',
-                              day: 'numeric'
-                            })}
-                          </span>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* Google Calendar */}
-              <div className="bg-white rounded-2xl shadow-xl p-6">
-                <div className="flex items-center justify-between mb-4">
-                  <div>
-                    <h3 className="text-xl font-bold text-slate-800">Google Calendar Integration</h3>
-                    <p className="text-slate-600 text-sm">Sync your bills and payment dates to your calendar</p>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {calendarConnected && (
-                      <button
-                        onClick={syncToCalendar}
-                        className="px-4 py-2 bg-blue-100 hover:bg-blue-200 text-blue-700 rounded-xl font-semibold transition-colors flex items-center gap-2"
-                        title="Sync now"
-                      >
-                        <RefreshCw size={16} />
-                        Sync Now
-                      </button>
-                    )}
-                    <button
-                      onClick={connectGoogleCalendar}
-                      className={`px-4 py-2 rounded-xl font-semibold transition-colors ${calendarConnected
-                        ? 'bg-green-100 text-green-700'
-                        : 'bg-emerald-600 hover:bg-emerald-700 text-white'
-                        }`}
-                      title={calendarConnected ? 'Connected' : 'Connect (demo)'}
-                    >
-                      {calendarConnected ? '✓ Connected' : 'Connect'}
-                    </button>
-                  </div>
-                </div>
-
-                {calendarConnected && (
-                  <div className="bg-green-50 border-2 border-green-200 rounded-xl p-4">
-                    <p className="text-green-800 text-sm">
-                      ✓ Calendar is connected. Your bills and payment dates will sync automatically.
-                    </p>
-                  </div>
-                )}
-              </div>
-
-              {/* Envelope Planning */}
-              <div className="bg-white rounded-2xl shadow-xl p-6">
-                <div className="flex items-center justify-between mb-4">
-                  <div>
-                    <h3 className="text-xl font-bold text-slate-800">Envelope Planning</h3>
-                    <p className="text-slate-600 text-sm">Reserve amounts from each paycheck</p>
-                  </div>
-                  <button
-                    onClick={() => {
-                      const name = window.prompt('Envelope name (e.g., Groceries):');
-                      if (!name) return;
-                      const perCheck = parseFloat(window.prompt('Amount per paycheck:') || '0');
-                      const next = [...envelopes, { id: Date.now(), name, perCheck: isNaN(perCheck) ? 0 : perCheck }];
-                      setEnvelopes(next);
-                    }}
-                    className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-semibold"
-                    title="Add envelope"
-                  >
-                    Add Envelope
-                  </button>
-                </div>
-                {envelopes.length ? (
-                  <div className="space-y-2">
-                    {envelopes.map(env => (
-                      <div key={env.id} className="flex items-center justify-between p-3 bg-slate-50 rounded-xl">
-                        <div className="flex items-center gap-3">
-                          <span className="font-semibold">{env.name}</span>
-                          <span className="text-slate-600 text-sm">${parseFloat(env.perCheck || 0).toFixed(2)} / check</span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <button
-                            onClick={() => {
-                              const v = window.prompt(`New per-check amount for "${env.name}":`, String(env.perCheck));
-                              if (v === null) return;
-                              const amt = parseFloat(v) || 0;
-                              setEnvelopes(envelopes.map(e => e.id === env.id ? { ...e, perCheck: amt } : e));
-                            }}
-                            className="px-3 py-1 text-blue-700 bg-blue-100 hover:bg-blue-200 rounded-lg text-sm font-semibold"
-                            title="Edit envelope"
-                          >
-                            Edit
-                          </button>
-                          <button
-                            onClick={() => setEnvelopes(envelopes.filter(e => e.id !== env.id))}
-                            className="px-3 py-1 text-red-700 bg-red-100 hover:bg-red-200 rounded-lg text-sm font-semibold"
-                            title="Remove envelope"
-                          >
-                            Remove
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                    <div className="mt-2 text-sm text-slate-600">
-                      Total reserved per check: <span className="font-bold text-slate-800">${perCheckEnvelopeSum().toFixed(2)}</span>
-                    </div>
-                  </div>
-                ) : (
-                  <p className="text-slate-500">No envelopes yet.</p>
-                )}
-              </div>
-
-              {/* Backup & Restore */}
-              <div className="bg-white rounded-2xl shadow-xl p-6">
-                <div className="mb-4">
-                  <h3 className="text-xl font-bold text-slate-800">Backup & Restore</h3>
-                  <p className="text-slate-600 text-sm">Export your data or restore from a backup file</p>
-                </div>
-
-                <div className="flex gap-3">
-                  <button
-                    onClick={exportBackup}
-                    className="flex-1 px-4 py-3 bg-blue-100 hover:bg-blue-200 text-blue-700 rounded-xl font-semibold transition-colors flex items-center justify-center gap-2"
-                    title="Export backup"
-                  >
-                    <Download size={18} />
-                    Export Backup
-                  </button>
-                  <button
-                    onClick={() => backupFileInputRef.current?.click()}
-                    className="flex-1 px-4 py-3 bg-emerald-100 hover:bg-emerald-200 text-emerald-700 rounded-xl font-semibold transition-colors flex items-center justify-center gap-2"
-                    title="Restore from backup"
-                  >
-                    <Upload size={18} />
-                    Restore Backup
-                  </button>
-                  <input
-                    ref={backupFileInputRef}
-                    type="file"
-                    accept=".json"
-                    onChange={(e) => {
-                      const file = e.target.files?.[0];
-                      if (file) {
-                        importBackupFromFile(file);
-                        e.target.value = '';
-                      }
-                    }}
-                    className="hidden"
-                  />
-                </div>
-
-                <div className="mt-4 bg-amber-50 border-2 border-amber-200 rounded-xl p-4">
-                  <p className="text-amber-800 text-sm">
-                    <strong>Note:</strong> Backups contain all your bills, assets, one-time bills, and settings. Keep your backup files secure.
-                  </p>
-                </div>
-              </div>
-
-              {/* Clear All Data */}
-              <div className="bg-white rounded-2xl shadow-xl p-6 border-2 border-red-200">
-                <div className="mb-4">
-                  <h3 className="text-xl font-bold text-red-600">Danger Zone</h3>
-                  <p className="text-slate-600 text-sm">Permanently delete all your data</p>
-                </div>
-
-                <button
-                  onClick={clearAllData}
-                  className="w-full px-4 py-3 bg-red-100 hover:bg-red-200 text-red-700 rounded-xl font-semibold transition-colors flex items-center justify-center gap-2"
-                  title="Clear all data"
-                >
-                  <Trash2 size={18} />
-                  Clear All Data
-                </button>
-
-                <div className="mt-4 bg-red-50 border-2 border-red-200 rounded-xl p-4">
-                  <p className="text-red-800 text-sm">
-                    <strong>⚠️ Warning:</strong> This will permanently delete ALL bills, assets, one-time bills, and settings. This action cannot be undone. Make a backup first if you want to keep your data!
-                  </p>
-                </div>
-              </div>
-            </div>
-          </div>
+          <SettingsView />
         )}
+
+        {/* Modals */}
+        {showTemplateForm && (
+          <TemplateForm
+            defaultValue={editingTemplate ? {
+              name: editingTemplate.name,
+              amount: editingTemplate.amount,
+              isVariable: editingTemplate.isVariable,
+              category: editingTemplate.category,
+              autopay: editingTemplate.autopay,
+              dueDate: editingTemplate.dueDay,
+              frequency: editingTemplate.frequency,
+            } : null}
+            onCancel={() => { setShowTemplateForm(false); setEditingTemplate(null); }}
+            onSubmit={(form) => { editingTemplate ? updateBillTemplate(form) : addBillTemplate(form); setShowTemplateForm(false); }}
+          />
+        )}
+
+        {showPayForm && (
+          <PayForm
+            defaultValue={paySchedule || { frequency: 'biweekly', payAmount: '', nextPayDate: '' }}
+            onCancel={() => setShowPayForm(false)}
+            onSubmit={(f) => { setPaySchedule(f); setShowPayForm(false); setTimeout(assignInstancesToChecks, 0); }}
+          />
+        )}
+
+        {showAssetForm && (
+          <AssetForm
+            onSubmit={addAsset}
+            onCancel={() => setShowAssetForm(false)}
+          />
+        )}
+
+        {editingAsset && (
+          <AssetForm
+            asset={editingAsset}
+            onSubmit={updateAsset}
+            onCancel={() => setEditingAsset(null)}
+          />
+        )}
+
+        {showOneTimeForm && (
+          <OneTimeBillForm
+            onSubmit={addOneTimeBill}
+            onCancel={() => setShowOneTimeForm(false)}
+          />
+        )}
+
+        {editingOneTime && (
+          <OneTimeBillForm
+            bill={editingOneTime}
+            onSubmit={updateOneTimeBill}
+            onCancel={() => setEditingOneTime(null)}
+          />
+        )}
+
+        {showPropaneForm && <PropaneModal />}
       </div>
-
-      {/* Modals */}
-      {showBillForm && (
-        <BillForm
-          onSubmit={addBill}
-          onCancel={() => setShowBillForm(false)}
-        />
-      )}
-
-      {editingBill && (
-        <BillForm
-          bill={editingBill}
-          onSubmit={updateBill}
-          onCancel={() => setEditingBill(null)}
-        />
-      )}
-
-      {showAssetForm && (
-        <AssetForm
-          onSubmit={addAsset}
-          onCancel={() => setShowAssetForm(false)}
-        />
-      )}
-
-      {editingAsset && (
-        <AssetForm
-          asset={editingAsset}
-          onSubmit={updateAsset}
-          onCancel={() => setEditingAsset(null)}
-        />
-      )}
-
-      {showOneTimeForm && (
-        <OneTimeBillForm
-          onSubmit={addOneTimeBill}
-          onCancel={() => setShowOneTimeForm(false)}
-        />
-      )}
-
-      {editingOneTime && (
-        <OneTimeBillForm
-          bill={editingOneTime}
-          onSubmit={updateOneTimeBill}
-          onCancel={() => setEditingOneTime(null)}
-        />
-      )}
-
-      {showPayScheduleForm && (
-        <PayScheduleForm
-          schedule={paySchedule}
-          onSubmit={savePaySchedule}
-          onCancel={() => setShowPayScheduleForm(false)}
-        />
-      )}
-
-      {showHistoricalForm && (
-        <HistoricalPaymentsForm
-          bill={showHistoricalForm}
-          onClose={() => setShowHistoricalForm(null)}
-        />
-      )}
-
-      {showAmortizationView && (
-        <AmortizationView
-          asset={showAmortizationView}
-          onClose={() => setShowAmortizationView(null)}
-        />
-      )}
-
-      {/* Propane Fill Form */}
-      {showPropaneForm && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full">
-            <div className="p-6">
-              <h2 className="text-2xl font-bold mb-6">Add Propane Fill</h2>
-              <form onSubmit={(e) => {
-                e.preventDefault();
-                const formData = new FormData(e.target);
-                const gallons = parseFloat(formData.get('gallons'));
-                const pricePerGal = parseFloat(formData.get('pricePerGal'));
-                addPropaneFill({
-                  date: formData.get('date'),
-                  gallons: gallons.toFixed(2),
-                  pricePerGal: pricePerGal.toFixed(2),
-                  totalCost: (gallons * pricePerGal).toFixed(2)
-                });
-                setShowPropaneForm(false);
-              }} className="space-y-4">
-                <div>
-                  <label className="block text-sm font-semibold mb-2">Fill Date</label>
-                  <input type="date" name="date" required className="w-full px-4 py-2 border-2 border-slate-200 rounded-xl focus:border-emerald-500 outline-none" />
-                </div>
-                <div>
-                  <label className="block text-sm font-semibold mb-2">Gallons Delivered</label>
-                  <input type="number" step="0.1" name="gallons" required className="w-full px-4 py-2 border-2 border-slate-200 rounded-xl focus:border-emerald-500 outline-none" />
-                </div>
-                <div>
-                  <label className="block text-sm font-semibold mb-2">Price per Gallon</label>
-                  <input type="number" step="0.01" name="pricePerGal" required className="w-full px-4 py-2 border-2 border-slate-200 rounded-xl focus:border-emerald-500 outline-none" />
-                </div>
-                <div className="flex gap-3 pt-4">
-                  <button type="button" onClick={() => setShowPropaneForm(false)} className="flex-1 px-4 py-3 bg-slate-100 hover:bg-slate-200 rounded-xl font-semibold">Cancel</button>
-                  <button type="submit" className="flex-1 px-4 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-semibold">Add Fill</button>
-                </div>
-              </form>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Clear All Data Modal */}
-      {showClearDataModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full">
-            <div className="p-6">
-              <div className="flex items-center gap-3 mb-4">
-                <div className="p-3 bg-red-100 rounded-full">
-                  <AlertCircle className="text-red-600" size={32} />
-                </div>
-                <h2 className="text-2xl font-bold text-red-600">Clear All Data?</h2>
-              </div>
-
-              <div className="bg-red-50 border-2 border-red-200 rounded-xl p-4 mb-6">
-                <p className="text-red-800 font-semibold mb-2">
-                  ⚠️ This will permanently delete:
-                </p>
-                <ul className="text-red-700 text-sm space-y-1 ml-4">
-                  <li>• All recurring bills</li>
-                  <li>• All assets and loans</li>
-                  <li>• All one-time bills</li>
-                  <li>• Your pay schedule</li>
-                  <li>• All settings</li>
-                </ul>
-                <p className="text-red-800 font-semibold mt-3">
-                  This action cannot be undone!
-                </p>
-              </div>
-
-              <div className="flex gap-3">
-                <button
-                  onClick={() => {
-                    setShowClearDataModal(false);
-                    setClearDataCountdown(5);
-                  }}
-                  className="flex-1 px-4 py-3 bg-slate-100 hover:bg-slate-200 rounded-xl font-semibold transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={confirmClearAllData}
-                  disabled={clearDataCountdown > 0}
-                  className={`flex-1 px-4 py-3 rounded-xl font-semibold transition-colors ${clearDataCountdown > 0
-                    ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
-                    : 'bg-red-600 hover:bg-red-700 text-white'
-                    }`}
-                >
-                  {clearDataCountdown > 0 ? `Wait ${clearDataCountdown}s...` : 'Yes, Delete Everything'}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 };
