@@ -674,16 +674,16 @@ const BillPayPlanner = () => {
 
   // ---------- Header ----------
   const Header = () => (
-    <div className="flex items-center justify-between mb-6">
-      <div>
-        <h1 className="text-4xl md:text-5xl font-black text-white">
+    <div className="mb-6">
+      <div className="text-center md:text-left mb-4">
+        <h1 className="text-3xl md:text-5xl font-black text-white">
           PayPlan Pro
         </h1>
-        <p className="text-emerald-100">
+        <p className="text-emerald-100 text-sm md:text-base">
           Instances-based bill planning (2+ months ahead)
         </p>
       </div>
-      <div className="flex gap-2">
+      <div className="grid grid-cols-5 md:grid-cols-9 gap-2">
         <NavButton
           view="dashboard"
           icon={Home}
@@ -970,14 +970,15 @@ const BillPayPlanner = () => {
 const NavButton = ({ view, icon: Icon, label, currentView, setView }) => (
   <button
     onClick={() => setView(view)}
-    className={`px-4 py-2 rounded-xl font-semibold flex items-center gap-2 ${
+    title={label}
+    className={`p-2 md:px-4 md:py-2 rounded-xl font-semibold flex items-center justify-center gap-2 ${
       currentView === view
         ? 'bg-white text-emerald-600'
         : 'bg-white/20 text-white hover:bg-white/30'
     }`}
   >
-    <Icon size={18} />
-    {label}
+    <Icon size={20} className="md:w-[18px] md:h-[18px]" />
+    <span className="hidden md:inline text-sm">{label}</span>
   </button>
 );
 
