@@ -860,6 +860,9 @@ const BillPayPlanner = () => {
           <Analytics
             overview={overview}
             currentMonthInstances={currentMonthInstances}
+            billInstances={billInstances}
+            nextPayDates={nextPayDates}
+            paySchedule={paySchedule}
             budgets={budgets}
             debtPayoff={debtPayoff}
             onAddDebt={() => {
