@@ -13,3 +13,4 @@ export const LS_EMERGENCY = 'emergencyFund';
 export const LS_DEBTS = 'debtPayoff';
 export const LS_ENVELOPES = 'ppp.envelopes';
 export const LS_BUDGETS = 'ppp.budgets';
+export const LS_ACTUAL_PAY = 'ppp.actualPayEntries';

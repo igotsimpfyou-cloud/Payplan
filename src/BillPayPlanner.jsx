@@ -29,6 +29,7 @@ import {
   LS_DEBTS,
   LS_ENVELOPES,
   LS_BUDGETS,
+  LS_ACTUAL_PAY,
 } from './constants/storageKeys';
 
 // Forms
@@ -77,6 +78,7 @@ const BillPayPlanner = () => {
     rent: 0,
     other: 0,
   });
+  const [actualPayEntries, setActualPayEntries] = useState([]);
 
   // UI modals
   const [showTemplateForm, setShowTemplateForm] = useState(false);
@@ -106,6 +108,7 @@ const BillPayPlanner = () => {
       const d = localStorage.getItem(LS_DEBTS);
       const env = localStorage.getItem(LS_ENVELOPES);
       const bud = localStorage.getItem(LS_BUDGETS);
+      const ap = localStorage.getItem(LS_ACTUAL_PAY);
 
       // MIGRATION: if old 'bills' exists, migrate to templates
       const legacyBills = localStorage.getItem('bills');
@@ -139,6 +142,7 @@ const BillPayPlanner = () => {
       if (d) setDebtPayoff(JSON.parse(d));
       if (env) setEnvelopes(JSON.parse(env));
       if (bud) setBudgets(JSON.parse(bud));
+      if (ap) setActualPayEntries(JSON.parse(ap));
     } catch (err) {
       console.warn('Load error', err);
     } finally {
@@ -190,6 +194,10 @@ const BillPayPlanner = () => {
   useEffect(
     () => localStorage.setItem(LS_BUDGETS, JSON.stringify(budgets)),
     [budgets]
+  );
+  useEffect(
+    () => localStorage.setItem(LS_ACTUAL_PAY, JSON.stringify(actualPayEntries)),
+    [actualPayEntries]
   );
 
   // ---------- Instance generation ----------
@@ -480,6 +488,7 @@ const BillPayPlanner = () => {
         debtPayoff,
         envelopes,
         budgets,
+        actualPayEntries,
       },
     };
     const blob = new Blob([JSON.stringify(payload, null, 2)], {
@@ -515,6 +524,7 @@ const BillPayPlanner = () => {
         other: 0,
       }
     );
+    setActualPayEntries(Array.isArray(d?.actualPayEntries) ? d.actualPayEntries : []);
   };
 
   const importBackupFromFile = async (file) => {
@@ -613,6 +623,21 @@ const BillPayPlanner = () => {
 
   const deletePropaneFill = async (id) =>
     setPropaneFills(propaneFills.filter((f) => f.id !== id));
+
+  // ---------- Actual Pay Entries ----------
+  const addActualPayEntry = (payDate, amount, overtimeHours = 0) => {
+    const entry = {
+      id: Date.now(),
+      payDate,
+      amount: parseAmt(amount),
+      overtimeHours: parseAmt(overtimeHours),
+      createdAt: new Date().toISOString(),
+    };
+    setActualPayEntries((prev) => [...prev, entry]);
+  };
+
+  const deleteActualPayEntry = (id) =>
+    setActualPayEntries((prev) => prev.filter((e) => e.id !== id));
 
   // ---------- Calendar ----------
   const connectGoogleCalendar = async () => {
@@ -800,6 +825,10 @@ const BillPayPlanner = () => {
           <SubmitActuals
             currentMonthInstances={currentMonthInstances}
             onSubmitActual={submitActualPaid}
+            nextPayDates={nextPayDates}
+            actualPayEntries={actualPayEntries}
+            onAddActualPay={addActualPayEntry}
+            onDeleteActualPay={deleteActualPayEntry}
           />
         )}
         {view === 'assets' && (
