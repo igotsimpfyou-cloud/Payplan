@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { DollarSign, Clock, Trash2, Camera, X, Receipt, Tag } from 'lucide-react';
+import { DollarSign, Clock, Trash2, Camera, X, Receipt, Tag, AlertCircle, Edit2 } from 'lucide-react';
 import { parseAmt } from '../../utils/formatters';
 import Tesseract from 'tesseract.js';
 
@@ -46,6 +46,9 @@ export const SubmitActuals = ({
   const [receiptImage, setReceiptImage] = useState(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [ocrProgress, setOcrProgress] = useState(0);
+  const [permissionStatus, setPermissionStatus] = useState('prompt'); // 'prompt', 'granted', 'denied'
+  const [showPermissionModal, setShowPermissionModal] = useState(false);
+  const [editingReceiptId, setEditingReceiptId] = useState(null);
   const [receiptData, setReceiptData] = useState({
     merchant: '',
     amount: '',
@@ -54,6 +57,7 @@ export const SubmitActuals = ({
     notes: '',
   });
   const fileInputRef = useRef(null);
+  const galleryInputRef = useRef(null);
 
   const handleAddPay = () => {
     if (!payDate || !payAmount) return;
@@ -74,6 +78,61 @@ export const SubmitActuals = ({
 
   // OCR API configuration - optional Tabscanner for better accuracy
   const OCR_API_KEY = localStorage.getItem('ppp.ocrApiKey') || '';
+
+  // Check and request camera permission
+  const checkCameraPermission = async () => {
+    try {
+      // Check if permissions API is available
+      if (navigator.permissions) {
+        const result = await navigator.permissions.query({ name: 'camera' });
+        setPermissionStatus(result.state);
+
+        // Listen for permission changes
+        result.onchange = () => {
+          setPermissionStatus(result.state);
+        };
+
+        if (result.state === 'denied') {
+          setShowPermissionModal(true);
+          return false;
+        }
+      }
+      return true;
+    } catch (error) {
+      // Permissions API not supported, proceed anyway
+      console.log('Permissions API not supported, proceeding with capture');
+      return true;
+    }
+  };
+
+  // Request camera access explicitly
+  const requestCameraAccess = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+      // Permission granted, stop the stream immediately
+      stream.getTracks().forEach(track => track.stop());
+      setPermissionStatus('granted');
+      setShowPermissionModal(false);
+      return true;
+    } catch (error) {
+      console.error('Camera access denied:', error);
+      setPermissionStatus('denied');
+      return false;
+    }
+  };
+
+  // Handle camera button click with permission check
+  const handleCameraClick = async () => {
+    const hasPermission = await checkCameraPermission();
+    if (hasPermission) {
+      fileInputRef.current?.click();
+    }
+  };
+
+  // Handle gallery button click (no permission needed for file picker)
+  const handleGalleryClick = () => {
+    galleryInputRef.current?.click();
+  };
 
   // Parse receipt text to extract data
   const parseReceiptText = (text) => {
@@ -267,9 +326,16 @@ export const SubmitActuals = ({
 
   const handleSaveReceipt = () => {
     if (!receiptData.amount) return;
+
+    if (editingReceiptId) {
+      // Update existing receipt - delete old and add new with same data
+      onDeleteReceipt(editingReceiptId);
+    }
+
     onAddReceipt(receiptData);
     setShowReceiptModal(false);
     setReceiptImage(null);
+    setEditingReceiptId(null);
     setReceiptData({
       merchant: '',
       amount: '',
@@ -283,9 +349,24 @@ export const SubmitActuals = ({
     }
   };
 
+  const handleEditReceipt = (receipt) => {
+    setReceiptData({
+      merchant: receipt.merchant,
+      amount: receipt.amount.toString(),
+      date: receipt.date,
+      category: receipt.category,
+      notes: receipt.notes || '',
+    });
+    setEditingReceiptId(receipt.id);
+    setReceiptImage(null);
+    setShowReceiptModal(true);
+    setIsProcessing(false);
+  };
+
   const handleCloseModal = () => {
     setShowReceiptModal(false);
     setReceiptImage(null);
+    setEditingReceiptId(null);
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
@@ -320,41 +401,48 @@ export const SubmitActuals = ({
         </div>
 
         <div className="flex flex-col sm:flex-row gap-3">
-          <label className="flex-1 cursor-pointer">
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/*"
-              capture="environment"
-              className="hidden"
-              onChange={handleFileSelect}
-            />
-            <div className="bg-white/20 hover:bg-white/30 transition-colors rounded-xl p-4 text-center border-2 border-dashed border-white/40">
-              <Camera className="mx-auto mb-2" size={32} />
-              <span className="font-semibold">Take Photo</span>
-              <p className="text-xs text-blue-100 mt-1">Opens camera on mobile</p>
-            </div>
-          </label>
+          {/* Hidden file inputs */}
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            capture="environment"
+            className="hidden"
+            onChange={handleFileSelect}
+          />
+          <input
+            ref={galleryInputRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={handleFileSelect}
+          />
 
-          <label className="flex-1 cursor-pointer">
-            <input
-              type="file"
-              accept="image/*"
-              className="hidden"
-              onChange={handleFileSelect}
-            />
-            <div className="bg-white/20 hover:bg-white/30 transition-colors rounded-xl p-4 text-center border-2 border-dashed border-white/40">
-              <Receipt className="mx-auto mb-2" size={32} />
-              <span className="font-semibold">Upload Image</span>
-              <p className="text-xs text-blue-100 mt-1">Select from gallery</p>
-            </div>
-          </label>
+          {/* Camera button */}
+          <button
+            onClick={handleCameraClick}
+            className="flex-1 bg-white/20 hover:bg-white/30 transition-colors rounded-xl p-4 text-center border-2 border-dashed border-white/40"
+          >
+            <Camera className="mx-auto mb-2" size={32} />
+            <span className="font-semibold block">Take Photo</span>
+            <p className="text-xs text-blue-100 mt-1">Opens camera on mobile</p>
+          </button>
+
+          {/* Gallery button */}
+          <button
+            onClick={handleGalleryClick}
+            className="flex-1 bg-white/20 hover:bg-white/30 transition-colors rounded-xl p-4 text-center border-2 border-dashed border-white/40"
+          >
+            <Receipt className="mx-auto mb-2" size={32} />
+            <span className="font-semibold block">Upload Image</span>
+            <p className="text-xs text-blue-100 mt-1">Select from gallery</p>
+          </button>
         </div>
 
         {/* Recent Scanned Receipts */}
         {sortedReceipts.length > 0 && (
           <div className="mt-4 pt-4 border-t border-white/20">
-            <h4 className="text-sm font-semibold mb-2">Recent Receipts</h4>
+            <h4 className="text-sm font-semibold mb-2">Recent Receipts (tap to edit)</h4>
             <div className="space-y-2 max-h-48 overflow-y-auto">
               {sortedReceipts.slice(0, 5).map((receipt) => {
                 const cat = getCategoryInfo(receipt.category);
@@ -363,20 +451,28 @@ export const SubmitActuals = ({
                     key={receipt.id}
                     className="flex items-center justify-between p-3 bg-white/10 rounded-xl"
                   >
-                    <div className="flex items-center gap-3">
-                      <span className={`w-2 h-2 rounded-full ${cat.color}`} />
-                      <div>
-                        <span className="font-semibold">{receipt.merchant}</span>
+                    <div className="flex items-center gap-3 flex-1 min-w-0">
+                      <span className={`w-2 h-2 rounded-full flex-shrink-0 ${cat.color}`} />
+                      <div className="truncate">
+                        <span className="font-semibold">{receipt.merchant || 'Unknown'}</span>
                         <span className="text-blue-100 text-sm ml-2">
                           {new Date(receipt.date).toLocaleDateString()}
                         </span>
                       </div>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <span className="font-bold">${parseAmt(receipt.amount).toFixed(2)}</span>
+                    <div className="flex items-center gap-1 flex-shrink-0">
+                      <span className="font-bold mr-2">${parseAmt(receipt.amount).toFixed(2)}</span>
+                      <button
+                        onClick={() => handleEditReceipt(receipt)}
+                        className="p-1.5 hover:bg-white/20 rounded"
+                        title="Edit receipt"
+                      >
+                        <Edit2 size={16} />
+                      </button>
                       <button
                         onClick={() => onDeleteReceipt(receipt.id)}
-                        className="p-1 hover:bg-white/20 rounded"
+                        className="p-1.5 hover:bg-red-400/30 rounded"
+                        title="Delete receipt"
                       >
                         <Trash2 size={16} />
                       </button>
@@ -526,12 +622,57 @@ export const SubmitActuals = ({
         )}
       </div>
 
+      {/* Permission Modal */}
+      {showPermissionModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl max-w-sm w-full p-6">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="p-3 bg-amber-100 rounded-xl">
+                <AlertCircle className="text-amber-600" size={24} />
+              </div>
+              <h3 className="text-lg font-bold">Camera Access Required</h3>
+            </div>
+            <p className="text-slate-600 mb-4">
+              To take photos of receipts, please allow camera access when prompted.
+            </p>
+            {permissionStatus === 'denied' && (
+              <div className="bg-red-50 border border-red-200 rounded-xl p-3 mb-4">
+                <p className="text-red-700 text-sm">
+                  Camera access was denied. Please enable it in your browser/device settings, then try again.
+                </p>
+              </div>
+            )}
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowPermissionModal(false)}
+                className="flex-1 px-4 py-2 bg-slate-100 hover:bg-slate-200 rounded-xl font-semibold"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={async () => {
+                  const granted = await requestCameraAccess();
+                  if (granted) {
+                    fileInputRef.current?.click();
+                  }
+                }}
+                className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-semibold"
+              >
+                Allow Camera
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Receipt Modal */}
       {showReceiptModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-2xl max-w-md w-full max-h-[90vh] overflow-y-auto">
             <div className="p-4 border-b flex items-center justify-between">
-              <h3 className="text-lg font-bold">Receipt Details</h3>
+              <h3 className="text-lg font-bold">
+                {editingReceiptId ? 'Edit Receipt' : 'Review Receipt Details'}
+              </h3>
               <button
                 onClick={handleCloseModal}
                 className="p-2 hover:bg-slate-100 rounded-xl"
@@ -635,12 +776,18 @@ export const SubmitActuals = ({
                     />
                   </div>
 
+                  {!editingReceiptId && (
+                    <p className="text-sm text-slate-500 text-center mb-3">
+                      Please review and edit the details above before saving
+                    </p>
+                  )}
+
                   <button
                     onClick={handleSaveReceipt}
                     disabled={!receiptData.amount}
                     className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 text-white rounded-xl font-bold transition-colors"
                   >
-                    Save Receipt
+                    {editingReceiptId ? 'Update Receipt' : 'Save Receipt'}
                   </button>
                 </div>
               )}
