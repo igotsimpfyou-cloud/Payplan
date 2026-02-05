@@ -1,5 +1,5 @@
 import React from 'react';
-import { DollarSign, TrendingUp, AlertTriangle, CheckCircle, Clock, Wallet } from 'lucide-react';
+import { DollarSign, TrendingUp, AlertTriangle, CheckCircle, Clock, Wallet, Check } from 'lucide-react';
 import { parseAmt } from '../../utils/formatters';
 
 export const Dashboard = ({
@@ -8,6 +8,7 @@ export const Dashboard = ({
   billInstances,
   nextPayDates,
   perCheckEnvelopeSum,
+  onToggleInstancePaid,
 }) => {
   const fourCheckPlan = React.useMemo(() => {
     const checks = nextPayDates.slice(0, 4);
@@ -238,17 +239,30 @@ export const Dashboard = ({
                   {bucket.length > 0 && (
                     <div className="space-y-1 pt-2 border-t border-slate-200">
                       {bucket.slice(0, 4).map((b) => (
-                        <div
+                        <button
                           key={b.id}
-                          className="flex items-center justify-between text-sm"
+                          onClick={() => onToggleInstancePaid(b.id)}
+                          className={`w-full flex items-center justify-between text-sm p-1.5 rounded-lg transition-colors ${
+                            b.paid
+                              ? 'bg-green-100 hover:bg-green-200'
+                              : 'hover:bg-slate-100'
+                          }`}
+                          title={b.paid ? 'Click to mark unpaid' : 'Click to mark paid'}
                         >
-                          <span className={`truncate ${b.paid ? 'text-slate-400 line-through' : 'text-slate-700'}`}>
-                            {b.name}
-                          </span>
-                          <span className={`font-medium ml-2 ${b.paid ? 'text-slate-400' : 'text-slate-800'}`}>
+                          <div className="flex items-center gap-2 truncate">
+                            <span className={`flex-shrink-0 w-5 h-5 rounded-full flex items-center justify-center ${
+                              b.paid ? 'bg-green-500 text-white' : 'border-2 border-slate-300'
+                            }`}>
+                              {b.paid && <Check size={12} />}
+                            </span>
+                            <span className={`truncate ${b.paid ? 'text-slate-400 line-through' : 'text-slate-700'}`}>
+                              {b.name}
+                            </span>
+                          </div>
+                          <span className={`font-medium ml-2 flex-shrink-0 ${b.paid ? 'text-slate-400' : 'text-slate-800'}`}>
                             ${parseAmt(b.amountEstimate).toFixed(2)}
                           </span>
-                        </div>
+                        </button>
                       ))}
                       {bucket.length > 4 && (
                         <div className="text-xs text-slate-400 pt-1">

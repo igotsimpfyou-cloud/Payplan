@@ -797,6 +797,7 @@ const BillPayPlanner = () => {
             billInstances={billInstances}
             nextPayDates={nextPayDates}
             perCheckEnvelopeSum={perCheckEnvelopeSum()}
+            onToggleInstancePaid={toggleInstancePaid}
           />
         )}
         {view === 'bills' && (
