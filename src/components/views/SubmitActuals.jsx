@@ -1,6 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { DollarSign, Clock, Trash2, Camera, X, Receipt, Tag } from 'lucide-react';
 import { parseAmt } from '../../utils/formatters';
+import Tesseract from 'tesseract.js';
 
 const CATEGORIES = [
   { value: 'utilities', label: 'Utilities', color: 'bg-emerald-500' },
@@ -44,6 +45,7 @@ export const SubmitActuals = ({
   const [showReceiptModal, setShowReceiptModal] = useState(false);
   const [receiptImage, setReceiptImage] = useState(null);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [ocrProgress, setOcrProgress] = useState(0);
   const [receiptData, setReceiptData] = useState({
     merchant: '',
     amount: '',
@@ -70,56 +72,124 @@ export const SubmitActuals = ({
     (a, b) => new Date(b.date) - new Date(a.date)
   );
 
-  // OCR API configuration - get free key at tabscanner.com
+  // OCR API configuration - optional Tabscanner for better accuracy
   const OCR_API_KEY = localStorage.getItem('ppp.ocrApiKey') || '';
 
-  // Real OCR using Tabscanner API
-  const processWithOCR = async (file) => {
-    if (!OCR_API_KEY) {
-      // Fallback to manual entry if no API key
+  // Parse receipt text to extract data
+  const parseReceiptText = (text) => {
+    const lines = text.split('\n').map(l => l.trim()).filter(l => l);
+
+    // Find amounts (look for dollar amounts like $12.34 or 12.34)
+    const amountPattern = /\$?\d{1,4}[.,]\d{2}/g;
+    const amounts = text.match(amountPattern) || [];
+    const parsedAmounts = amounts
+      .map(a => parseFloat(a.replace('$', '').replace(',', '.')))
+      .filter(a => a > 0 && a < 10000)
+      .sort((a, b) => b - a);
+
+    // The total is usually the largest amount or has keywords
+    let total = '';
+    const totalLine = lines.find(l => /total|amount|due|balance/i.test(l));
+    if (totalLine) {
+      const match = totalLine.match(amountPattern);
+      if (match) total = match[match.length - 1].replace('$', '');
+    }
+    if (!total && parsedAmounts.length > 0) {
+      total = parsedAmounts[0].toFixed(2);
+    }
+
+    // Find merchant (usually first few lines, look for store names)
+    let merchant = '';
+    const storePatterns = /walmart|target|costco|kroger|publix|safeway|aldi|cvs|walgreens|mcdonald|wendy|burger|starbucks|amazon|home depot|lowes|shell|exxon|chevron|bp|gas|station/i;
+    for (let i = 0; i < Math.min(5, lines.length); i++) {
+      if (storePatterns.test(lines[i])) {
+        merchant = lines[i];
+        break;
+      }
+    }
+    // If no known store, use first non-numeric line
+    if (!merchant && lines.length > 0) {
+      merchant = lines.find(l => !/^\d/.test(l) && l.length > 2 && l.length < 40) || '';
+    }
+
+    // Find date
+    let date = new Date().toISOString().split('T')[0];
+    const datePattern = /(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/;
+    const dateMatch = text.match(datePattern);
+    if (dateMatch) {
+      try {
+        const [_, m, d, y] = dateMatch;
+        const year = y.length === 2 ? '20' + y : y;
+        const parsed = new Date(`${year}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`);
+        if (!isNaN(parsed.getTime())) {
+          date = parsed.toISOString().split('T')[0];
+        }
+      } catch {}
+    }
+
+    return { merchant: merchant.substring(0, 50), amount: total, date };
+  };
+
+  // Built-in OCR using Tesseract.js (no API key needed)
+  const processWithTesseract = async (file) => {
+    try {
+      setOcrProgress(0);
+
+      const result = await Tesseract.recognize(file, 'eng', {
+        logger: (m) => {
+          if (m.status === 'recognizing text') {
+            setOcrProgress(Math.round(m.progress * 100));
+          }
+        },
+      });
+
+      const text = result.data.text;
+      const parsed = parseReceiptText(text);
+
+      return {
+        merchant: parsed.merchant,
+        amount: parsed.amount,
+        date: parsed.date,
+        category: guessCategory(parsed.merchant),
+      };
+    } catch (error) {
+      console.error('Tesseract OCR Error:', error);
       return {
         merchant: '',
         amount: '',
         date: new Date().toISOString().split('T')[0],
         category: 'other',
-        needsManualEntry: true,
+        error: 'OCR failed - enter manually',
       };
     }
+  };
 
+  // Tabscanner API (optional, better accuracy)
+  const processWithTabscanner = async (file) => {
     try {
-      // Step 1: Upload image to Tabscanner
       const formData = new FormData();
       formData.append('file', file);
 
       const uploadResponse = await fetch('https://api.tabscanner.com/api/2/process', {
         method: 'POST',
-        headers: {
-          'apikey': OCR_API_KEY,
-        },
+        headers: { 'apikey': OCR_API_KEY },
         body: formData,
       });
 
-      if (!uploadResponse.ok) {
-        throw new Error('Upload failed');
-      }
+      if (!uploadResponse.ok) throw new Error('Upload failed');
 
-      const uploadResult = await uploadResponse.json();
-      const token = uploadResult.token;
-
-      // Step 2: Poll for results (Tabscanner processes async)
+      const { token } = await uploadResponse.json();
       let attempts = 0;
-      const maxAttempts = 10;
 
-      while (attempts < maxAttempts) {
-        await new Promise(resolve => setTimeout(resolve, 1500));
+      while (attempts < 10) {
+        await new Promise(r => setTimeout(r, 1500));
+        setOcrProgress(Math.min(90, 10 + attempts * 10));
 
         const resultResponse = await fetch(`https://api.tabscanner.com/api/result/${token}`, {
           headers: { 'apikey': OCR_API_KEY },
         });
 
-        if (!resultResponse.ok) {
-          throw new Error('Result fetch failed');
-        }
+        if (!resultResponse.ok) throw new Error('Result fetch failed');
 
         const result = await resultResponse.json();
 
@@ -132,23 +202,15 @@ export const SubmitActuals = ({
             category: guessCategory(data.establishment || ''),
           };
         } else if (result.status === 'failed') {
-          throw new Error('OCR processing failed');
+          throw new Error('Processing failed');
         }
-
         attempts++;
       }
-
-      throw new Error('OCR timeout');
+      throw new Error('Timeout');
     } catch (error) {
-      console.error('OCR Error:', error);
-      // Return empty for manual entry on error
-      return {
-        merchant: '',
-        amount: '',
-        date: new Date().toISOString().split('T')[0],
-        category: 'other',
-        error: error.message,
-      };
+      // Fallback to Tesseract if Tabscanner fails
+      console.warn('Tabscanner failed, falling back to Tesseract:', error);
+      return processWithTesseract(file);
     }
   };
 
@@ -165,13 +227,13 @@ export const SubmitActuals = ({
 
   // Guess category from merchant name
   const guessCategory = (merchant) => {
-    const lower = merchant.toLowerCase();
-    if (/walmart|target|costco|kroger|publix|safeway|aldi/i.test(lower)) return 'groceries';
-    if (/mcdonald|wendy|burger|pizza|restaurant|cafe|starbucks|dunkin/i.test(lower)) return 'dining';
-    if (/shell|exxon|chevron|gas|fuel|bp|mobil/i.test(lower)) return 'transport';
+    const lower = (merchant || '').toLowerCase();
+    if (/walmart|target|costco|kroger|publix|safeway|aldi|grocery/i.test(lower)) return 'groceries';
+    if (/mcdonald|wendy|burger|pizza|restaurant|cafe|starbucks|dunkin|food/i.test(lower)) return 'dining';
+    if (/shell|exxon|chevron|gas|fuel|bp|mobil|station/i.test(lower)) return 'transport';
     if (/amazon|ebay|best buy|home depot|lowes/i.test(lower)) return 'shopping';
     if (/netflix|spotify|hulu|disney|subscription/i.test(lower)) return 'subscription';
-    if (/electric|water|gas|utility|power/i.test(lower)) return 'utilities';
+    if (/electric|water|utility|power|energy/i.test(lower)) return 'utilities';
     return 'other';
   };
 
@@ -185,18 +247,22 @@ export const SubmitActuals = ({
     setReceiptImage(imageUrl);
     setShowReceiptModal(true);
     setIsProcessing(true);
+    setOcrProgress(0);
 
-    // Process with OCR
-    const result = await processWithOCR(file);
+    // Process with OCR - use Tabscanner if configured, otherwise Tesseract
+    const result = OCR_API_KEY
+      ? await processWithTabscanner(file)
+      : await processWithTesseract(file);
 
     setReceiptData({
       merchant: result.merchant,
       amount: result.amount,
       date: result.date || new Date().toISOString().split('T')[0],
       category: result.category || 'other',
-      notes: result.error ? `OCR: ${result.error}` : '',
+      notes: result.error || '',
     });
     setIsProcessing(false);
+    setOcrProgress(100);
   };
 
   const handleSaveReceipt = () => {
@@ -247,8 +313,8 @@ export const SubmitActuals = ({
               OCR Active
             </span>
           ) : (
-            <span className="px-3 py-1 bg-white/20 text-blue-100 rounded-full text-xs font-semibold">
-              Manual Entry
+            <span className="px-3 py-1 bg-blue-400/30 text-blue-100 rounded-full text-xs font-semibold">
+              Built-in OCR
             </span>
           )}
         </div>
@@ -489,8 +555,16 @@ export const SubmitActuals = ({
               {isProcessing ? (
                 <div className="text-center py-8">
                   <div className="animate-spin w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full mx-auto mb-3" />
-                  <p className="text-slate-600">Processing receipt...</p>
-                  <p className="text-sm text-slate-400">Extracting text with OCR</p>
+                  <p className="text-slate-600 font-medium">Processing receipt...</p>
+                  <div className="w-full bg-slate-200 rounded-full h-2 mt-3 mb-2">
+                    <div
+                      className="bg-blue-500 h-2 rounded-full transition-all duration-300"
+                      style={{ width: `${ocrProgress}%` }}
+                    />
+                  </div>
+                  <p className="text-sm text-slate-400">
+                    {OCR_API_KEY ? 'Using Tabscanner API' : 'Using built-in OCR'} ({ocrProgress}%)
+                  </p>
                 </div>
               ) : (
                 <div className="space-y-4">

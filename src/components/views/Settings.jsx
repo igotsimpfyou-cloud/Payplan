@@ -214,9 +214,10 @@ export const Settings = ({
           </div>
 
           {!ocrApiKey && (
-            <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
-              <p className="text-amber-800 text-sm">
-                <strong>Note:</strong> Without an API key, you can still manually enter receipt details after taking a photo.
+            <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4">
+              <p className="text-emerald-800 text-sm">
+                <strong>Built-in OCR Active:</strong> Receipts are processed locally in your browser using Tesseract.js.
+                Add a Tabscanner API key above for improved accuracy on difficult receipts.
               </p>
             </div>
           )}
@@ -224,7 +225,7 @@ export const Settings = ({
           {ocrApiKey && (
             <div className="bg-green-50 border border-green-200 rounded-xl p-4">
               <p className="text-green-800 text-sm">
-                ✓ OCR is configured. Receipt text will be extracted automatically when you scan.
+                ✓ <strong>Tabscanner API Active:</strong> Using cloud OCR for best accuracy. Falls back to built-in OCR if API fails.
               </p>
             </div>
           )}
