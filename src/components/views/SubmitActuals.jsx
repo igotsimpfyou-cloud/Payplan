@@ -1,7 +1,19 @@
-import React, { useState } from 'react';
-import { DollarSign, Clock, Trash2 } from 'lucide-react';
+import React, { useState, useRef } from 'react';
+import { DollarSign, Clock, Trash2, Camera, X, Receipt, Tag } from 'lucide-react';
 import { parseAmt } from '../../utils/formatters';
-import { toYMD } from '../../utils/dateHelpers';
+
+const CATEGORIES = [
+  { value: 'utilities', label: 'Utilities', color: 'bg-emerald-500' },
+  { value: 'subscription', label: 'Subscription', color: 'bg-indigo-500' },
+  { value: 'insurance', label: 'Insurance', color: 'bg-amber-500' },
+  { value: 'loan', label: 'Loan', color: 'bg-red-500' },
+  { value: 'rent', label: 'Rent', color: 'bg-purple-500' },
+  { value: 'groceries', label: 'Groceries', color: 'bg-green-500' },
+  { value: 'dining', label: 'Dining', color: 'bg-orange-500' },
+  { value: 'transport', label: 'Transport', color: 'bg-blue-500' },
+  { value: 'shopping', label: 'Shopping', color: 'bg-pink-500' },
+  { value: 'other', label: 'Other', color: 'bg-slate-500' },
+];
 
 export const SubmitActuals = ({
   currentMonthInstances,
@@ -10,6 +22,9 @@ export const SubmitActuals = ({
   actualPayEntries,
   onAddActualPay,
   onDeleteActualPay,
+  scannedReceipts,
+  onAddReceipt,
+  onDeleteReceipt,
 }) => {
   const thisMonthVars = currentMonthInstances.filter((i) => i.isVariable);
   const [values, setValues] = useState(() => {
@@ -25,6 +40,19 @@ export const SubmitActuals = ({
   const [payAmount, setPayAmount] = useState('');
   const [overtimeHours, setOvertimeHours] = useState('');
 
+  // Receipt scanner state
+  const [showReceiptModal, setShowReceiptModal] = useState(false);
+  const [receiptImage, setReceiptImage] = useState(null);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [receiptData, setReceiptData] = useState({
+    merchant: '',
+    amount: '',
+    date: new Date().toISOString().split('T')[0],
+    category: 'other',
+    notes: '',
+  });
+  const fileInputRef = useRef(null);
+
   const handleAddPay = () => {
     if (!payDate || !payAmount) return;
     onAddActualPay(payDate, payAmount, overtimeHours);
@@ -38,8 +66,167 @@ export const SubmitActuals = ({
     (a, b) => new Date(b.payDate) - new Date(a.payDate)
   );
 
+  const sortedReceipts = [...(scannedReceipts || [])].sort(
+    (a, b) => new Date(b.date) - new Date(a.date)
+  );
+
+  // Handle file selection
+  const handleFileSelect = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Create preview URL
+    const imageUrl = URL.createObjectURL(file);
+    setReceiptImage(imageUrl);
+    setShowReceiptModal(true);
+    setIsProcessing(true);
+
+    // Simulate OCR processing (in real implementation, send to API)
+    // This mock extracts some "detected" values
+    setTimeout(() => {
+      // Mock OCR result - in production, call Tabscanner/Mindee API
+      const mockResult = simulateOCR(file.name);
+      setReceiptData({
+        merchant: mockResult.merchant,
+        amount: mockResult.amount,
+        date: mockResult.date || new Date().toISOString().split('T')[0],
+        category: mockResult.category || 'other',
+        notes: '',
+      });
+      setIsProcessing(false);
+    }, 1500);
+  };
+
+  // Mock OCR function - replace with real API call
+  const simulateOCR = (filename) => {
+    // In production: send image to Tabscanner/Mindee API
+    // For now, return sample data
+    const merchants = ['Walmart', 'Target', 'Costco', 'Amazon', 'Gas Station', 'Restaurant'];
+    const randomMerchant = merchants[Math.floor(Math.random() * merchants.length)];
+    const randomAmount = (Math.random() * 150 + 10).toFixed(2);
+
+    return {
+      merchant: randomMerchant,
+      amount: randomAmount,
+      date: new Date().toISOString().split('T')[0],
+      category: randomMerchant === 'Restaurant' ? 'dining' :
+                randomMerchant === 'Gas Station' ? 'transport' : 'shopping',
+    };
+  };
+
+  const handleSaveReceipt = () => {
+    if (!receiptData.amount) return;
+    onAddReceipt(receiptData);
+    setShowReceiptModal(false);
+    setReceiptImage(null);
+    setReceiptData({
+      merchant: '',
+      amount: '',
+      date: new Date().toISOString().split('T')[0],
+      category: 'other',
+      notes: '',
+    });
+    // Reset file input
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
+  const handleCloseModal = () => {
+    setShowReceiptModal(false);
+    setReceiptImage(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
+  const getCategoryInfo = (value) =>
+    CATEGORIES.find((c) => c.value === value) || CATEGORIES[CATEGORIES.length - 1];
+
   return (
     <div className="space-y-6">
+      {/* Receipt Scanner Section */}
+      <div className="bg-gradient-to-br from-blue-500 to-indigo-600 rounded-2xl shadow-xl p-6 text-white">
+        <div className="flex items-center gap-3 mb-4">
+          <div className="p-3 bg-white/20 rounded-xl">
+            <Camera size={28} />
+          </div>
+          <div>
+            <h3 className="text-xl font-bold">Scan Receipt</h3>
+            <p className="text-blue-100 text-sm">Take a photo to log expenses</p>
+          </div>
+        </div>
+
+        <div className="flex flex-col sm:flex-row gap-3">
+          <label className="flex-1 cursor-pointer">
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              capture="environment"
+              className="hidden"
+              onChange={handleFileSelect}
+            />
+            <div className="bg-white/20 hover:bg-white/30 transition-colors rounded-xl p-4 text-center border-2 border-dashed border-white/40">
+              <Camera className="mx-auto mb-2" size={32} />
+              <span className="font-semibold">Take Photo</span>
+              <p className="text-xs text-blue-100 mt-1">Opens camera on mobile</p>
+            </div>
+          </label>
+
+          <label className="flex-1 cursor-pointer">
+            <input
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={handleFileSelect}
+            />
+            <div className="bg-white/20 hover:bg-white/30 transition-colors rounded-xl p-4 text-center border-2 border-dashed border-white/40">
+              <Receipt className="mx-auto mb-2" size={32} />
+              <span className="font-semibold">Upload Image</span>
+              <p className="text-xs text-blue-100 mt-1">Select from gallery</p>
+            </div>
+          </label>
+        </div>
+
+        {/* Recent Scanned Receipts */}
+        {sortedReceipts.length > 0 && (
+          <div className="mt-4 pt-4 border-t border-white/20">
+            <h4 className="text-sm font-semibold mb-2">Recent Receipts</h4>
+            <div className="space-y-2 max-h-48 overflow-y-auto">
+              {sortedReceipts.slice(0, 5).map((receipt) => {
+                const cat = getCategoryInfo(receipt.category);
+                return (
+                  <div
+                    key={receipt.id}
+                    className="flex items-center justify-between p-3 bg-white/10 rounded-xl"
+                  >
+                    <div className="flex items-center gap-3">
+                      <span className={`w-2 h-2 rounded-full ${cat.color}`} />
+                      <div>
+                        <span className="font-semibold">{receipt.merchant}</span>
+                        <span className="text-blue-100 text-sm ml-2">
+                          {new Date(receipt.date).toLocaleDateString()}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="font-bold">${parseAmt(receipt.amount).toFixed(2)}</span>
+                      <button
+                        onClick={() => onDeleteReceipt(receipt.id)}
+                        className="p-1 hover:bg-white/20 rounded"
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+      </div>
+
       {/* Actual Pay Entry Section */}
       <div className="bg-white rounded-2xl shadow-xl p-6">
         <h3 className="text-xl font-bold mb-4 flex items-center gap-2">
@@ -176,6 +363,121 @@ export const SubmitActuals = ({
           </div>
         )}
       </div>
+
+      {/* Receipt Modal */}
+      {showReceiptModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl max-w-md w-full max-h-[90vh] overflow-y-auto">
+            <div className="p-4 border-b flex items-center justify-between">
+              <h3 className="text-lg font-bold">Receipt Details</h3>
+              <button
+                onClick={handleCloseModal}
+                className="p-2 hover:bg-slate-100 rounded-xl"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="p-4">
+              {/* Image Preview */}
+              {receiptImage && (
+                <div className="mb-4 rounded-xl overflow-hidden bg-slate-100">
+                  <img
+                    src={receiptImage}
+                    alt="Receipt"
+                    className="w-full max-h-48 object-contain"
+                  />
+                </div>
+              )}
+
+              {isProcessing ? (
+                <div className="text-center py-8">
+                  <div className="animate-spin w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full mx-auto mb-3" />
+                  <p className="text-slate-600">Processing receipt...</p>
+                  <p className="text-sm text-slate-400">Extracting text with OCR</p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <div>
+                    <label className="text-sm font-semibold text-slate-600">Merchant</label>
+                    <input
+                      type="text"
+                      className="w-full mt-1 px-3 py-2 border-2 rounded-xl"
+                      value={receiptData.merchant}
+                      onChange={(e) => setReceiptData({ ...receiptData, merchant: e.target.value })}
+                      placeholder="Store name"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-sm font-semibold text-slate-600">Amount</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      className="w-full mt-1 px-3 py-2 border-2 rounded-xl"
+                      value={receiptData.amount}
+                      onChange={(e) => setReceiptData({ ...receiptData, amount: e.target.value })}
+                      placeholder="$0.00"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-sm font-semibold text-slate-600">Date</label>
+                    <input
+                      type="date"
+                      className="w-full mt-1 px-3 py-2 border-2 rounded-xl"
+                      value={receiptData.date}
+                      onChange={(e) => setReceiptData({ ...receiptData, date: e.target.value })}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-sm font-semibold text-slate-600 flex items-center gap-2">
+                      <Tag size={16} />
+                      Category
+                    </label>
+                    <div className="grid grid-cols-2 gap-2 mt-2">
+                      {CATEGORIES.map((cat) => (
+                        <button
+                          key={cat.value}
+                          onClick={() => setReceiptData({ ...receiptData, category: cat.value })}
+                          className={`px-3 py-2 rounded-xl text-sm font-medium transition-all flex items-center gap-2 ${
+                            receiptData.category === cat.value
+                              ? 'bg-blue-500 text-white'
+                              : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                          }`}
+                        >
+                          <span className={`w-2 h-2 rounded-full ${cat.color}`} />
+                          {cat.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="text-sm font-semibold text-slate-600">Notes (optional)</label>
+                    <input
+                      type="text"
+                      className="w-full mt-1 px-3 py-2 border-2 rounded-xl"
+                      value={receiptData.notes}
+                      onChange={(e) => setReceiptData({ ...receiptData, notes: e.target.value })}
+                      placeholder="Add a note..."
+                    />
+                  </div>
+
+                  <button
+                    onClick={handleSaveReceipt}
+                    disabled={!receiptData.amount}
+                    className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 text-white rounded-xl font-bold transition-colors"
+                  >
+                    Save Receipt
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

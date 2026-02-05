@@ -30,6 +30,7 @@ import {
   LS_ENVELOPES,
   LS_BUDGETS,
   LS_ACTUAL_PAY,
+  LS_SCANNED_RECEIPTS,
 } from './constants/storageKeys';
 
 // Forms
@@ -79,6 +80,7 @@ const BillPayPlanner = () => {
     other: 0,
   });
   const [actualPayEntries, setActualPayEntries] = useState([]);
+  const [scannedReceipts, setScannedReceipts] = useState([]);
 
   // UI modals
   const [showTemplateForm, setShowTemplateForm] = useState(false);
@@ -109,6 +111,7 @@ const BillPayPlanner = () => {
       const env = localStorage.getItem(LS_ENVELOPES);
       const bud = localStorage.getItem(LS_BUDGETS);
       const ap = localStorage.getItem(LS_ACTUAL_PAY);
+      const sr = localStorage.getItem(LS_SCANNED_RECEIPTS);
 
       // MIGRATION: if old 'bills' exists, migrate to templates
       const legacyBills = localStorage.getItem('bills');
@@ -143,6 +146,7 @@ const BillPayPlanner = () => {
       if (env) setEnvelopes(JSON.parse(env));
       if (bud) setBudgets(JSON.parse(bud));
       if (ap) setActualPayEntries(JSON.parse(ap));
+      if (sr) setScannedReceipts(JSON.parse(sr));
     } catch (err) {
       console.warn('Load error', err);
     } finally {
@@ -198,6 +202,10 @@ const BillPayPlanner = () => {
   useEffect(
     () => localStorage.setItem(LS_ACTUAL_PAY, JSON.stringify(actualPayEntries)),
     [actualPayEntries]
+  );
+  useEffect(
+    () => localStorage.setItem(LS_SCANNED_RECEIPTS, JSON.stringify(scannedReceipts)),
+    [scannedReceipts]
   );
 
   // ---------- Instance generation ----------
@@ -489,6 +497,7 @@ const BillPayPlanner = () => {
         envelopes,
         budgets,
         actualPayEntries,
+        scannedReceipts,
       },
     };
     const blob = new Blob([JSON.stringify(payload, null, 2)], {
@@ -525,6 +534,7 @@ const BillPayPlanner = () => {
       }
     );
     setActualPayEntries(Array.isArray(d?.actualPayEntries) ? d.actualPayEntries : []);
+    setScannedReceipts(Array.isArray(d?.scannedReceipts) ? d.scannedReceipts : []);
   };
 
   const importBackupFromFile = async (file) => {
@@ -638,6 +648,23 @@ const BillPayPlanner = () => {
 
   const deleteActualPayEntry = (id) =>
     setActualPayEntries((prev) => prev.filter((e) => e.id !== id));
+
+  // ---------- Scanned Receipts ----------
+  const addScannedReceipt = (receipt) => {
+    const entry = {
+      id: Date.now(),
+      merchant: receipt.merchant || 'Unknown',
+      amount: parseAmt(receipt.amount),
+      date: receipt.date || new Date().toISOString().split('T')[0],
+      category: receipt.category || 'other',
+      notes: receipt.notes || '',
+      createdAt: new Date().toISOString(),
+    };
+    setScannedReceipts((prev) => [...prev, entry]);
+  };
+
+  const deleteScannedReceipt = (id) =>
+    setScannedReceipts((prev) => prev.filter((r) => r.id !== id));
 
   // ---------- Calendar ----------
   const connectGoogleCalendar = async () => {
@@ -830,6 +857,9 @@ const BillPayPlanner = () => {
             actualPayEntries={actualPayEntries}
             onAddActualPay={addActualPayEntry}
             onDeleteActualPay={deleteActualPayEntry}
+            scannedReceipts={scannedReceipts}
+            onAddReceipt={addScannedReceipt}
+            onDeleteReceipt={deleteScannedReceipt}
           />
         )}
         {view === 'assets' && (
