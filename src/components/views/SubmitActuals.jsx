@@ -70,6 +70,111 @@ export const SubmitActuals = ({
     (a, b) => new Date(b.date) - new Date(a.date)
   );
 
+  // OCR API configuration - get free key at tabscanner.com
+  const OCR_API_KEY = localStorage.getItem('ppp.ocrApiKey') || '';
+
+  // Real OCR using Tabscanner API
+  const processWithOCR = async (file) => {
+    if (!OCR_API_KEY) {
+      // Fallback to manual entry if no API key
+      return {
+        merchant: '',
+        amount: '',
+        date: new Date().toISOString().split('T')[0],
+        category: 'other',
+        needsManualEntry: true,
+      };
+    }
+
+    try {
+      // Step 1: Upload image to Tabscanner
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const uploadResponse = await fetch('https://api.tabscanner.com/api/2/process', {
+        method: 'POST',
+        headers: {
+          'apikey': OCR_API_KEY,
+        },
+        body: formData,
+      });
+
+      if (!uploadResponse.ok) {
+        throw new Error('Upload failed');
+      }
+
+      const uploadResult = await uploadResponse.json();
+      const token = uploadResult.token;
+
+      // Step 2: Poll for results (Tabscanner processes async)
+      let attempts = 0;
+      const maxAttempts = 10;
+
+      while (attempts < maxAttempts) {
+        await new Promise(resolve => setTimeout(resolve, 1500));
+
+        const resultResponse = await fetch(`https://api.tabscanner.com/api/result/${token}`, {
+          headers: { 'apikey': OCR_API_KEY },
+        });
+
+        if (!resultResponse.ok) {
+          throw new Error('Result fetch failed');
+        }
+
+        const result = await resultResponse.json();
+
+        if (result.status === 'done') {
+          const data = result.result;
+          return {
+            merchant: data.establishment || data.merchantName || '',
+            amount: data.total?.toString() || data.subTotal?.toString() || '',
+            date: data.date ? formatOCRDate(data.date) : new Date().toISOString().split('T')[0],
+            category: guessCategory(data.establishment || ''),
+          };
+        } else if (result.status === 'failed') {
+          throw new Error('OCR processing failed');
+        }
+
+        attempts++;
+      }
+
+      throw new Error('OCR timeout');
+    } catch (error) {
+      console.error('OCR Error:', error);
+      // Return empty for manual entry on error
+      return {
+        merchant: '',
+        amount: '',
+        date: new Date().toISOString().split('T')[0],
+        category: 'other',
+        error: error.message,
+      };
+    }
+  };
+
+  // Format date from OCR (handles various formats)
+  const formatOCRDate = (dateStr) => {
+    try {
+      const date = new Date(dateStr);
+      if (isNaN(date.getTime())) return new Date().toISOString().split('T')[0];
+      return date.toISOString().split('T')[0];
+    } catch {
+      return new Date().toISOString().split('T')[0];
+    }
+  };
+
+  // Guess category from merchant name
+  const guessCategory = (merchant) => {
+    const lower = merchant.toLowerCase();
+    if (/walmart|target|costco|kroger|publix|safeway|aldi/i.test(lower)) return 'groceries';
+    if (/mcdonald|wendy|burger|pizza|restaurant|cafe|starbucks|dunkin/i.test(lower)) return 'dining';
+    if (/shell|exxon|chevron|gas|fuel|bp|mobil/i.test(lower)) return 'transport';
+    if (/amazon|ebay|best buy|home depot|lowes/i.test(lower)) return 'shopping';
+    if (/netflix|spotify|hulu|disney|subscription/i.test(lower)) return 'subscription';
+    if (/electric|water|gas|utility|power/i.test(lower)) return 'utilities';
+    return 'other';
+  };
+
   // Handle file selection
   const handleFileSelect = async (e) => {
     const file = e.target.files?.[0];
@@ -81,37 +186,17 @@ export const SubmitActuals = ({
     setShowReceiptModal(true);
     setIsProcessing(true);
 
-    // Simulate OCR processing (in real implementation, send to API)
-    // This mock extracts some "detected" values
-    setTimeout(() => {
-      // Mock OCR result - in production, call Tabscanner/Mindee API
-      const mockResult = simulateOCR(file.name);
-      setReceiptData({
-        merchant: mockResult.merchant,
-        amount: mockResult.amount,
-        date: mockResult.date || new Date().toISOString().split('T')[0],
-        category: mockResult.category || 'other',
-        notes: '',
-      });
-      setIsProcessing(false);
-    }, 1500);
-  };
+    // Process with OCR
+    const result = await processWithOCR(file);
 
-  // Mock OCR function - replace with real API call
-  const simulateOCR = (filename) => {
-    // In production: send image to Tabscanner/Mindee API
-    // For now, return sample data
-    const merchants = ['Walmart', 'Target', 'Costco', 'Amazon', 'Gas Station', 'Restaurant'];
-    const randomMerchant = merchants[Math.floor(Math.random() * merchants.length)];
-    const randomAmount = (Math.random() * 150 + 10).toFixed(2);
-
-    return {
-      merchant: randomMerchant,
-      amount: randomAmount,
-      date: new Date().toISOString().split('T')[0],
-      category: randomMerchant === 'Restaurant' ? 'dining' :
-                randomMerchant === 'Gas Station' ? 'transport' : 'shopping',
-    };
+    setReceiptData({
+      merchant: result.merchant,
+      amount: result.amount,
+      date: result.date || new Date().toISOString().split('T')[0],
+      category: result.category || 'other',
+      notes: result.error ? `OCR: ${result.error}` : '',
+    });
+    setIsProcessing(false);
   };
 
   const handleSaveReceipt = () => {
@@ -147,14 +232,25 @@ export const SubmitActuals = ({
     <div className="space-y-6">
       {/* Receipt Scanner Section */}
       <div className="bg-gradient-to-br from-blue-500 to-indigo-600 rounded-2xl shadow-xl p-6 text-white">
-        <div className="flex items-center gap-3 mb-4">
-          <div className="p-3 bg-white/20 rounded-xl">
-            <Camera size={28} />
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-3">
+            <div className="p-3 bg-white/20 rounded-xl">
+              <Camera size={28} />
+            </div>
+            <div>
+              <h3 className="text-xl font-bold">Scan Receipt</h3>
+              <p className="text-blue-100 text-sm">Take a photo to log expenses</p>
+            </div>
           </div>
-          <div>
-            <h3 className="text-xl font-bold">Scan Receipt</h3>
-            <p className="text-blue-100 text-sm">Take a photo to log expenses</p>
-          </div>
+          {OCR_API_KEY ? (
+            <span className="px-3 py-1 bg-green-400/30 text-green-100 rounded-full text-xs font-semibold">
+              OCR Active
+            </span>
+          ) : (
+            <span className="px-3 py-1 bg-white/20 text-blue-100 rounded-full text-xs font-semibold">
+              Manual Entry
+            </span>
+          )}
         </div>
 
         <div className="flex flex-col sm:flex-row gap-3">

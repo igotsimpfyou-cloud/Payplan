@@ -1,6 +1,8 @@
-import React from 'react';
-import { Download, Upload, RefreshCw } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Download, Upload, RefreshCw, Camera, Eye, EyeOff, ExternalLink } from 'lucide-react';
 import { parseAmt } from '../../utils/formatters';
+
+const OCR_API_KEY_STORAGE = 'ppp.ocrApiKey';
 
 export const Settings = ({
   paySchedule,
@@ -19,6 +21,28 @@ export const Settings = ({
   onExportBackup,
   onImportBackup,
 }) => {
+  // OCR API key state
+  const [ocrApiKey, setOcrApiKey] = useState('');
+  const [showApiKey, setShowApiKey] = useState(false);
+  const [apiKeySaved, setApiKeySaved] = useState(false);
+
+  // Load API key on mount
+  useEffect(() => {
+    const savedKey = localStorage.getItem(OCR_API_KEY_STORAGE) || '';
+    setOcrApiKey(savedKey);
+  }, []);
+
+  const handleSaveApiKey = () => {
+    localStorage.setItem(OCR_API_KEY_STORAGE, ocrApiKey.trim());
+    setApiKeySaved(true);
+    setTimeout(() => setApiKeySaved(false), 2000);
+  };
+
+  const handleClearApiKey = () => {
+    localStorage.removeItem(OCR_API_KEY_STORAGE);
+    setOcrApiKey('');
+  };
+
   return (
     <div>
       {/* Pay Schedule */}
@@ -114,6 +138,96 @@ export const Settings = ({
               <span>${parseAmt(v).toFixed(2)}</span>
             </div>
           ))}
+        </div>
+      </div>
+
+      {/* Receipt Scanner OCR */}
+      <div className="bg-white rounded-2xl shadow-xl p-6 mb-6">
+        <div className="flex items-center gap-3 mb-4">
+          <div className="p-3 bg-gradient-to-br from-blue-500 to-indigo-500 rounded-xl text-white">
+            <Camera size={24} />
+          </div>
+          <div>
+            <h3 className="text-xl font-bold text-slate-800">Receipt Scanner OCR</h3>
+            <p className="text-slate-600 text-sm">
+              Auto-extract merchant, amount, and date from photos
+            </p>
+          </div>
+        </div>
+
+        <div className="space-y-4">
+          <div>
+            <label className="text-sm font-semibold text-slate-600 block mb-2">
+              Tabscanner API Key
+            </label>
+            <div className="flex gap-2">
+              <div className="relative flex-1">
+                <input
+                  type={showApiKey ? 'text' : 'password'}
+                  value={ocrApiKey}
+                  onChange={(e) => setOcrApiKey(e.target.value)}
+                  placeholder="Enter your API key..."
+                  className="w-full px-4 py-2 pr-10 border-2 rounded-xl"
+                />
+                <button
+                  onClick={() => setShowApiKey(!showApiKey)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                >
+                  {showApiKey ? <EyeOff size={18} /> : <Eye size={18} />}
+                </button>
+              </div>
+              <button
+                onClick={handleSaveApiKey}
+                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-semibold"
+              >
+                {apiKeySaved ? '✓ Saved' : 'Save'}
+              </button>
+              {ocrApiKey && (
+                <button
+                  onClick={handleClearApiKey}
+                  className="px-4 py-2 bg-red-100 hover:bg-red-200 text-red-700 rounded-xl font-semibold"
+                >
+                  Clear
+                </button>
+              )}
+            </div>
+          </div>
+
+          <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
+            <p className="text-blue-800 text-sm mb-2">
+              <strong>How to get a free API key:</strong>
+            </p>
+            <ol className="text-blue-700 text-sm list-decimal list-inside space-y-1">
+              <li>Visit <a href="https://tabscanner.com" target="_blank" rel="noopener noreferrer" className="underline font-medium">tabscanner.com</a></li>
+              <li>Create a free account</li>
+              <li>Copy your API key from the dashboard</li>
+              <li>Paste it above and click Save</li>
+            </ol>
+            <a
+              href="https://tabscanner.com"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1 mt-3 text-blue-600 hover:text-blue-800 font-semibold text-sm"
+            >
+              Get Free API Key <ExternalLink size={14} />
+            </a>
+          </div>
+
+          {!ocrApiKey && (
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
+              <p className="text-amber-800 text-sm">
+                <strong>Note:</strong> Without an API key, you can still manually enter receipt details after taking a photo.
+              </p>
+            </div>
+          )}
+
+          {ocrApiKey && (
+            <div className="bg-green-50 border border-green-200 rounded-xl p-4">
+              <p className="text-green-800 text-sm">
+                ✓ OCR is configured. Receipt text will be extracted automatically when you scan.
+              </p>
+            </div>
+          )}
         </div>
       </div>
 
