@@ -56,6 +56,7 @@ import { OneTime } from './components/views/OneTime';
 import { Propane } from './components/views/Propane';
 import { Analytics } from './components/views/Analytics';
 import { Settings } from './components/views/Settings';
+import { Retirement } from './components/views/Retirement';
 
 /**
  * PayPlan Pro - Slim Orchestrator
@@ -750,7 +751,7 @@ const BillPayPlanner = () => {
       icon: Wallet,
       items: [
         { view: 'assets', label: 'Assets', icon: Building2 },
-        // Future: { view: 'retirement', label: 'Retirement', icon: TrendingUp },
+        { view: 'retirement', label: 'Retirement', icon: TrendingUp },
       ],
     },
     {
@@ -980,6 +981,7 @@ const BillPayPlanner = () => {
             }
           />
         )}
+        {view === 'retirement' && <Retirement />}
         {view === 'settings' && (
           <Settings
             paySchedule={paySchedule}
