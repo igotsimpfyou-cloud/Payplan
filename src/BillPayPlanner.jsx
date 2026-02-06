@@ -667,14 +667,15 @@ const BillPayPlanner = () => {
     setScannedReceipts((prev) => prev.filter((r) => r.id !== id));
 
   // ---------- Calendar ----------
-  const connectGoogleCalendar = async () => {
-    const connected = !calendarConnected;
-    setCalendarConnected(connected);
-    if (connected) alert('Calendar connected! (Demo mode)');
+  const connectGoogleCalendar = async (connected) => {
+    // If called with boolean, use it; otherwise toggle
+    const newState = typeof connected === 'boolean' ? connected : !calendarConnected;
+    setCalendarConnected(newState);
   };
 
-  const syncToCalendar = async () =>
-    alert('Syncing bills to calendar... (Demo mode)');
+  const syncToCalendar = async () => {
+    // This is now handled in Settings component
+  };
 
   // ---------- Overview helpers ----------
   const currentMonthInstances = useMemo(() => {
@@ -917,6 +918,7 @@ const BillPayPlanner = () => {
             calendarConnected={calendarConnected}
             backupFileInputRef={backupFileInputRef}
             perCheckEnvelopeSum={perCheckEnvelopeSum()}
+            billInstances={billInstances}
             onEditPaySchedule={() => setShowPayForm(true)}
             onAddEnvelope={() => {
               const name = prompt('Envelope name:');

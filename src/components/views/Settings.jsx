@@ -1,6 +1,17 @@
 import React, { useState, useEffect } from 'react';
-import { Download, Upload, RefreshCw, Camera, Eye, EyeOff, ExternalLink } from 'lucide-react';
+import { Download, Upload, RefreshCw, Camera, Eye, EyeOff, ExternalLink, Calendar, AlertCircle, CheckCircle2, Loader2 } from 'lucide-react';
 import { parseAmt } from '../../utils/formatters';
+import {
+  initializeGoogleCalendar,
+  authorizeGoogle,
+  signOutGoogle,
+  getOrCreatePayPlanCalendar,
+  syncAllBillsToCalendar,
+  deletePayPlanCalendar,
+  isGoogleAuthorized,
+  GOOGLE_CLIENT_ID_KEY,
+  GOOGLE_CALENDAR_ID_KEY,
+} from '../../utils/googleCalendar';
 
 const OCR_API_KEY_STORAGE = 'ppp.ocrApiKey';
 
@@ -20,16 +31,32 @@ export const Settings = ({
   onSyncCalendar,
   onExportBackup,
   onImportBackup,
+  billInstances = [],
 }) => {
   // OCR API key state
   const [ocrApiKey, setOcrApiKey] = useState('');
   const [showApiKey, setShowApiKey] = useState(false);
   const [apiKeySaved, setApiKeySaved] = useState(false);
 
-  // Load API key on mount
+  // Google Calendar state
+  const [googleClientId, setGoogleClientId] = useState('');
+  const [showClientId, setShowClientId] = useState(false);
+  const [clientIdSaved, setClientIdSaved] = useState(false);
+  const [calendarId, setCalendarId] = useState('');
+  const [calendarLoading, setCalendarLoading] = useState(false);
+  const [calendarError, setCalendarError] = useState('');
+  const [syncStatus, setSyncStatus] = useState(null);
+
+  // Load API keys on mount
   useEffect(() => {
     const savedKey = localStorage.getItem(OCR_API_KEY_STORAGE) || '';
     setOcrApiKey(savedKey);
+
+    const savedClientId = localStorage.getItem(GOOGLE_CLIENT_ID_KEY) || '';
+    setGoogleClientId(savedClientId);
+
+    const savedCalendarId = localStorage.getItem(GOOGLE_CALENDAR_ID_KEY) || '';
+    setCalendarId(savedCalendarId);
   }, []);
 
   const handleSaveApiKey = () => {
@@ -41,6 +68,99 @@ export const Settings = ({
   const handleClearApiKey = () => {
     localStorage.removeItem(OCR_API_KEY_STORAGE);
     setOcrApiKey('');
+  };
+
+  // Google Calendar handlers
+  const handleSaveClientId = () => {
+    localStorage.setItem(GOOGLE_CLIENT_ID_KEY, googleClientId.trim());
+    setClientIdSaved(true);
+    setTimeout(() => setClientIdSaved(false), 2000);
+  };
+
+  const handleClearClientId = () => {
+    localStorage.removeItem(GOOGLE_CLIENT_ID_KEY);
+    setGoogleClientId('');
+  };
+
+  const handleConnectCalendar = async () => {
+    if (!googleClientId.trim()) {
+      setCalendarError('Please enter your Google Client ID first');
+      return;
+    }
+
+    setCalendarLoading(true);
+    setCalendarError('');
+
+    try {
+      // Initialize Google APIs
+      await initializeGoogleCalendar(googleClientId.trim());
+
+      // Authorize user
+      await authorizeGoogle();
+
+      // Get or create PayPlan calendar
+      const newCalendarId = await getOrCreatePayPlanCalendar();
+      setCalendarId(newCalendarId);
+      localStorage.setItem(GOOGLE_CALENDAR_ID_KEY, newCalendarId);
+
+      // Notify parent component
+      onConnectCalendar(true);
+    } catch (error) {
+      console.error('Calendar connection error:', error);
+      setCalendarError(error.message || 'Failed to connect to Google Calendar');
+    } finally {
+      setCalendarLoading(false);
+    }
+  };
+
+  const handleDisconnectCalendar = async () => {
+    if (!confirm('Disconnect from Google Calendar? The PayPlan Bills calendar will remain in your Google account.')) {
+      return;
+    }
+
+    setCalendarLoading(true);
+    try {
+      signOutGoogle();
+      setCalendarId('');
+      localStorage.removeItem(GOOGLE_CALENDAR_ID_KEY);
+      onConnectCalendar(false);
+    } catch (error) {
+      setCalendarError(error.message);
+    } finally {
+      setCalendarLoading(false);
+    }
+  };
+
+  const handleSyncCalendar = async () => {
+    if (!calendarId) {
+      setCalendarError('Calendar not connected');
+      return;
+    }
+
+    setCalendarLoading(true);
+    setCalendarError('');
+    setSyncStatus(null);
+
+    try {
+      // Re-authorize if needed
+      if (!isGoogleAuthorized()) {
+        await initializeGoogleCalendar(googleClientId.trim());
+        await authorizeGoogle();
+      }
+
+      // Sync all bills
+      const results = await syncAllBillsToCalendar(calendarId, billInstances);
+      setSyncStatus(results);
+
+      if (results.errors.length === 0) {
+        setTimeout(() => setSyncStatus(null), 5000);
+      }
+    } catch (error) {
+      console.error('Sync error:', error);
+      setCalendarError(error.message || 'Failed to sync bills to calendar');
+    } finally {
+      setCalendarLoading(false);
+    }
   };
 
   return (
@@ -234,42 +354,169 @@ export const Settings = ({
 
       {/* Google Calendar */}
       <div className="bg-white rounded-2xl shadow-xl p-6 mb-6">
-        <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-3 mb-4">
+          <div className="p-3 bg-gradient-to-br from-blue-500 to-indigo-500 rounded-xl text-white">
+            <Calendar size={24} />
+          </div>
           <div>
             <h3 className="text-xl font-bold text-slate-800">
               Google Calendar Integration
             </h3>
             <p className="text-slate-600 text-sm">
-              Sync your bills and payment dates to your calendar
+              Sync bills to a separate "PayPlan Bills" calendar you can toggle on/off
             </p>
           </div>
-          <div className="flex items-center gap-2">
-            {calendarConnected && (
+        </div>
+
+        <div className="space-y-4">
+          {/* Google Client ID Input */}
+          <div>
+            <label className="text-sm font-semibold text-slate-600 block mb-2">
+              Google Cloud Client ID
+            </label>
+            <div className="flex gap-2">
+              <div className="relative flex-1">
+                <input
+                  type={showClientId ? 'text' : 'password'}
+                  value={googleClientId}
+                  onChange={(e) => setGoogleClientId(e.target.value)}
+                  placeholder="Enter your Google Cloud Client ID..."
+                  className="w-full px-4 py-2 pr-10 border-2 rounded-xl"
+                />
+                <button
+                  onClick={() => setShowClientId(!showClientId)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                >
+                  {showClientId ? <EyeOff size={18} /> : <Eye size={18} />}
+                </button>
+              </div>
               <button
-                onClick={onSyncCalendar}
-                className="px-4 py-2 bg-blue-100 hover:bg-blue-200 text-blue-700 rounded-xl font-semibold flex items-center gap-2"
+                onClick={handleSaveClientId}
+                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-semibold"
               >
-                <RefreshCw size={16} />
-                Sync Now
+                {clientIdSaved ? '✓ Saved' : 'Save'}
+              </button>
+              {googleClientId && (
+                <button
+                  onClick={handleClearClientId}
+                  className="px-4 py-2 bg-red-100 hover:bg-red-200 text-red-700 rounded-xl font-semibold"
+                >
+                  Clear
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Setup Instructions */}
+          <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
+            <p className="text-blue-800 text-sm mb-2">
+              <strong>How to set up Google Calendar sync:</strong>
+            </p>
+            <ol className="text-blue-700 text-sm list-decimal list-inside space-y-1">
+              <li>Go to <a href="https://console.cloud.google.com" target="_blank" rel="noopener noreferrer" className="underline font-medium">Google Cloud Console</a></li>
+              <li>Create a new project (or select existing)</li>
+              <li>Enable the "Google Calendar API"</li>
+              <li>Go to "Credentials" → "Create Credentials" → "OAuth Client ID"</li>
+              <li>Select "Web application" and add your domain to Authorized JavaScript origins</li>
+              <li>Copy the Client ID and paste it above</li>
+            </ol>
+            <a
+              href="https://console.cloud.google.com/apis/credentials"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1 mt-3 text-blue-600 hover:text-blue-800 font-semibold text-sm"
+            >
+              Open Google Cloud Console <ExternalLink size={14} />
+            </a>
+          </div>
+
+          {/* Connection Status & Actions */}
+          <div className="flex flex-wrap items-center gap-3">
+            {calendarConnected ? (
+              <>
+                <button
+                  onClick={handleSyncCalendar}
+                  disabled={calendarLoading}
+                  className="px-4 py-2 bg-blue-100 hover:bg-blue-200 text-blue-700 rounded-xl font-semibold flex items-center gap-2 disabled:opacity-50"
+                >
+                  {calendarLoading ? (
+                    <Loader2 size={16} className="animate-spin" />
+                  ) : (
+                    <RefreshCw size={16} />
+                  )}
+                  {calendarLoading ? 'Syncing...' : 'Sync Bills Now'}
+                </button>
+                <button
+                  onClick={handleDisconnectCalendar}
+                  disabled={calendarLoading}
+                  className="px-4 py-2 bg-red-100 hover:bg-red-200 text-red-700 rounded-xl font-semibold disabled:opacity-50"
+                >
+                  Disconnect
+                </button>
+              </>
+            ) : (
+              <button
+                onClick={handleConnectCalendar}
+                disabled={calendarLoading || !googleClientId.trim()}
+                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-semibold flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {calendarLoading ? (
+                  <Loader2 size={16} className="animate-spin" />
+                ) : (
+                  <Calendar size={16} />
+                )}
+                {calendarLoading ? 'Connecting...' : 'Connect Google Calendar'}
               </button>
             )}
-            <button
-              onClick={onConnectCalendar}
-              className={`px-4 py-2 rounded-xl font-semibold ${
-                calendarConnected
-                  ? 'bg-green-100 text-green-700'
-                  : 'bg-emerald-600 hover:bg-emerald-700 text-white'
-              }`}
-            >
-              {calendarConnected ? '✓ Connected' : 'Connect'}
-            </button>
           </div>
+
+          {/* Error Message */}
+          {calendarError && (
+            <div className="bg-red-50 border border-red-200 rounded-xl p-4 flex items-start gap-3">
+              <AlertCircle className="text-red-500 flex-shrink-0 mt-0.5" size={18} />
+              <p className="text-red-700 text-sm">{calendarError}</p>
+            </div>
+          )}
+
+          {/* Sync Status */}
+          {syncStatus && (
+            <div className="bg-green-50 border border-green-200 rounded-xl p-4 flex items-start gap-3">
+              <CheckCircle2 className="text-green-500 flex-shrink-0 mt-0.5" size={18} />
+              <div className="text-green-700 text-sm">
+                <p><strong>Sync complete!</strong></p>
+                <p>{syncStatus.created} events created, {syncStatus.updated} events updated</p>
+                {syncStatus.errors.length > 0 && (
+                  <p className="text-red-600 mt-1">
+                    {syncStatus.errors.length} errors occurred
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Connection Status */}
+          {calendarConnected && (
+            <div className="bg-green-50 border border-green-200 rounded-xl p-4">
+              <p className="text-green-800 text-sm">
+                <CheckCircle2 className="inline mr-2" size={16} />
+                <strong>Connected!</strong> A "PayPlan Bills" calendar has been created in your Google account.
+                You can show/hide it from the Google Calendar sidebar.
+              </p>
+              <p className="text-green-700 text-xs mt-2">
+                Bills are synced with due date reminders (1 day and 3 days before).
+              </p>
+            </div>
+          )}
+
+          {!googleClientId && (
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
+              <p className="text-amber-800 text-sm">
+                <AlertCircle className="inline mr-2" size={16} />
+                Enter your Google Cloud Client ID above to enable calendar syncing.
+              </p>
+            </div>
+          )}
         </div>
-        {calendarConnected && (
-          <div className="bg-green-50 border-2 border-green-200 rounded-xl p-4 text-green-800 text-sm">
-            ✓ Calendar is connected. (Demo mode)
-          </div>
-        )}
       </div>
 
       {/* Backup & Restore */}
