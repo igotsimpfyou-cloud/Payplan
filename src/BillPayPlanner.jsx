@@ -1282,6 +1282,8 @@ const BillPayPlanner = () => {
             overview={overview}
             paySchedule={paySchedule}
             billInstances={billInstances}
+            bills={bills}
+            currentMonthInstances={currentMonthInstances}
             nextPayDates={nextPayDates}
             perCheckEnvelopeSum={perCheckEnvelopeSum()}
             onToggleInstancePaid={toggleInstancePaid}

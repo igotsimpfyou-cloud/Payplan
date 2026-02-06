@@ -1,28 +1,46 @@
 import React from 'react';
 import { DollarSign, TrendingUp, AlertTriangle, CheckCircle, Clock, Wallet, Check } from 'lucide-react';
 import { parseAmt } from '../../utils/formatters';
+import { parseLocalDate } from '../../utils/dateHelpers';
 
 export const Dashboard = ({
   overview,
   paySchedule,
   billInstances,
+  currentMonthInstances = [], // New: bills for current month view
+  bills = [],                 // New: all active bills
   nextPayDates,
   perCheckEnvelopeSum,
   onToggleInstancePaid,
 }) => {
+  // Use new bills array if available, fallback to legacy billInstances
+  const allBills = bills.length > 0 ? bills : billInstances;
+
   const fourCheckPlan = React.useMemo(() => {
     const checks = nextPayDates.slice(0, 4);
     if (!checks.length) return { checks: [], groups: [], totals: [], leftovers: [] };
     const perCheck = parseAmt(paySchedule?.payAmount);
+
+    // Group bills by their assigned check
     const groups = [1, 2, 3, 4].map((idx) =>
-      billInstances
-        .filter((i) => i.assignedCheck === idx)
-        .sort((a, b) => new Date(a.dueDate) - new Date(b.dueDate))
+      allBills
+        .filter((i) => i.assignedCheck === idx && !i.paid)
+        .map(bill => ({
+          ...bill,
+          // Normalize for display - handle both formats
+          amountEstimate: bill.amountEstimate ?? bill.amount,
+          dueDate: bill.dueDate,
+        }))
+        .sort((a, b) => {
+          const dateA = parseLocalDate(a.dueDate);
+          const dateB = parseLocalDate(b.dueDate);
+          return dateA - dateB;
+        })
     );
-    const totals = groups.map(g => g.reduce((s, i) => s + parseAmt(i.amountEstimate), 0));
+    const totals = groups.map(g => g.reduce((s, i) => s + parseAmt(i.amountEstimate ?? i.amount), 0));
     const leftovers = totals.map(t => perCheck - perCheckEnvelopeSum - t);
     return { checks, groups, totals, leftovers };
-  }, [billInstances, nextPayDates, paySchedule, perCheckEnvelopeSum]);
+  }, [allBills, nextPayDates, paySchedule, perCheckEnvelopeSum]);
 
   // Check for underfunded checks
   const underfundedChecks = fourCheckPlan.leftovers
