@@ -830,6 +830,10 @@ const BillPayPlanner = () => {
   const Header = () => {
     const activeCategory = getActiveCategory();
     const activeDrawerItems = navCategories.find((c) => c.id === openDrawer)?.items;
+    const currentCategoryLabel = navCategories.find((c) => c.id === activeCategory)?.label;
+    const currentViewLabel = navCategories
+      .flatMap((c) => c.items || [{ view: c.view, label: c.label }])
+      .find((item) => item.view === view)?.label;
 
     return (
       <div className="mb-6">
@@ -842,63 +846,76 @@ const BillPayPlanner = () => {
           </p>
         </div>
 
-        {/* Main Navigation */}
-        <div className="flex justify-center gap-2 md:gap-3">
-          {navCategories.map((category) => {
-            const Icon = category.icon;
-            const isActive = activeCategory === category.id;
-            const isOpen = openDrawer === category.id;
-            const hasDrawer = !!category.items;
-
-            return (
-              <button
-                key={category.id}
-                onClick={() => handleNavClick(category)}
-                title={category.label}
-                className={`relative px-3 py-2 md:px-5 md:py-3 rounded-xl font-semibold flex items-center gap-2 transition-all ${
-                  isActive
-                    ? 'bg-white text-emerald-600 shadow-lg'
-                    : 'bg-white/20 text-white hover:bg-white/30'
-                }`}
-              >
-                <Icon size={20} />
-                <span className="hidden sm:inline text-sm">{category.label}</span>
-                {hasDrawer && (
-                  <span className="hidden sm:inline">
-                    {isOpen ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-                  </span>
-                )}
-              </button>
-            );
-          })}
-        </div>
-
-        {/* Drawer - Sub Items */}
-        {activeDrawerItems && (
-          <div className="mt-3 flex justify-center">
-            <div className="bg-white/95 backdrop-blur rounded-2xl shadow-xl p-2 flex flex-wrap justify-center gap-2">
-              {activeDrawerItems.map((item) => {
-                const ItemIcon = item.icon;
-                const isItemActive = view === item.view;
-
-                return (
-                  <button
-                    key={item.view}
-                    onClick={() => handleSubItemClick(item.view)}
-                    className={`px-4 py-2 rounded-xl font-medium flex items-center gap-2 transition-all ${
-                      isItemActive
-                        ? 'bg-emerald-600 text-white'
-                        : 'text-slate-700 hover:bg-emerald-100'
-                    }`}
-                  >
-                    <ItemIcon size={18} />
-                    <span className="text-sm">{item.label}</span>
-                  </button>
-                );
-              })}
-            </div>
+        {/* Navigation Container */}
+        <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-3 border border-white/20">
+          {/* Current Location Indicator */}
+          <div className="text-center mb-3 text-white/80 text-sm">
+            <span className="font-medium">{currentCategoryLabel}</span>
+            {currentViewLabel && currentViewLabel !== currentCategoryLabel && (
+              <span> → <span className="font-semibold text-white">{currentViewLabel}</span></span>
+            )}
           </div>
-        )}
+
+          {/* Main Navigation */}
+          <div className="flex justify-center gap-2 md:gap-3">
+            {navCategories.map((category) => {
+              const Icon = category.icon;
+              const isActive = activeCategory === category.id;
+              const isOpen = openDrawer === category.id;
+              const hasDrawer = !!category.items;
+
+              return (
+                <button
+                  key={category.id}
+                  onClick={() => handleNavClick(category)}
+                  title={category.label}
+                  className={`relative px-3 py-2.5 md:px-5 md:py-3 rounded-xl font-semibold flex items-center gap-2 transition-all border-2 ${
+                    isActive
+                      ? 'bg-white text-emerald-600 shadow-lg border-white'
+                      : isOpen
+                      ? 'bg-white/40 text-white border-white/50 shadow-md'
+                      : 'bg-white/25 text-white border-transparent hover:bg-white/35 hover:border-white/30'
+                  }`}
+                >
+                  <Icon size={20} />
+                  <span className="text-xs sm:text-sm font-bold">{category.label}</span>
+                  {hasDrawer && (
+                    <span className="ml-1">
+                      {isOpen ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Drawer - Sub Items */}
+          {activeDrawerItems && (
+            <div className="mt-3 flex justify-center">
+              <div className="bg-white rounded-2xl shadow-xl p-2 flex flex-wrap justify-center gap-2 border border-slate-200">
+                {activeDrawerItems.map((item) => {
+                  const ItemIcon = item.icon;
+                  const isItemActive = view === item.view;
+
+                  return (
+                    <button
+                      key={item.view}
+                      onClick={() => handleSubItemClick(item.view)}
+                      className={`px-4 py-2.5 rounded-xl font-semibold flex items-center gap-2 transition-all ${
+                        isItemActive
+                          ? 'bg-emerald-600 text-white shadow-md'
+                          : 'text-slate-600 hover:bg-emerald-50 hover:text-emerald-700'
+                      }`}
+                    >
+                      <ItemIcon size={18} />
+                      <span className="text-sm">{item.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
       </div>
     );
   };
