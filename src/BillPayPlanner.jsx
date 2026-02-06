@@ -480,28 +480,66 @@ const BillPayPlanner = () => {
     [paySchedule]
   );
 
+  // Calculate assignment for a bill based on due date
+  const calculateBillAssignment = (dueDate, checks) => {
+    let idx = 1;
+    for (let i = 0; i < checks.length; i++) {
+      if (checks[i] <= dueDate) {
+        idx = i + 1;
+      } else {
+        break;
+      }
+    }
+    return idx;
+  };
+
+  // Force reassign ALL bills (called by Re-assign button)
   const assignInstancesToChecks = () => {
     if (!nextPayDates.length) return;
-    // Normalize all check dates to local midnight for consistent comparison
     const checks = nextPayDates.slice(0, 4).map(toLocalMidnight);
 
-    // Update legacy billInstances
+    // Update legacy billInstances - force reassign all
     setBillInstances((prev) =>
       prev.map((inst) => {
-        // Parse due date as local date to avoid timezone issues
         const due = parseLocalDate(inst.dueDate);
+        const idx = calculateBillAssignment(due, checks);
+        return {
+          ...inst,
+          assignedCheck: idx,
+          assignedPayDate: toYMD(checks[idx - 1]),
+          manuallyAssigned: false, // Clear manual flag on reassign
+        };
+      })
+    );
 
-        // Find the latest check that is ON or BEFORE the due date
-        // This is the check we should use to pay this bill
-        let idx = 1; // Default to check 1
-        for (let i = 0; i < checks.length; i++) {
-          if (checks[i] <= due) {
-            idx = i + 1; // This check is on or before due date, use it
-          } else {
-            break; // This check is after due date, stop looking
-          }
-        }
+    // Update new bills array - force reassign all
+    setBills((prev) =>
+      prev.map((bill) => {
+        if (bill.paid) return bill;
+        const due = parseMMDDYYYY(bill.dueDate);
+        if (!due) return bill;
+        const idx = calculateBillAssignment(due, checks);
+        return {
+          ...bill,
+          assignedCheck: idx,
+          assignedPayDate: toMMDDYYYY(checks[idx - 1]),
+          manuallyAssigned: false,
+        };
+      })
+    );
+  };
 
+  // Auto-assign only NEW bills (ones without assignedCheck)
+  const autoAssignNewBills = () => {
+    if (!nextPayDates.length) return;
+    const checks = nextPayDates.slice(0, 4).map(toLocalMidnight);
+
+    setBillInstances((prev) =>
+      prev.map((inst) => {
+        // Skip if already assigned
+        if (inst.assignedCheck) return inst;
+        const due = parseLocalDate(inst.dueDate);
+        const idx = calculateBillAssignment(due, checks);
         return {
           ...inst,
           assignedCheck: idx,
@@ -510,26 +548,13 @@ const BillPayPlanner = () => {
       })
     );
 
-    // Update new bills array (uses MMDDYYYY format)
     setBills((prev) =>
       prev.map((bill) => {
-        // Skip already paid bills
-        if (bill.paid) return bill;
-
-        // Parse due date from MMDDYYYY format
+        // Skip if already assigned or paid
+        if (bill.paid || bill.assignedCheck) return bill;
         const due = parseMMDDYYYY(bill.dueDate);
         if (!due) return bill;
-
-        // Find the latest check that is ON or BEFORE the due date
-        let idx = 1; // Default to check 1
-        for (let i = 0; i < checks.length; i++) {
-          if (checks[i] <= due) {
-            idx = i + 1;
-          } else {
-            break;
-          }
-        }
-
+        const idx = calculateBillAssignment(due, checks);
         return {
           ...bill,
           assignedCheck: idx,
@@ -539,8 +564,9 @@ const BillPayPlanner = () => {
     );
   };
 
+  // Only auto-assign new bills, don't overwrite existing assignments
   useEffect(() => {
-    assignInstancesToChecks();
+    autoAssignNewBills();
     // eslint-disable-next-line
   }, [billInstances.length, paySchedule]);
 
@@ -1310,7 +1336,7 @@ const BillPayPlanner = () => {
             onToggleInstancePaid={toggleInstancePaid}
             onReassignChecks={assignInstancesToChecks}
             onUpdateInstance={(updatedInstance) => {
-              // Update in new bills array
+              // Update in new bills array - mark as manually assigned
               setBills((prev) =>
                 prev.map((bill) =>
                   bill.id === updatedInstance.id
@@ -1318,18 +1344,21 @@ const BillPayPlanner = () => {
                         ...bill,
                         assignedCheck: updatedInstance.assignedCheck,
                         assignedPayDate: updatedInstance.assignedPayDate
-                          ? toMMDDYYYY(new Date(updatedInstance.assignedPayDate))
+                          ? toMMDDYYYY(parseLocalDate(updatedInstance.assignedPayDate))
                           : bill.assignedPayDate,
                         paid: updatedInstance.paid,
                         paidDate: updatedInstance.paidDate,
+                        manuallyAssigned: true, // Mark as manually assigned
                       }
                     : bill
                 )
               );
-              // Legacy support
+              // Legacy support - also mark as manually assigned
               setBillInstances((prev) =>
                 prev.map((inst) =>
-                  inst.id === updatedInstance.id ? updatedInstance : inst
+                  inst.id === updatedInstance.id
+                    ? { ...updatedInstance, manuallyAssigned: true }
+                    : inst
                 )
               );
             }}

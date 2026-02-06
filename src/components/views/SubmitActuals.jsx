@@ -1,6 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { DollarSign, Clock, Trash2, Camera, X, Receipt, Tag, AlertCircle, Edit2 } from 'lucide-react';
 import { parseAmt } from '../../utils/formatters';
+import { parseLocalDate, toYMD } from '../../utils/dateHelpers';
 import Tesseract from 'tesseract.js';
 
 const CATEGORIES = [
@@ -52,7 +53,7 @@ export const SubmitActuals = ({
   const [receiptData, setReceiptData] = useState({
     merchant: '',
     amount: '',
-    date: new Date().toISOString().split('T')[0],
+    date: toYMD(new Date()), // Use local date, not UTC
     category: 'other',
     notes: '',
   });
@@ -171,17 +172,18 @@ export const SubmitActuals = ({
       merchant = lines.find(l => !/^\d/.test(l) && l.length > 2 && l.length < 40) || '';
     }
 
-    // Find date
-    let date = new Date().toISOString().split('T')[0];
+    // Find date - use local date format
+    let date = toYMD(new Date());
     const datePattern = /(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/;
     const dateMatch = text.match(datePattern);
     if (dateMatch) {
       try {
         const [_, m, d, y] = dateMatch;
         const year = y.length === 2 ? '20' + y : y;
-        const parsed = new Date(`${year}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`);
+        // Create local date, not UTC
+        const parsed = new Date(parseInt(year), parseInt(m) - 1, parseInt(d));
         if (!isNaN(parsed.getTime())) {
-          date = parsed.toISOString().split('T')[0];
+          date = toYMD(parsed);
         }
       } catch {}
     }
@@ -216,7 +218,7 @@ export const SubmitActuals = ({
       return {
         merchant: '',
         amount: '',
-        date: new Date().toISOString().split('T')[0],
+        date: toYMD(new Date()),
         category: 'other',
         error: 'OCR failed - enter manually',
       };
@@ -257,7 +259,7 @@ export const SubmitActuals = ({
           return {
             merchant: data.establishment || data.merchantName || '',
             amount: data.total?.toString() || data.subTotal?.toString() || '',
-            date: data.date ? formatOCRDate(data.date) : new Date().toISOString().split('T')[0],
+            date: data.date ? formatOCRDate(data.date) : toYMD(new Date()),
             category: guessCategory(data.establishment || ''),
           };
         } else if (result.status === 'failed') {
@@ -276,11 +278,12 @@ export const SubmitActuals = ({
   // Format date from OCR (handles various formats)
   const formatOCRDate = (dateStr) => {
     try {
-      const date = new Date(dateStr);
-      if (isNaN(date.getTime())) return new Date().toISOString().split('T')[0];
-      return date.toISOString().split('T')[0];
+      // Use parseLocalDate to avoid timezone issues
+      const date = parseLocalDate(dateStr);
+      if (!date || isNaN(date.getTime())) return toYMD(new Date());
+      return toYMD(date);
     } catch {
-      return new Date().toISOString().split('T')[0];
+      return toYMD(new Date());
     }
   };
 
@@ -316,7 +319,7 @@ export const SubmitActuals = ({
     setReceiptData({
       merchant: result.merchant,
       amount: result.amount,
-      date: result.date || new Date().toISOString().split('T')[0],
+      date: result.date || toYMD(new Date()),
       category: result.category || 'other',
       notes: result.error || '',
     });
@@ -339,7 +342,7 @@ export const SubmitActuals = ({
     setReceiptData({
       merchant: '',
       amount: '',
-      date: new Date().toISOString().split('T')[0],
+      date: toYMD(new Date()),
       category: 'other',
       notes: '',
     });
@@ -545,7 +548,7 @@ export const SubmitActuals = ({
                 >
                   <div>
                     <span className="font-semibold">
-                      {new Date(entry.payDate).toLocaleDateString()}
+                      {parseLocalDate(entry.payDate).toLocaleDateString()}
                     </span>
                     <span className="mx-2 text-emerald-600 font-bold">
                       ${parseAmt(entry.amount).toFixed(2)}
@@ -590,7 +593,7 @@ export const SubmitActuals = ({
                 <div>
                   <div className="font-semibold">{i.name}</div>
                   <div className="text-sm text-slate-600">
-                    Due {new Date(i.dueDate).toLocaleDateString()} • Est. $
+                    Due {parseLocalDate(i.dueDate).toLocaleDateString()} • Est. $
                     {parseAmt(i.amountEstimate).toFixed(2)}
                   </div>
                 </div>

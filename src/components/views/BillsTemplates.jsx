@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Plus, DollarSign, Calendar, Edit2, Trash2, History, X, TrendingUp } from 'lucide-react';
 import { parseAmt } from '../../utils/formatters';
-import { startOfMonth } from '../../utils/dateHelpers';
+import { startOfMonth, parseLocalDate } from '../../utils/dateHelpers';
 
 // Modal for entering historical payments
 const HistoricalDataModal = ({ template, onClose, onSave }) => {
@@ -181,7 +181,7 @@ export const BillsTemplates = ({
                     </span>
                     <span>Category: {t.category}</span>
                     <span>
-                      First due: {new Date(t.firstDueDate).toLocaleDateString()}
+                      First due: {parseLocalDate(t.firstDueDate).toLocaleDateString()}
                     </span>
                   </div>
                   {/* Show historical data count for variable bills */}
@@ -225,11 +225,11 @@ export const BillsTemplates = ({
                   .filter(
                     (i) =>
                       i.templateId === t.id &&
-                      new Date(i.dueDate) >= startOfMonth(new Date())
+                      parseLocalDate(i.dueDate) >= startOfMonth(new Date())
                   )
                   .slice(0, 3)
                   .map((i) =>
-                    new Date(i.dueDate).toLocaleDateString('en-US', {
+                    parseLocalDate(i.dueDate).toLocaleDateString('en-US', {
                       month: 'short',
                       day: 'numeric',
                     })

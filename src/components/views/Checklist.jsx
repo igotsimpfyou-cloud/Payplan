@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { Check, Calendar, DollarSign, Clock, Receipt, RefreshCw, AlertTriangle, Filter, ChevronDown, X } from 'lucide-react';
 import { parseAmt } from '../../utils/formatters';
+import { parseLocalDate } from '../../utils/dateHelpers';
 
 // Bill Edit Modal
 const BillEditModal = ({ bill, nextPayDates, onSave, onClose }) => {
@@ -33,7 +34,7 @@ const BillEditModal = ({ bill, nextPayDates, onSave, onClose }) => {
         <div className="mb-4">
           <div className="text-lg font-semibold text-slate-800">{bill.name}</div>
           <div className="text-sm text-slate-500">
-            Due: {new Date(bill.dueDate).toLocaleDateString()} •
+            Due: {parseLocalDate(bill.dueDate).toLocaleDateString()} •
             ${parseAmt(bill.amountEstimate).toFixed(2)}
           </div>
         </div>
@@ -122,7 +123,7 @@ export const Checklist = ({
   // Calculate due status for each bill
   const getBillStatus = (bill) => {
     if (bill.paid) return 'paid';
-    const dueDate = new Date(bill.dueDate);
+    const dueDate = parseLocalDate(bill.dueDate);
     dueDate.setHours(0, 0, 0, 0);
     const daysUntil = Math.ceil((dueDate - today) / (1000 * 60 * 60 * 24));
 
@@ -143,7 +144,7 @@ export const Checklist = ({
       const statusA = statusOrder[getBillStatus(a)];
       const statusB = statusOrder[getBillStatus(b)];
       if (statusA !== statusB) return statusA - statusB;
-      return new Date(a.dueDate) - new Date(b.dueDate);
+      return parseLocalDate(a.dueDate) - parseLocalDate(b.dueDate);
     });
   }, [currentMonthInstances, showUnpaidOnly]);
 
@@ -167,7 +168,7 @@ export const Checklist = ({
 
   const getDaysLabel = (bill) => {
     if (bill.paid) return null;
-    const dueDate = new Date(bill.dueDate);
+    const dueDate = parseLocalDate(bill.dueDate);
     dueDate.setHours(0, 0, 0, 0);
     const daysUntil = Math.ceil((dueDate - today) / (1000 * 60 * 60 * 24));
 
@@ -284,7 +285,7 @@ export const Checklist = ({
                   <div className="text-sm text-slate-600 flex flex-wrap gap-x-4 gap-y-1">
                     <span>
                       <Calendar size={14} className="inline mr-1" />
-                      Due {new Date(i.dueDate).toLocaleDateString()}
+                      Due {parseLocalDate(i.dueDate).toLocaleDateString()}
                     </span>
                     <span className="font-medium">
                       <DollarSign size={14} className="inline mr-1" />
@@ -303,7 +304,7 @@ export const Checklist = ({
                     )}
                     {i.paidDate && (
                       <span className="text-green-600">
-                        Paid {new Date(i.paidDate).toLocaleDateString()}
+                        Paid {parseLocalDate(i.paidDate).toLocaleDateString()}
                       </span>
                     )}
                   </div>
