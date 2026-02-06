@@ -481,10 +481,10 @@ const BillPayPlanner = () => {
   );
 
   // Calculate assignment for a bill based on due date
-  // Returns null if bill is due after the 4-check window
+  // Returns null if bill is due on or after the 4-check window cutoff
   const calculateBillAssignment = (dueDate, checks, cutoffDate) => {
-    // If due date is after our cutoff, don't assign yet
-    if (cutoffDate && dueDate > cutoffDate) {
+    // If due date is on or after our cutoff (Check #5), don't assign yet
+    if (cutoffDate && dueDate >= cutoffDate) {
       return null;
     }
 
