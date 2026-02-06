@@ -39,7 +39,26 @@ import {
   LS_ACTUAL_PAY,
   LS_SCANNED_RECEIPTS,
   LS_INVESTMENTS,
+  LS_BILLS,
+  LS_HISTORICAL_BILLS,
+  LS_PAYCHECKS,
+  LS_LAST_ROLLOVER,
 } from './constants/storageKeys';
+
+// Bill Database utilities
+import {
+  generateBillsFromTemplate,
+  generatePaychecksFromSchedule,
+  migrateFromInstances,
+  migrateOneTimeBills,
+  separateActiveAndHistorical,
+  needsMonthlyRollover,
+  getCurrentMonth,
+  assignBillToPaycheck,
+  parseMMDDYYYY,
+  toMMDDYYYY,
+  generateBillId,
+} from './utils/billDatabase';
 
 // Forms
 import { TemplateForm } from './components/forms/TemplateForm';
@@ -69,8 +88,14 @@ const BillPayPlanner = () => {
   const [view, setView] = useState('dashboard');
   const [openDrawer, setOpenDrawer] = useState(null); // Track which nav drawer is open
 
-  // Core (instances model)
+  // Core (new database model)
   const [billTemplates, setBillTemplates] = useState([]);
+  const [bills, setBills] = useState([]);                     // Active bills (18-month window)
+  const [historicalBills, setHistoricalBills] = useState([]); // Archived bills (12+ months)
+  const [paychecks, setPaychecks] = useState([]);             // Income records
+  const [lastRolloverMonth, setLastRolloverMonth] = useState(null);
+
+  // Legacy - kept for migration, will be removed
   const [billInstances, setBillInstances] = useState([]);
 
   // Original modules
@@ -126,6 +151,12 @@ const BillPayPlanner = () => {
       const sr = localStorage.getItem(LS_SCANNED_RECEIPTS);
       const inv = localStorage.getItem(LS_INVESTMENTS);
 
+      // New database storage
+      const billsData = localStorage.getItem(LS_BILLS);
+      const historicalBillsData = localStorage.getItem(LS_HISTORICAL_BILLS);
+      const paychecksData = localStorage.getItem(LS_PAYCHECKS);
+      const lastRollover = localStorage.getItem(LS_LAST_ROLLOVER);
+
       // MIGRATION: if old 'bills' exists, migrate to templates
       const legacyBills = localStorage.getItem('bills');
       if (!t && legacyBills) {
@@ -146,12 +177,81 @@ const BillPayPlanner = () => {
         localStorage.removeItem('bills');
       }
 
-      if (localStorage.getItem(LS_TEMPLATES))
-        setBillTemplates(JSON.parse(localStorage.getItem(LS_TEMPLATES)));
+      // Load templates
+      let loadedTemplates = [];
+      if (localStorage.getItem(LS_TEMPLATES)) {
+        loadedTemplates = JSON.parse(localStorage.getItem(LS_TEMPLATES));
+        setBillTemplates(loadedTemplates);
+      }
+
+      // Load pay schedule
+      let loadedPaySchedule = null;
+      if (p) {
+        loadedPaySchedule = JSON.parse(p);
+        setPaySchedule(loadedPaySchedule);
+      }
+
+      // Load or migrate bills
+      if (billsData) {
+        // New format exists - load it
+        setBills(JSON.parse(billsData));
+        if (historicalBillsData) setHistoricalBills(JSON.parse(historicalBillsData));
+        if (paychecksData) setPaychecks(JSON.parse(paychecksData));
+        if (lastRollover) setLastRolloverMonth(lastRollover);
+      } else if (i) {
+        // Migrate from old instances
+        const oldInstances = JSON.parse(i);
+        const migratedBills = migrateFromInstances(oldInstances, loadedTemplates);
+
+        // Separate into active and historical
+        const { active, historical } = separateActiveAndHistorical(migratedBills);
+        setBills(active);
+        setHistoricalBills(historical);
+
+        // Generate 6 months of bills from templates
+        const now = new Date();
+        const newBills = [];
+        for (const template of loadedTemplates) {
+          const generated = generateBillsFromTemplate(template, 6, now, active);
+          newBills.push(...generated);
+        }
+        if (newBills.length > 0) {
+          setBills(prev => [...prev, ...newBills]);
+        }
+
+        // Generate paychecks if pay schedule exists
+        if (loadedPaySchedule) {
+          const generatedPaychecks = generatePaychecksFromSchedule(loadedPaySchedule, 6, []);
+          setPaychecks(generatedPaychecks);
+        }
+
+        setLastRolloverMonth(getCurrentMonth());
+
+        // Clear old instances storage after migration
+        // localStorage.removeItem(LS_INSTANCES); // Keep for now as backup
+      } else {
+        // Fresh start - generate bills from templates
+        const now = new Date();
+        const newBills = [];
+        for (const template of loadedTemplates) {
+          const generated = generateBillsFromTemplate(template, 6, now, []);
+          newBills.push(...generated);
+        }
+        setBills(newBills);
+
+        if (loadedPaySchedule) {
+          const generatedPaychecks = generatePaychecksFromSchedule(loadedPaySchedule, 6, []);
+          setPaychecks(generatedPaychecks);
+        }
+
+        setLastRolloverMonth(getCurrentMonth());
+      }
+
+      // Load legacy instances for backward compatibility during transition
       if (i) setBillInstances(JSON.parse(i));
+
       if (a) setAssets(JSON.parse(a));
       if (o) setOneTimeBills(JSON.parse(o));
-      if (p) setPaySchedule(JSON.parse(p));
       if (c) setCalendarConnected(JSON.parse(c));
       if (pr) setPropaneFills(JSON.parse(pr));
       if (e) setEmergencyFund(JSON.parse(e));
@@ -226,7 +326,67 @@ const BillPayPlanner = () => {
     [investments]
   );
 
-  // ---------- Instance generation ----------
+  // New database persistence
+  useEffect(
+    () => localStorage.setItem(LS_BILLS, JSON.stringify(bills)),
+    [bills]
+  );
+  useEffect(
+    () => localStorage.setItem(LS_HISTORICAL_BILLS, JSON.stringify(historicalBills)),
+    [historicalBills]
+  );
+  useEffect(
+    () => localStorage.setItem(LS_PAYCHECKS, JSON.stringify(paychecks)),
+    [paychecks]
+  );
+  useEffect(
+    () => {
+      if (lastRolloverMonth) {
+        localStorage.setItem(LS_LAST_ROLLOVER, lastRolloverMonth);
+      }
+    },
+    [lastRolloverMonth]
+  );
+
+  // ---------- Monthly rollover - generate new month's bills on first load ----------
+  useEffect(() => {
+    if (!billTemplates.length || loading) return;
+
+    if (needsMonthlyRollover(lastRolloverMonth)) {
+      // Generate next month's bills
+      const now = new Date();
+      const newBills = [];
+
+      for (const template of billTemplates) {
+        // Generate from current month forward (will skip existing)
+        const generated = generateBillsFromTemplate(template, 6, now, bills);
+        newBills.push(...generated);
+      }
+
+      if (newBills.length > 0) {
+        setBills(prev => [...prev, ...newBills]);
+      }
+
+      // Generate new paychecks if schedule exists
+      if (paySchedule) {
+        const newPaychecks = generatePaychecksFromSchedule(paySchedule, 6, paychecks);
+        if (newPaychecks.length > 0) {
+          setPaychecks(prev => [...prev, ...newPaychecks]);
+        }
+      }
+
+      // Archive old bills (12+ months)
+      const { active, historical } = separateActiveAndHistorical(bills);
+      if (historical.length > 0) {
+        setBills(active);
+        setHistoricalBills(prev => [...prev, ...historical]);
+      }
+
+      setLastRolloverMonth(getCurrentMonth());
+    }
+  }, [billTemplates, lastRolloverMonth, loading]);
+
+  // ---------- Instance generation (legacy - kept for compatibility) ----------
   useEffect(() => {
     if (!billTemplates.length) return;
     const now = new Date();
@@ -325,6 +485,7 @@ const BillPayPlanner = () => {
     // Normalize all check dates to local midnight for consistent comparison
     const checks = nextPayDates.slice(0, 4).map(toLocalMidnight);
 
+    // Update legacy billInstances
     setBillInstances((prev) =>
       prev.map((inst) => {
         // Parse due date as local date to avoid timezone issues
@@ -345,6 +506,34 @@ const BillPayPlanner = () => {
           ...inst,
           assignedCheck: idx,
           assignedPayDate: toYMD(checks[idx - 1]),
+        };
+      })
+    );
+
+    // Update new bills array (uses MMDDYYYY format)
+    setBills((prev) =>
+      prev.map((bill) => {
+        // Skip already paid bills
+        if (bill.paid) return bill;
+
+        // Parse due date from MMDDYYYY format
+        const due = parseMMDDYYYY(bill.dueDate);
+        if (!due) return bill;
+
+        // Find the latest check that is ON or BEFORE the due date
+        let idx = 1; // Default to check 1
+        for (let i = 0; i < checks.length; i++) {
+          if (checks[i] <= due) {
+            idx = i + 1;
+          } else {
+            break;
+          }
+        }
+
+        return {
+          ...bill,
+          assignedCheck: idx,
+          assignedPayDate: toMMDDYYYY(checks[idx - 1]),
         };
       })
     );
@@ -380,12 +569,23 @@ const BillPayPlanner = () => {
         return toYMD(dt);
       })(),
       historicalPayments: billData.historicalPayments || [],
+      retireDate: null,
     };
     setBillTemplates((prev) => [...prev, tmpl]);
+
+    // Generate 6 months of bills for this new template
+    const newBills = generateBillsFromTemplate(tmpl, 6, new Date(), bills);
+    if (newBills.length > 0) {
+      setBills((prev) => [...prev, ...newBills]);
+    }
+
     setShowTemplateForm(false);
   };
 
   const updateBillTemplate = async (billData) => {
+    const now = new Date();
+    const nextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+
     setBillTemplates((prev) =>
       prev.map((t) =>
         t.id === editingTemplate.id
@@ -402,6 +602,28 @@ const BillPayPlanner = () => {
           : t
       )
     );
+
+    // Update FUTURE bills only (next month and beyond)
+    // Keep past and current month bills unchanged
+    setBills((prev) =>
+      prev.map((bill) => {
+        if (bill.templateId !== editingTemplate.id) return bill;
+
+        const billDate = parseMMDDYYYY(bill.dueDate);
+        if (!billDate || billDate < nextMonth) return bill; // Don't change past/current month
+
+        // Update future bill with new template data
+        return {
+          ...bill,
+          name: billData.name,
+          amount: parseAmt(billData.amount),
+          isVariable: !!billData.isVariable,
+          category: billData.category,
+          autopay: !!billData.autopay,
+        };
+      })
+    );
+
     setEditingTemplate(null);
   };
 
@@ -410,11 +632,33 @@ const BillPayPlanner = () => {
     if (!tmpl) return;
     if (
       !confirm(
-        `Retire "${tmpl.name}"?\nFuture instances will be removed from the last paid month onward.`
+        `Retire "${tmpl.name}"?\nFuture unpaid bills will be removed. Paid bills will be kept in history.`
       )
     )
       return;
 
+    const now = new Date();
+    const retireDate = toYMD(now);
+
+    // Set retire date on template (keeps template for reference)
+    setBillTemplates((prev) =>
+      prev.map((t) =>
+        t.id === tmplId ? { ...t, retireDate } : t
+      )
+    );
+
+    // Remove future UNPAID bills for this template
+    // Keep all paid bills (they go to history)
+    setBills((prev) =>
+      prev.filter((bill) => {
+        if (bill.templateId !== tmplId) return true;
+        if (bill.paid) return true; // Keep paid bills
+        const billDate = parseMMDDYYYY(bill.dueDate);
+        return billDate && billDate < now; // Keep past bills
+      })
+    );
+
+    // Legacy support
     const related = billInstances.filter((i) => i.templateId === tmplId);
     const lastPaid = related
       .filter((i) => i.paid)
@@ -426,11 +670,34 @@ const BillPayPlanner = () => {
         (i) => i.templateId !== tmplId || new Date(i.dueDate) < cutoff
       )
     );
-    setBillTemplates((prev) => prev.filter((t) => t.id !== tmplId));
   };
 
   // ---------- Mark paid ----------
   const toggleInstancePaid = async (instanceId) => {
+    // Try to find in new bills array first
+    const bill = bills.find((b) => b.id === instanceId);
+
+    if (bill) {
+      // New system
+      if (bill.autopay) {
+        const ok = confirm('This bill is on Auto-pay. Mark paid/unpaid anyway?');
+        if (!ok) return;
+      }
+
+      const nowPaid = !bill.paid;
+      const paidDate = nowPaid ? toYMD(new Date()) : null;
+
+      setBills((prev) =>
+        prev.map((b) =>
+          b.id === instanceId
+            ? { ...b, paid: nowPaid, paidDate }
+            : b
+        )
+      );
+      return;
+    }
+
+    // Legacy system fallback
     const inst = billInstances.find((i) => i.id === instanceId);
     if (!inst) return;
 
@@ -453,12 +720,40 @@ const BillPayPlanner = () => {
 
   // ---------- Submit Actuals ----------
   const submitActualPaid = (instanceId, value) => {
+    const actual = parseAmt(value);
+
+    // Try new bills array first
+    const bill = bills.find((b) => b.id === instanceId);
+    if (bill) {
+      setBills((prev) =>
+        prev.map((b) => (b.id === instanceId ? { ...b, actualPaid: actual } : b))
+      );
+
+      // Update template estimate based on all paid bills
+      const tmpl = billTemplates.find((t) => t.id === bill.templateId);
+      if (tmpl) {
+        // Calculate new estimate from all paid bills for this template
+        const paidBills = bills.filter(
+          (b) => b.templateId === tmpl.id && b.actualPaid != null
+        );
+        const allAmounts = [...paidBills.map((b) => b.actualPaid), actual];
+        const newEstimate = allAmounts.reduce((s, a) => s + a, 0) / allAmounts.length;
+
+        setBillTemplates((prev) =>
+          prev.map((t) =>
+            t.id === tmpl.id ? { ...t, amount: newEstimate } : t
+          )
+        );
+      }
+      return;
+    }
+
+    // Legacy fallback
     const inst = billInstances.find((x) => x.id === instanceId);
     if (!inst) return;
     const tmpl = billTemplates.find((t) => t.id === inst.templateId);
     if (!tmpl) return;
 
-    const actual = parseAmt(value);
     setBillInstances((prev) =>
       prev.map((x) => (x.id === instanceId ? { ...x, actualPaid: actual } : x))
     );
@@ -504,11 +799,15 @@ const BillPayPlanner = () => {
   const exportBackup = () => {
     const payload = {
       app: 'PayPlan Pro',
-      version: 2,
+      version: 3, // Bump version for new database format
       exportedAt: new Date().toISOString(),
       data: {
         billTemplates,
-        billInstances,
+        billInstances, // Legacy, kept for compatibility
+        bills,         // New database format
+        historicalBills,
+        paychecks,
+        lastRolloverMonth,
         assets,
         oneTimeBills,
         paySchedule,
@@ -538,6 +837,10 @@ const BillPayPlanner = () => {
     const d = payload?.data ?? payload;
     setBillTemplates(Array.isArray(d?.billTemplates) ? d.billTemplates : []);
     setBillInstances(Array.isArray(d?.billInstances) ? d.billInstances : []);
+    setBills(Array.isArray(d?.bills) ? d.bills : []);
+    setHistoricalBills(Array.isArray(d?.historicalBills) ? d.historicalBills : []);
+    setPaychecks(Array.isArray(d?.paychecks) ? d.paychecks : []);
+    if (d?.lastRolloverMonth) setLastRolloverMonth(d.lastRolloverMonth);
     setAssets(Array.isArray(d?.assets) ? d.assets : []);
     setOneTimeBills(Array.isArray(d?.oneTimeBills) ? d.oneTimeBills : []);
     setPaySchedule(d?.paySchedule ?? null);
@@ -710,12 +1013,28 @@ const BillPayPlanner = () => {
   // No account connection needed - users just download and import the .ics file
 
   // ---------- Overview helpers ----------
+  // Convert new bills format to legacy format for views compatibility
   const currentMonthInstances = useMemo(() => {
     const now = new Date();
-    return billInstances
-      .filter((i) => sameMonth(new Date(i.dueDate), now))
+
+    // Use new bills array, converting to legacy format for compatibility
+    return bills
+      .filter((bill) => {
+        const billDate = parseMMDDYYYY(bill.dueDate);
+        return billDate && sameMonth(billDate, now);
+      })
+      .map((bill) => ({
+        ...bill,
+        // Map new format fields to legacy field names for view compatibility
+        amountEstimate: bill.amount,
+        dueDate: (() => {
+          // Convert MMDDYYYY to YYYY-MM-DD for legacy compatibility
+          const d = parseMMDDYYYY(bill.dueDate);
+          return d ? toYMD(d) : bill.dueDate;
+        })(),
+      }))
       .sort((a, b) => new Date(a.dueDate) - new Date(b.dueDate));
-  }, [billInstances]);
+  }, [bills]);
 
   const overview = useMemo(() => {
     const monthlyBills = monthlyTotal(currentMonthInstances);
@@ -963,6 +1282,23 @@ const BillPayPlanner = () => {
             onToggleInstancePaid={toggleInstancePaid}
             onReassignChecks={assignInstancesToChecks}
             onUpdateInstance={(updatedInstance) => {
+              // Update in new bills array
+              setBills((prev) =>
+                prev.map((bill) =>
+                  bill.id === updatedInstance.id
+                    ? {
+                        ...bill,
+                        assignedCheck: updatedInstance.assignedCheck,
+                        assignedPayDate: updatedInstance.assignedPayDate
+                          ? toMMDDYYYY(new Date(updatedInstance.assignedPayDate))
+                          : bill.assignedPayDate,
+                        paid: updatedInstance.paid,
+                        paidDate: updatedInstance.paidDate,
+                      }
+                    : bill
+                )
+              );
+              // Legacy support
               setBillInstances((prev) =>
                 prev.map((inst) =>
                   inst.id === updatedInstance.id ? updatedInstance : inst
@@ -1014,6 +1350,8 @@ const BillPayPlanner = () => {
             overview={overview}
             currentMonthInstances={currentMonthInstances}
             billInstances={billInstances}
+            bills={bills}
+            historicalBills={historicalBills}
             nextPayDates={nextPayDates}
             paySchedule={paySchedule}
             budgets={budgets}

@@ -1,6 +1,7 @@
 import React, { useMemo } from 'react';
-import { X, Flame, TrendingUp, Calendar, PieChart } from 'lucide-react';
+import { X, Flame, TrendingUp, Calendar, PieChart, Archive } from 'lucide-react';
 import { parseAmt } from '../../utils/formatters';
+import { parseMMDDYYYY } from '../../utils/billDatabase';
 
 const CATEGORIES = ['utilities', 'subscription', 'insurance', 'loan', 'rent', 'other'];
 const CATEGORY_COLORS = {
@@ -16,6 +17,8 @@ export const Analytics = ({
   overview,
   currentMonthInstances,
   billInstances,
+  bills = [],           // New database format
+  historicalBills = [], // Archived bills (12+ months)
   nextPayDates,
   paySchedule,
   budgets,
@@ -23,6 +26,23 @@ export const Analytics = ({
   onAddDebt,
   onRemoveDebt,
 }) => {
+  // Combine active and historical bills for analytics, normalizing dates
+  const allBillsNormalized = useMemo(() => {
+    // If new bills array has data, use it combined with historical
+    if (bills.length > 0) {
+      return [...bills, ...historicalBills].map(bill => ({
+        ...bill,
+        // Normalize MMDDYYYY to Date object for consistent comparisons
+        _date: parseMMDDYYYY(bill.dueDate) || new Date(bill.dueDate),
+        amountEstimate: bill.amount,
+      }));
+    }
+    // Fall back to legacy billInstances
+    return billInstances.map(inst => ({
+      ...inst,
+      _date: new Date(inst.dueDate),
+    }));
+  }, [bills, historicalBills, billInstances]);
   const thisMonthByCategory = CATEGORIES.map((cat) => {
     const sum = currentMonthInstances
       .filter((i) => i.category === cat)
@@ -32,9 +52,9 @@ export const Analytics = ({
 
   // === 1. Bill Payment Streak ===
   const paymentStreak = useMemo(() => {
-    const paidBills = billInstances
+    const paidBills = allBillsNormalized
       .filter((b) => b.paid)
-      .sort((a, b) => new Date(b.dueDate) - new Date(a.dueDate));
+      .sort((a, b) => b._date - a._date);
 
     let streak = 0;
     let onTimeCount = 0;
@@ -45,8 +65,7 @@ export const Analytics = ({
 
     // Count consecutive recent paid bills (streak)
     for (const bill of paidBills) {
-      const dueDate = new Date(bill.dueDate);
-      if (dueDate <= now) {
+      if (bill._date <= now) {
         streak++;
       } else {
         break;
@@ -59,7 +78,7 @@ export const Analytics = ({
     });
 
     return { streak, totalPaid, onTimeCount };
-  }, [billInstances]);
+  }, [allBillsNormalized]);
 
   // === 2. Spending Trends (Last 6 Months) ===
   const spendingTrends = useMemo(() => {
@@ -71,11 +90,10 @@ export const Analytics = ({
       const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
       const monthName = date.toLocaleDateString('en-US', { month: 'short' });
 
-      const monthBills = billInstances.filter((b) => {
-        const dueDate = new Date(b.dueDate);
+      const monthBills = allBillsNormalized.filter((b) => {
         return (
-          dueDate.getFullYear() === date.getFullYear() &&
-          dueDate.getMonth() === date.getMonth()
+          b._date.getFullYear() === date.getFullYear() &&
+          b._date.getMonth() === date.getMonth()
         );
       });
 
@@ -89,7 +107,7 @@ export const Analytics = ({
 
     const maxSpend = Math.max(...months.map((m) => m.total), 1);
     return { months, maxSpend };
-  }, [billInstances]);
+  }, [allBillsNormalized]);
 
   // === 3. Cash Flow Forecast (Next 30 Days) ===
   const cashFlowForecast = useMemo(() => {
@@ -102,14 +120,13 @@ export const Analytics = ({
     const endDate = new Date(today);
     endDate.setDate(endDate.getDate() + 30);
 
-    // Get upcoming bills in next 30 days
-    const upcomingBills = billInstances
+    // Get upcoming bills in next 30 days (only from active bills, not historical)
+    const upcomingBills = allBillsNormalized
       .filter((b) => {
         if (b.paid) return false;
-        const due = new Date(b.dueDate);
-        return due >= today && due <= endDate;
+        return b._date >= today && b._date <= endDate;
       })
-      .sort((a, b) => new Date(a.dueDate) - new Date(b.dueDate));
+      .sort((a, b) => a._date - b._date);
 
     // Get paychecks in next 30 days
     const upcomingPay = nextPayDates
@@ -119,7 +136,7 @@ export const Analytics = ({
     // Build timeline
     const events = [
       ...upcomingBills.map((b) => ({
-        date: new Date(b.dueDate),
+        date: b._date,
         amount: -parseAmt(b.amountEstimate),
         name: b.name,
         type: 'expense',
@@ -142,7 +159,7 @@ export const Analytics = ({
     const lowestBalance = Math.min(...projections.map((p) => p.balance), balance);
 
     return { projections, hasData: true, lowestBalance };
-  }, [billInstances, nextPayDates, paySchedule, overview]);
+  }, [allBillsNormalized, nextPayDates, paySchedule, overview]);
 
   // === 4. Category Pie Chart Data ===
   const pieChartData = useMemo(() => {
