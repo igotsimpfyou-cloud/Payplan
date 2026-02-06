@@ -1,13 +1,121 @@
 import React, { useState, useMemo } from 'react';
-import { Check, Calendar, DollarSign, Clock, Receipt, RefreshCw, AlertTriangle, Filter } from 'lucide-react';
+import { Check, Calendar, DollarSign, Clock, Receipt, RefreshCw, AlertTriangle, Filter, ChevronDown, X } from 'lucide-react';
 import { parseAmt } from '../../utils/formatters';
+
+// Bill Edit Modal
+const BillEditModal = ({ bill, nextPayDates, onSave, onClose }) => {
+  const [assignedCheck, setAssignedCheck] = useState(bill.assignedCheck || 1);
+  const [paidDate, setPaidDate] = useState(bill.paidDate || '');
+
+  const handleSave = () => {
+    onSave({
+      ...bill,
+      assignedCheck,
+      assignedPayDate: nextPayDates[assignedCheck - 1]
+        ? new Date(nextPayDates[assignedCheck - 1]).toISOString().split('T')[0]
+        : bill.assignedPayDate,
+      paidDate: paidDate || null,
+      paid: !!paidDate,
+    });
+    onClose();
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6">
+        <div className="flex justify-between items-center mb-4">
+          <h3 className="text-xl font-bold text-slate-800">Edit Bill</h3>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600">
+            <X size={24} />
+          </button>
+        </div>
+
+        <div className="mb-4">
+          <div className="text-lg font-semibold text-slate-800">{bill.name}</div>
+          <div className="text-sm text-slate-500">
+            Due: {new Date(bill.dueDate).toLocaleDateString()} •
+            ${parseAmt(bill.amountEstimate).toFixed(2)}
+          </div>
+        </div>
+
+        <div className="space-y-4">
+          {/* Assign to Check */}
+          <div>
+            <label className="block text-sm font-semibold text-slate-600 mb-2">
+              Assign to Paycheck
+            </label>
+            <div className="grid grid-cols-4 gap-2">
+              {[1, 2, 3, 4].map((checkNum) => (
+                <button
+                  key={checkNum}
+                  onClick={() => setAssignedCheck(checkNum)}
+                  className={`p-3 rounded-xl font-semibold text-center transition-all ${
+                    assignedCheck === checkNum
+                      ? 'bg-emerald-600 text-white'
+                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                  }`}
+                >
+                  <div className="text-lg">#{checkNum}</div>
+                  {nextPayDates[checkNum - 1] && (
+                    <div className="text-xs opacity-75">
+                      {new Date(nextPayDates[checkNum - 1]).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                    </div>
+                  )}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Paid Date */}
+          <div>
+            <label className="block text-sm font-semibold text-slate-600 mb-2">
+              Date Paid (leave empty if unpaid)
+            </label>
+            <input
+              type="date"
+              value={paidDate}
+              onChange={(e) => setPaidDate(e.target.value)}
+              className="w-full px-4 py-3 border-2 rounded-xl focus:border-emerald-500 focus:outline-none"
+            />
+            {paidDate && (
+              <button
+                onClick={() => setPaidDate('')}
+                className="mt-2 text-sm text-red-600 hover:text-red-700"
+              >
+                Clear paid date (mark as unpaid)
+              </button>
+            )}
+          </div>
+        </div>
+
+        <div className="flex gap-3 mt-6">
+          <button
+            onClick={onClose}
+            className="flex-1 px-4 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-semibold transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleSave}
+            className="flex-1 px-4 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-semibold transition-colors"
+          >
+            Save Changes
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
 
 export const Checklist = ({
   currentMonthInstances,
   onToggleInstancePaid,
   onReassignChecks,
+  onUpdateInstance,
+  nextPayDates = [],
 }) => {
   const [showUnpaidOnly, setShowUnpaidOnly] = useState(false);
+  const [editingBill, setEditingBill] = useState(null);
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
@@ -176,7 +284,7 @@ export const Checklist = ({
                   <div className="text-sm text-slate-600 flex flex-wrap gap-x-4 gap-y-1">
                     <span>
                       <Calendar size={14} className="inline mr-1" />
-                      {new Date(i.dueDate).toLocaleDateString()}
+                      Due {new Date(i.dueDate).toLocaleDateString()}
                     </span>
                     <span className="font-medium">
                       <DollarSign size={14} className="inline mr-1" />
@@ -184,9 +292,18 @@ export const Checklist = ({
                       {i.actualPaid == null && <span className="text-slate-400 text-xs ml-1">(est)</span>}
                     </span>
                     {i.assignedPayDate && (
-                      <span>
-                        <Clock size={14} className="inline mr-1" />
-                        Check {i.assignedCheck}
+                      <button
+                        onClick={() => setEditingBill(i)}
+                        className="text-emerald-600 hover:text-emerald-700 font-medium flex items-center gap-1"
+                      >
+                        <Clock size={14} />
+                        Check #{i.assignedCheck}
+                        <ChevronDown size={12} />
+                      </button>
+                    )}
+                    {i.paidDate && (
+                      <span className="text-green-600">
+                        Paid {new Date(i.paidDate).toLocaleDateString()}
                       </span>
                     )}
                   </div>
@@ -203,6 +320,16 @@ export const Checklist = ({
           </div>
         )}
       </div>
+
+      {/* Edit Modal */}
+      {editingBill && onUpdateInstance && (
+        <BillEditModal
+          bill={editingBill}
+          nextPayDates={nextPayDates}
+          onSave={onUpdateInstance}
+          onClose={() => setEditingBill(null)}
+        />
+      )}
     </div>
   );
 };

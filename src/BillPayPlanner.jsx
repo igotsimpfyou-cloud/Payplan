@@ -960,6 +960,14 @@ const BillPayPlanner = () => {
             currentMonthInstances={currentMonthInstances}
             onToggleInstancePaid={toggleInstancePaid}
             onReassignChecks={assignInstancesToChecks}
+            onUpdateInstance={(updatedInstance) => {
+              setBillInstances((prev) =>
+                prev.map((inst) =>
+                  inst.id === updatedInstance.id ? updatedInstance : inst
+                )
+              );
+            }}
+            nextPayDates={nextPayDates}
           />
         )}
         {view === 'submit' && (
