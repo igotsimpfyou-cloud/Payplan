@@ -324,21 +324,23 @@ const BillPayPlanner = () => {
     if (!nextPayDates.length) return;
     // Normalize all check dates to local midnight for consistent comparison
     const checks = nextPayDates.slice(0, 4).map(toLocalMidnight);
-    const today = toLocalMidnight(new Date());
 
     setBillInstances((prev) =>
       prev.map((inst) => {
         // Parse due date as local date to avoid timezone issues
         const due = parseLocalDate(inst.dueDate);
-        let idx = null;
+
+        // Find the latest check that is ON or BEFORE the due date
+        // This is the check we should use to pay this bill
+        let idx = 1; // Default to check 1
         for (let i = 0; i < checks.length; i++) {
-          const prevCut = i === 0 ? today : checks[i - 1];
-          if (due > prevCut && due <= checks[i]) {
-            idx = i + 1;
-            break;
+          if (checks[i] <= due) {
+            idx = i + 1; // This check is on or before due date, use it
+          } else {
+            break; // This check is after due date, stop looking
           }
         }
-        if (!idx) idx = due > checks[checks.length - 1] ? 4 : 1;
+
         return {
           ...inst,
           assignedCheck: idx,
