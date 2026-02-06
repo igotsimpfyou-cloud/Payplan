@@ -1274,6 +1274,34 @@ const BillPayPlanner = () => {
               setShowTemplateForm(true);
             }}
             onRetireTemplate={retireTemplate}
+            onUpdateHistoricalPayments={(templateId, historicalPayments, newEstimate) => {
+              // Update template with new historical payments and estimate
+              setBillTemplates((prev) =>
+                prev.map((t) =>
+                  t.id === templateId
+                    ? { ...t, historicalPayments, amount: newEstimate }
+                    : t
+                )
+              );
+
+              // Update future unpaid bills with new estimate
+              setBills((prev) =>
+                prev.map((bill) => {
+                  if (bill.templateId !== templateId) return bill;
+                  if (bill.paid) return bill; // Don't update paid bills
+                  return { ...bill, amount: newEstimate };
+                })
+              );
+
+              // Also update legacy billInstances
+              setBillInstances((prev) =>
+                prev.map((inst) => {
+                  if (inst.templateId !== templateId) return inst;
+                  if (inst.paid) return inst;
+                  return { ...inst, amountEstimate: newEstimate };
+                })
+              );
+            }}
           />
         )}
         {view === 'checklist' && (
