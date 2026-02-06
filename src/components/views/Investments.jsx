@@ -115,6 +115,10 @@ const AddInvestmentForm = ({ onSubmit, onCancel, editingHolding }) => {
       purchaseDate,
       notes: notes.trim(),
       costBasis: numShares * numPrice,
+      // Preserve last known price data when editing
+      lastKnownPrice: editingHolding?.lastKnownPrice || null,
+      lastPriceUpdate: editingHolding?.lastPriceUpdate || null,
+      lastKnownName: editingHolding?.lastKnownName || null,
     });
   };
 
@@ -230,11 +234,19 @@ const AddInvestmentForm = ({ onSubmit, onCancel, editingHolding }) => {
   );
 };
 
+// Get the best available price for a holding
+const getBestPrice = (holding, livePrice) => {
+  // Priority: live price > last known price > purchase price
+  if (livePrice?.price) return livePrice.price;
+  if (holding.lastKnownPrice) return holding.lastKnownPrice;
+  return holding.purchasePrice;
+};
+
 // Portfolio Summary Card
 const PortfolioSummary = ({ holdings, prices }) => {
   const totals = holdings.reduce(
     (acc, holding) => {
-      const price = prices[holding.symbol]?.price || holding.purchasePrice;
+      const price = getBestPrice(holding, prices[holding.symbol]);
       const currentValue = holding.shares * price;
       const costBasis = holding.costBasis;
       const gain = currentValue - costBasis;
@@ -299,7 +311,7 @@ const PortfolioSummary = ({ holdings, prices }) => {
 
 // Individual Holding Card
 const HoldingCard = ({ holding, price, onEdit, onDelete }) => {
-  const currentPrice = price?.price || holding.purchasePrice;
+  const currentPrice = getBestPrice(holding, price);
   const currentValue = holding.shares * currentPrice;
   const gain = currentValue - holding.costBasis;
   const gainPercent = (gain / holding.costBasis) * 100;
@@ -308,20 +320,30 @@ const HoldingCard = ({ holding, price, onEdit, onDelete }) => {
   const dayChangePercent = price?.changePercent || 0;
   const isDayPositive = dayChange >= 0;
 
+  // Determine price source for display
+  const isLive = !!price?.price;
+  const isCached = !isLive && !!holding.lastKnownPrice;
+  const displayName = price?.name || holding.lastKnownName;
+
   return (
     <div className="bg-white rounded-2xl shadow-lg p-5 hover:shadow-xl transition-shadow">
       <div className="flex justify-between items-start mb-4">
         <div>
           <div className="flex items-center gap-2">
             <h4 className="text-xl font-bold text-slate-800">{holding.symbol}</h4>
-            {price?.marketState === 'REGULAR' && (
+            {isLive && price?.marketState === 'REGULAR' && (
               <span className="px-2 py-0.5 bg-green-100 text-green-700 text-xs font-semibold rounded-full">
                 LIVE
               </span>
             )}
+            {isCached && (
+              <span className="px-2 py-0.5 bg-amber-100 text-amber-700 text-xs font-semibold rounded-full">
+                CACHED
+              </span>
+            )}
           </div>
-          {price?.name && (
-            <p className="text-sm text-slate-500 truncate max-w-[200px]">{price.name}</p>
+          {displayName && (
+            <p className="text-sm text-slate-500 truncate max-w-[200px]">{displayName}</p>
           )}
         </div>
         <div className="flex gap-1">
@@ -348,12 +370,17 @@ const HoldingCard = ({ holding, price, onEdit, onDelete }) => {
           <div className="text-lg font-bold text-slate-800">
             ${currentPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
           </div>
-          {price && (
+          {isLive && (
             <div className={`text-sm flex items-center gap-1 ${isDayPositive ? 'text-green-600' : 'text-red-600'}`}>
               {isDayPositive ? <TrendingUp size={14} /> : <TrendingDown size={14} />}
               <span>
                 {isDayPositive ? '+' : ''}{dayChange.toFixed(2)} ({isDayPositive ? '+' : ''}{dayChangePercent.toFixed(2)}%)
               </span>
+            </div>
+          )}
+          {isCached && holding.lastPriceUpdate && (
+            <div className="text-xs text-amber-600">
+              as of {new Date(holding.lastPriceUpdate).toLocaleDateString()}
             </div>
           )}
         </div>
@@ -428,18 +455,31 @@ export const Investments = ({ holdings = [], onAddHolding, onUpdateHolding, onDe
       const priceData = await fetchMultipleStocks(symbols);
 
       if (Object.keys(priceData).length === 0) {
-        setError('Could not fetch stock prices. This may be due to CORS restrictions in browsers. Prices will show as purchase price.');
+        setError('Could not fetch stock prices. Showing last known prices where available.');
+      } else {
+        // Save successful prices to holdings for future use
+        holdings.forEach((holding) => {
+          const newPrice = priceData[holding.symbol];
+          if (newPrice && newPrice.price !== holding.lastKnownPrice) {
+            onUpdateHolding({
+              ...holding,
+              lastKnownPrice: newPrice.price,
+              lastPriceUpdate: newPrice.lastUpdated,
+              lastKnownName: newPrice.name,
+            });
+          }
+        });
       }
 
       setPrices(priceData);
       setLastUpdated(new Date());
     } catch (err) {
-      setError('Failed to fetch stock prices. Showing purchase prices instead.');
+      setError('Failed to fetch stock prices. Showing last known prices where available.');
       console.error('Price fetch error:', err);
     } finally {
       setLoading(false);
     }
-  }, [holdings]);
+  }, [holdings, onUpdateHolding]);
 
   // Fetch prices on mount and when holdings change
   useEffect(() => {
@@ -534,7 +574,7 @@ export const Investments = ({ holdings = [], onAddHolding, onUpdateHolding, onDe
       {/* Error Message */}
       {error && (
         <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 mb-6 flex items-start gap-3">
-          <AlertCircle className="text-amber-500 flex-shrink-0 mt-0.5\" size={20} />
+          <AlertCircle className="text-amber-500 flex-shrink-0 mt-0.5" size={20} />
           <div>
             <p className="text-amber-800 font-medium">Price Fetch Notice</p>
             <p className="text-amber-700 text-sm">{error}</p>
@@ -581,10 +621,9 @@ export const Investments = ({ holdings = [], onAddHolding, onUpdateHolding, onDe
           {/* Info Box */}
           <div className="mt-6 bg-blue-50 border border-blue-200 rounded-2xl p-4">
             <p className="text-blue-800 text-sm">
-              <strong>Note:</strong> Stock prices are fetched from Yahoo Finance. Due to browser security
-              restrictions, real-time prices may not always be available. The app will show your purchase
-              price when market data cannot be retrieved. For accurate portfolio tracking, consider
-              refreshing during US market hours (9:30 AM - 4:00 PM ET).
+              <strong>Note:</strong> Stock prices are fetched from Yahoo Finance. When live prices
+              can't be retrieved, the app displays the last successfully fetched price (marked as
+              "CACHED"). Prices auto-refresh every 5 minutes during US market hours (9:30 AM - 4:00 PM ET).
             </p>
           </div>
         </>
