@@ -830,34 +830,28 @@ const BillPayPlanner = () => {
   const Header = () => {
     const activeCategory = getActiveCategory();
     const activeDrawerItems = navCategories.find((c) => c.id === openDrawer)?.items;
-    const currentCategoryLabel = navCategories.find((c) => c.id === activeCategory)?.label;
     const currentViewLabel = navCategories
       .flatMap((c) => c.items || [{ view: c.view, label: c.label }])
       .find((item) => item.view === view)?.label;
 
     return (
       <div className="mb-6">
-        <div className="text-center md:text-left mb-4">
-          <h1 className="text-3xl md:text-5xl font-black text-white">
-            PayPlan Pro
-          </h1>
-          <p className="text-emerald-100 text-sm md:text-base">
-            Smart bill planning & expense tracking
-          </p>
-        </div>
-
         {/* Navigation Container */}
         <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-3 border border-white/20">
-          {/* Current Location Indicator */}
-          <div className="text-center mb-3 text-white/80 text-sm">
-            <span className="font-medium">{currentCategoryLabel}</span>
-            {currentViewLabel && currentViewLabel !== currentCategoryLabel && (
-              <span> → <span className="font-semibold text-white">{currentViewLabel}</span></span>
+          {/* Header Row: Title + Current Page */}
+          <div className="flex items-center justify-between mb-3 px-1">
+            <h1 className="text-xl md:text-2xl font-black text-white">
+              PayPlan Pro
+            </h1>
+            {currentViewLabel && (
+              <span className="text-white bg-white/20 px-3 py-1 rounded-lg text-sm font-semibold">
+                {currentViewLabel}
+              </span>
             )}
           </div>
 
-          {/* Main Navigation */}
-          <div className="flex justify-center gap-2 md:gap-3">
+          {/* Main Navigation - Grid Layout */}
+          <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
             {navCategories.map((category) => {
               const Icon = category.icon;
               const isActive = activeCategory === category.id;
@@ -869,7 +863,7 @@ const BillPayPlanner = () => {
                   key={category.id}
                   onClick={() => handleNavClick(category)}
                   title={category.label}
-                  className={`relative px-3 py-2.5 md:px-5 md:py-3 rounded-xl font-semibold flex items-center gap-2 transition-all border-2 ${
+                  className={`relative px-2 py-2.5 rounded-xl font-semibold flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2 transition-all border-2 ${
                     isActive
                       ? 'bg-white text-emerald-600 shadow-lg border-white'
                       : isOpen
@@ -877,11 +871,11 @@ const BillPayPlanner = () => {
                       : 'bg-white/25 text-white border-transparent hover:bg-white/35 hover:border-white/30'
                   }`}
                 >
-                  <Icon size={20} />
-                  <span className="text-xs sm:text-sm font-bold">{category.label}</span>
+                  <Icon size={18} />
+                  <span className="text-xs font-bold">{category.label}</span>
                   {hasDrawer && (
-                    <span className="ml-1">
-                      {isOpen ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                    <span className="absolute top-1 right-1 sm:static">
+                      {isOpen ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
                     </span>
                   )}
                 </button>
@@ -891,8 +885,8 @@ const BillPayPlanner = () => {
 
           {/* Drawer - Sub Items */}
           {activeDrawerItems && (
-            <div className="mt-3 flex justify-center">
-              <div className="bg-white rounded-2xl shadow-xl p-2 flex flex-wrap justify-center gap-2 border border-slate-200">
+            <div className="mt-3">
+              <div className="bg-white rounded-2xl shadow-xl p-2 grid grid-cols-2 sm:flex sm:flex-wrap sm:justify-center gap-2 border border-slate-200">
                 {activeDrawerItems.map((item) => {
                   const ItemIcon = item.icon;
                   const isItemActive = view === item.view;
@@ -901,7 +895,7 @@ const BillPayPlanner = () => {
                     <button
                       key={item.view}
                       onClick={() => handleSubItemClick(item.view)}
-                      className={`px-4 py-2.5 rounded-xl font-semibold flex items-center gap-2 transition-all ${
+                      className={`px-3 py-2.5 rounded-xl font-semibold flex items-center justify-center gap-2 transition-all ${
                         isItemActive
                           ? 'bg-emerald-600 text-white shadow-md'
                           : 'text-slate-600 hover:bg-emerald-50 hover:text-emerald-700'
