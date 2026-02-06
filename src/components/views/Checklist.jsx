@@ -110,6 +110,7 @@ const BillEditModal = ({ bill, nextPayDates, onSave, onClose }) => {
 
 export const Checklist = ({
   currentMonthInstances,
+  allBills = [],  // All bills for month switching
   onToggleInstancePaid,
   onReassignChecks,
   onUpdateInstance,
@@ -117,8 +118,45 @@ export const Checklist = ({
 }) => {
   const [showUnpaidOnly, setShowUnpaidOnly] = useState(false);
   const [editingBill, setEditingBill] = useState(null);
+  const [selectedMonth, setSelectedMonth] = useState(() => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  });
+
   const today = new Date();
   today.setHours(0, 0, 0, 0);
+
+  // Generate list of months to show (current + next 5 months)
+  const availableMonths = useMemo(() => {
+    const months = [];
+    const now = new Date();
+    for (let i = 0; i < 6; i++) {
+      const date = new Date(now.getFullYear(), now.getMonth() + i, 1);
+      const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+      const label = date.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+      months.push({ key, label, date });
+    }
+    return months;
+  }, []);
+
+  // Get bills for selected month
+  const monthBills = useMemo(() => {
+    // Use allBills if available, otherwise fall back to currentMonthInstances
+    const billsSource = allBills.length > 0 ? allBills : currentMonthInstances;
+
+    const [year, month] = selectedMonth.split('-').map(Number);
+
+    return billsSource
+      .filter(bill => {
+        const dueDate = parseLocalDate(bill.dueDate);
+        return dueDate.getFullYear() === year && dueDate.getMonth() === month - 1;
+      })
+      .map(bill => ({
+        ...bill,
+        // Normalize field names for display
+        amountEstimate: bill.amountEstimate ?? bill.amount,
+      }));
+  }, [allBills, currentMonthInstances, selectedMonth]);
 
   // Calculate due status for each bill
   const getBillStatus = (bill) => {
@@ -134,7 +172,7 @@ export const Checklist = ({
 
   // Filter and sort bills
   const filteredBills = useMemo(() => {
-    let bills = [...currentMonthInstances];
+    let bills = [...monthBills];
     if (showUnpaidOnly) {
       bills = bills.filter(b => !b.paid);
     }
@@ -146,12 +184,19 @@ export const Checklist = ({
       if (statusA !== statusB) return statusA - statusB;
       return parseLocalDate(a.dueDate) - parseLocalDate(b.dueDate);
     });
-  }, [currentMonthInstances, showUnpaidOnly]);
+  }, [monthBills, showUnpaidOnly]);
 
   // Count unpaid and urgent
-  const unpaidCount = currentMonthInstances.filter(b => !b.paid).length;
-  const overdueCount = currentMonthInstances.filter(b => getBillStatus(b) === 'overdue').length;
-  const dueSoonCount = currentMonthInstances.filter(b => getBillStatus(b) === 'due-soon').length;
+  const unpaidCount = monthBills.filter(b => !b.paid).length;
+  const overdueCount = monthBills.filter(b => getBillStatus(b) === 'overdue').length;
+  const dueSoonCount = monthBills.filter(b => getBillStatus(b) === 'due-soon').length;
+
+  // Check if viewing current month
+  const isCurrentMonth = useMemo(() => {
+    const now = new Date();
+    const currentKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    return selectedMonth === currentKey;
+  }, [selectedMonth]);
 
   const getCardStyle = (status) => {
     switch (status) {
@@ -202,17 +247,26 @@ export const Checklist = ({
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between mb-4 gap-3">
         <div>
-          <h2 className="text-2xl font-bold text-white">
-            {new Date().toLocaleDateString('en-US', {
-              month: 'long',
-              year: 'numeric',
-            })}{' '}
-            Checklist
-          </h2>
-          <p className="text-emerald-100 text-sm">
-            {unpaidCount} unpaid
+          <div className="flex items-center gap-3">
+            <h2 className="text-2xl font-bold text-white">Checklist</h2>
+            {/* Month Selector */}
+            <select
+              value={selectedMonth}
+              onChange={(e) => setSelectedMonth(e.target.value)}
+              className="px-3 py-1.5 rounded-lg bg-white/20 text-white font-semibold border-0 focus:ring-2 focus:ring-white/50 cursor-pointer"
+            >
+              {availableMonths.map(m => (
+                <option key={m.key} value={m.key} className="text-slate-800">
+                  {m.label}
+                </option>
+              ))}
+            </select>
+          </div>
+          <p className="text-emerald-100 text-sm mt-1">
+            {unpaidCount} unpaid • {monthBills.length} total
             {overdueCount > 0 && <span className="text-red-300 font-bold"> • {overdueCount} overdue</span>}
             {dueSoonCount > 0 && <span className="text-amber-300"> • {dueSoonCount} due soon</span>}
+            {!isCurrentMonth && <span className="text-blue-200"> • Viewing future month</span>}
           </p>
         </div>
         <div className="flex gap-2">

@@ -10,11 +10,22 @@ export const toYMD = (d) => {
   return `${y}-${m}-${day}`;
 };
 
-// Parse a YYYY-MM-DD string as local midnight (not UTC)
+// Parse a date string as local midnight (not UTC)
+// Handles both YYYY-MM-DD and MMDDYYYY formats
 // This fixes timezone issues where "2024-02-15" becomes Feb 14th in some timezones
 export const parseLocalDate = (dateStr) => {
   if (!dateStr) return new Date();
   if (dateStr instanceof Date) return dateStr;
+
+  // Check if it's MMDDYYYY format (8 digits, no dashes)
+  if (/^\d{8}$/.test(dateStr)) {
+    const mm = parseInt(dateStr.substring(0, 2), 10);
+    const dd = parseInt(dateStr.substring(2, 4), 10);
+    const yyyy = parseInt(dateStr.substring(4, 8), 10);
+    return new Date(yyyy, mm - 1, dd);
+  }
+
+  // Otherwise assume YYYY-MM-DD format
   const [y, m, d] = dateStr.split('-').map(Number);
   return new Date(y, m - 1, d);
 };

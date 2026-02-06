@@ -1381,6 +1381,7 @@ const BillPayPlanner = () => {
         {view === 'checklist' && (
           <Checklist
             currentMonthInstances={currentMonthInstances}
+            allBills={bills}
             onToggleInstancePaid={toggleInstancePaid}
             onReassignChecks={assignInstancesToChecks}
             onUpdateInstance={(updatedInstance) => {
