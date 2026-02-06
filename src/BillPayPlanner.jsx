@@ -1443,6 +1443,61 @@ const BillPayPlanner = () => {
             }}
             onExportBackup={exportBackup}
             onImportBackup={importBackupFromFile}
+            bills={bills}
+            onDeduplicateBills={() => {
+              // Remove duplicate bills, keeping the first occurrence
+              const seen = new Set();
+              const unique = [];
+              let removed = 0;
+
+              for (const bill of bills) {
+                if (seen.has(bill.id)) {
+                  removed++;
+                } else {
+                  seen.add(bill.id);
+                  unique.push(bill);
+                }
+              }
+
+              setBills(unique);
+
+              // Also dedupe legacy instances
+              const seenLegacy = new Set();
+              setBillInstances(prev => prev.filter(inst => {
+                if (seenLegacy.has(inst.id)) return false;
+                seenLegacy.add(inst.id);
+                return true;
+              }));
+
+              return removed;
+            }}
+            onMarkPastBillsPaid={() => {
+              const today = new Date();
+              today.setHours(0, 0, 0, 0);
+              let marked = 0;
+
+              setBills(prev => prev.map(bill => {
+                if (bill.paid) return bill;
+                const dueDate = parseMMDDYYYY(bill.dueDate);
+                if (dueDate && dueDate < today) {
+                  marked++;
+                  return { ...bill, paid: true, paidDate: null }; // null paidDate indicates "paid before app"
+                }
+                return bill;
+              }));
+
+              // Also update legacy instances
+              setBillInstances(prev => prev.map(inst => {
+                if (inst.paid) return inst;
+                const dueDate = new Date(inst.dueDate);
+                if (dueDate < today) {
+                  return { ...inst, paid: true };
+                }
+                return inst;
+              }));
+
+              return marked;
+            }}
           />
         )}
 

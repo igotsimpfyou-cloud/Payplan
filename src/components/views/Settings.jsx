@@ -1,9 +1,155 @@
-import React, { useState, useEffect } from 'react';
-import { Download, Upload, RefreshCw, Camera, Eye, EyeOff, ExternalLink, Calendar, CheckCircle2 } from 'lucide-react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { Download, Upload, RefreshCw, Camera, Eye, EyeOff, ExternalLink, Calendar, CheckCircle2, Trash2, AlertTriangle } from 'lucide-react';
 import { parseAmt } from '../../utils/formatters';
 import { downloadICSFile, generateFilename } from '../../utils/calendarExport';
+import { parseMMDDYYYY } from '../../utils/billDatabase';
 
 const OCR_API_KEY_STORAGE = 'ppp.ocrApiKey';
+
+// Data Cleanup Component
+const DataCleanup = ({ bills, onDeduplicateBills, onMarkPastBillsPaid }) => {
+  const [cleanupResult, setCleanupResult] = useState(null);
+
+  // Calculate duplicates and past unpaid bills
+  const stats = useMemo(() => {
+    const idCounts = {};
+    bills.forEach(bill => {
+      idCounts[bill.id] = (idCounts[bill.id] || 0) + 1;
+    });
+
+    const duplicateIds = Object.entries(idCounts)
+      .filter(([_, count]) => count > 1)
+      .map(([id]) => id);
+
+    const duplicateCount = Object.values(idCounts)
+      .filter(count => count > 1)
+      .reduce((sum, count) => sum + count - 1, 0);
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const pastUnpaidBills = bills.filter(bill => {
+      if (bill.paid) return false;
+      const dueDate = parseMMDDYYYY(bill.dueDate);
+      return dueDate && dueDate < today;
+    });
+
+    return {
+      duplicateCount,
+      duplicateIds,
+      pastUnpaidCount: pastUnpaidBills.length,
+      pastUnpaidBills,
+      total: bills.length,
+    };
+  }, [bills]);
+
+  const handleDeduplicate = () => {
+    if (stats.duplicateCount === 0) return;
+    const removed = onDeduplicateBills();
+    setCleanupResult({ type: 'dedupe', count: removed });
+    setTimeout(() => setCleanupResult(null), 3000);
+  };
+
+  const handleMarkPastPaid = () => {
+    if (stats.pastUnpaidCount === 0) return;
+    const marked = onMarkPastBillsPaid();
+    setCleanupResult({ type: 'markPaid', count: marked });
+    setTimeout(() => setCleanupResult(null), 3000);
+  };
+
+  if (!bills.length) return null;
+
+  return (
+    <div className="bg-white rounded-2xl shadow-xl p-6 mb-6">
+      <div className="flex items-center gap-3 mb-4">
+        <div className="p-3 bg-gradient-to-br from-amber-500 to-orange-500 rounded-xl text-white">
+          <Trash2 size={24} />
+        </div>
+        <div>
+          <h3 className="text-xl font-bold text-slate-800">Data Cleanup</h3>
+          <p className="text-slate-600 text-sm">
+            Fix duplicate bills and mark old bills as paid
+          </p>
+        </div>
+      </div>
+
+      <div className="space-y-4">
+        {/* Duplicate Bills */}
+        <div className="p-4 bg-slate-50 rounded-xl">
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="font-semibold text-slate-800">Duplicate Bills</div>
+              <div className="text-sm text-slate-600">
+                {stats.duplicateCount > 0
+                  ? `Found ${stats.duplicateCount} duplicate bill${stats.duplicateCount !== 1 ? 's' : ''}`
+                  : 'No duplicates found'}
+              </div>
+            </div>
+            <button
+              onClick={handleDeduplicate}
+              disabled={stats.duplicateCount === 0}
+              className={`px-4 py-2 rounded-xl font-semibold transition-colors ${
+                stats.duplicateCount > 0
+                  ? 'bg-amber-600 hover:bg-amber-700 text-white'
+                  : 'bg-slate-200 text-slate-400 cursor-not-allowed'
+              }`}
+            >
+              Remove Duplicates
+            </button>
+          </div>
+        </div>
+
+        {/* Past Unpaid Bills */}
+        <div className="p-4 bg-slate-50 rounded-xl">
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="font-semibold text-slate-800">Past Unpaid Bills</div>
+              <div className="text-sm text-slate-600">
+                {stats.pastUnpaidCount > 0
+                  ? `${stats.pastUnpaidCount} bill${stats.pastUnpaidCount !== 1 ? 's' : ''} due before today marked unpaid`
+                  : 'All past bills are marked as paid'}
+              </div>
+            </div>
+            <button
+              onClick={handleMarkPastPaid}
+              disabled={stats.pastUnpaidCount === 0}
+              className={`px-4 py-2 rounded-xl font-semibold transition-colors ${
+                stats.pastUnpaidCount > 0
+                  ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                  : 'bg-slate-200 text-slate-400 cursor-not-allowed'
+              }`}
+            >
+              Mark All Paid
+            </button>
+          </div>
+          {stats.pastUnpaidCount > 0 && (
+            <div className="mt-3 text-xs text-slate-500">
+              These are bills with due dates in the past that haven't been marked paid.
+              Click "Mark All Paid" if you paid them before using this app.
+            </div>
+          )}
+        </div>
+
+        {/* Result message */}
+        {cleanupResult && (
+          <div className="p-4 bg-green-50 border border-green-200 rounded-xl flex items-center gap-3">
+            <CheckCircle2 className="text-green-500" size={20} />
+            <span className="text-green-700 text-sm font-medium">
+              {cleanupResult.type === 'dedupe'
+                ? `Removed ${cleanupResult.count} duplicate bill${cleanupResult.count !== 1 ? 's' : ''}`
+                : `Marked ${cleanupResult.count} bill${cleanupResult.count !== 1 ? 's' : ''} as paid`}
+            </span>
+          </div>
+        )}
+
+        {/* Stats */}
+        <div className="text-sm text-slate-500 text-center">
+          Total bills in database: {stats.total}
+        </div>
+      </div>
+    </div>
+  );
+};
 
 export const Settings = ({
   paySchedule,
@@ -19,6 +165,9 @@ export const Settings = ({
   onExportBackup,
   onImportBackup,
   billInstances = [],
+  bills = [],
+  onDeduplicateBills,
+  onMarkPastBillsPaid,
 }) => {
   // OCR API key state
   const [ocrApiKey, setOcrApiKey] = useState('');
@@ -325,6 +474,13 @@ export const Settings = ({
           </div>
         </div>
       </div>
+
+      {/* Data Cleanup */}
+      <DataCleanup
+        bills={bills}
+        onDeduplicateBills={onDeduplicateBills}
+        onMarkPastBillsPaid={onMarkPastBillsPaid}
+      />
 
       {/* Backup & Restore */}
       <div className="bg-white rounded-2xl shadow-xl p-6 mb-6">
