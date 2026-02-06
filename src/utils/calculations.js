@@ -3,7 +3,7 @@
  */
 
 import { parseAmt } from './formatters';
-import { toYMD } from './dateHelpers';
+import { toYMD, parseLocalDate } from './dateHelpers';
 
 export const calculateAmortization = (asset) => {
   const principal = parseAmt(asset.currentBalance || asset.loanAmount);
@@ -63,7 +63,8 @@ export const calculateNextPayDates = (paySchedule) => {
 
   const dates = [];
   const freq = paySchedule.frequency || 'biweekly';
-  let d = new Date(paySchedule.nextPayDate);
+  // Use parseLocalDate to avoid timezone issues with YYYY-MM-DD strings
+  let d = parseLocalDate(paySchedule.nextPayDate);
   dates.push(new Date(d));
 
   for (let i = 0; i < 10; i++) {

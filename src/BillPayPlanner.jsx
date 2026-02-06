@@ -19,7 +19,7 @@ import {
 } from 'lucide-react';
 
 // Utils
-import { toYMD, startOfMonth, addMonths, sameMonth, idForInstance } from './utils/dateHelpers';
+import { toYMD, startOfMonth, addMonths, sameMonth, idForInstance, parseLocalDate, toLocalMidnight } from './utils/dateHelpers';
 import { parseAmt } from './utils/formatters';
 import { calculateNextPayDates, monthlyTotal } from './utils/calculations';
 
@@ -322,12 +322,14 @@ const BillPayPlanner = () => {
 
   const assignInstancesToChecks = () => {
     if (!nextPayDates.length) return;
-    const checks = nextPayDates.slice(0, 4);
-    const today = new Date();
+    // Normalize all check dates to local midnight for consistent comparison
+    const checks = nextPayDates.slice(0, 4).map(toLocalMidnight);
+    const today = toLocalMidnight(new Date());
 
     setBillInstances((prev) =>
       prev.map((inst) => {
-        const due = new Date(inst.dueDate);
+        // Parse due date as local date to avoid timezone issues
+        const due = parseLocalDate(inst.dueDate);
         let idx = null;
         for (let i = 0; i < checks.length; i++) {
           const prevCut = i === 0 ? today : checks[i - 1];

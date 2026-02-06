@@ -10,6 +10,21 @@ export const toYMD = (d) => {
   return `${y}-${m}-${day}`;
 };
 
+// Parse a YYYY-MM-DD string as local midnight (not UTC)
+// This fixes timezone issues where "2024-02-15" becomes Feb 14th in some timezones
+export const parseLocalDate = (dateStr) => {
+  if (!dateStr) return new Date();
+  if (dateStr instanceof Date) return dateStr;
+  const [y, m, d] = dateStr.split('-').map(Number);
+  return new Date(y, m - 1, d);
+};
+
+// Normalize a date to local midnight for consistent comparisons
+export const toLocalMidnight = (d) => {
+  const dt = new Date(d);
+  return new Date(dt.getFullYear(), dt.getMonth(), dt.getDate());
+};
+
 export const startOfMonth = (d) => new Date(d.getFullYear(), d.getMonth(), 1);
 
 export const addMonths = (d, n) => {
