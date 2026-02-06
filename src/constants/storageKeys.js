@@ -15,3 +15,4 @@ export const LS_ENVELOPES = 'ppp.envelopes';
 export const LS_BUDGETS = 'ppp.budgets';
 export const LS_ACTUAL_PAY = 'ppp.actualPayEntries';
 export const LS_SCANNED_RECEIPTS = 'ppp.scannedReceipts';
+export const LS_INVESTMENTS = 'ppp.investments';

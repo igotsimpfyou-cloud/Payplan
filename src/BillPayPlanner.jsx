@@ -15,6 +15,7 @@ import {
   Menu,
   ClipboardCheck,
   TrendingUp,
+  LineChart,
 } from 'lucide-react';
 
 // Utils
@@ -37,6 +38,7 @@ import {
   LS_BUDGETS,
   LS_ACTUAL_PAY,
   LS_SCANNED_RECEIPTS,
+  LS_INVESTMENTS,
 } from './constants/storageKeys';
 
 // Forms
@@ -57,6 +59,7 @@ import { Propane } from './components/views/Propane';
 import { Analytics } from './components/views/Analytics';
 import { Settings } from './components/views/Settings';
 import { Retirement } from './components/views/Retirement';
+import { Investments } from './components/views/Investments';
 
 /**
  * PayPlan Pro - Slim Orchestrator
@@ -89,6 +92,7 @@ const BillPayPlanner = () => {
   });
   const [actualPayEntries, setActualPayEntries] = useState([]);
   const [scannedReceipts, setScannedReceipts] = useState([]);
+  const [investments, setInvestments] = useState([]);
 
   // UI modals
   const [showTemplateForm, setShowTemplateForm] = useState(false);
@@ -120,6 +124,7 @@ const BillPayPlanner = () => {
       const bud = localStorage.getItem(LS_BUDGETS);
       const ap = localStorage.getItem(LS_ACTUAL_PAY);
       const sr = localStorage.getItem(LS_SCANNED_RECEIPTS);
+      const inv = localStorage.getItem(LS_INVESTMENTS);
 
       // MIGRATION: if old 'bills' exists, migrate to templates
       const legacyBills = localStorage.getItem('bills');
@@ -155,6 +160,7 @@ const BillPayPlanner = () => {
       if (bud) setBudgets(JSON.parse(bud));
       if (ap) setActualPayEntries(JSON.parse(ap));
       if (sr) setScannedReceipts(JSON.parse(sr));
+      if (inv) setInvestments(JSON.parse(inv));
     } catch (err) {
       console.warn('Load error', err);
     } finally {
@@ -214,6 +220,10 @@ const BillPayPlanner = () => {
   useEffect(
     () => localStorage.setItem(LS_SCANNED_RECEIPTS, JSON.stringify(scannedReceipts)),
     [scannedReceipts]
+  );
+  useEffect(
+    () => localStorage.setItem(LS_INVESTMENTS, JSON.stringify(investments)),
+    [investments]
   );
 
   // ---------- Instance generation ----------
@@ -506,6 +516,7 @@ const BillPayPlanner = () => {
         budgets,
         actualPayEntries,
         scannedReceipts,
+        investments,
       },
     };
     const blob = new Blob([JSON.stringify(payload, null, 2)], {
@@ -543,6 +554,7 @@ const BillPayPlanner = () => {
     );
     setActualPayEntries(Array.isArray(d?.actualPayEntries) ? d.actualPayEntries : []);
     setScannedReceipts(Array.isArray(d?.scannedReceipts) ? d.scannedReceipts : []);
+    setInvestments(Array.isArray(d?.investments) ? d.investments : []);
   };
 
   const importBackupFromFile = async (file) => {
@@ -674,6 +686,21 @@ const BillPayPlanner = () => {
   const deleteScannedReceipt = (id) =>
     setScannedReceipts((prev) => prev.filter((r) => r.id !== id));
 
+  // ---------- Investments ----------
+  const addInvestment = (holding) => {
+    setInvestments((prev) => [...prev, holding]);
+  };
+
+  const updateInvestment = (holding) => {
+    setInvestments((prev) =>
+      prev.map((h) => (h.id === holding.id ? holding : h))
+    );
+  };
+
+  const deleteInvestment = (id) => {
+    setInvestments((prev) => prev.filter((h) => h.id !== id));
+  };
+
   // ---------- Calendar ----------
   // Calendar export is now handled directly in Settings via ICS file download
   // No account connection needed - users just download and import the .ics file
@@ -751,6 +778,7 @@ const BillPayPlanner = () => {
       icon: Wallet,
       items: [
         { view: 'assets', label: 'Assets', icon: Building2 },
+        { view: 'investments', label: 'Investments', icon: LineChart },
         { view: 'retirement', label: 'Retirement', icon: TrendingUp },
       ],
     },
@@ -979,6 +1007,14 @@ const BillPayPlanner = () => {
             onRemoveDebt={(id) =>
               setDebtPayoff(debtPayoff.filter((d) => d.id !== id))
             }
+          />
+        )}
+        {view === 'investments' && (
+          <Investments
+            holdings={investments}
+            onAddHolding={addInvestment}
+            onUpdateHolding={updateInvestment}
+            onDeleteHolding={deleteInvestment}
           />
         )}
         {view === 'retirement' && <Retirement />}
