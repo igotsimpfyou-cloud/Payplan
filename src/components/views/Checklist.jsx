@@ -1,12 +1,15 @@
 import React, { useState, useMemo } from 'react';
 import { Check, Calendar, DollarSign, Clock, Receipt, RefreshCw, AlertTriangle, Filter, ChevronDown, X } from 'lucide-react';
 import { parseAmt } from '../../utils/formatters';
-import { parseLocalDate } from '../../utils/dateHelpers';
+import { parseLocalDate, formatPayDatesAsMonthCheck, getMonthCheckLabel } from '../../utils/dateHelpers';
 
 // Bill Edit Modal
 const BillEditModal = ({ bill, nextPayDates, onSave, onClose }) => {
   const [assignedCheck, setAssignedCheck] = useState(bill.assignedCheck || 1);
   const [paidDate, setPaidDate] = useState(bill.paidDate || '');
+
+  // Get Month.Check# labels for all pay dates
+  const payDateLabels = formatPayDatesAsMonthCheck(nextPayDates);
 
   const handleSave = () => {
     onSave({
@@ -46,24 +49,27 @@ const BillEditModal = ({ bill, nextPayDates, onSave, onClose }) => {
               Assign to Paycheck
             </label>
             <div className="grid grid-cols-4 gap-2">
-              {[1, 2, 3, 4].map((checkNum) => (
-                <button
-                  key={checkNum}
-                  onClick={() => setAssignedCheck(checkNum)}
-                  className={`p-3 rounded-xl font-semibold text-center transition-all ${
-                    assignedCheck === checkNum
-                      ? 'bg-emerald-600 text-white'
-                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                  }`}
-                >
-                  <div className="text-lg">#{checkNum}</div>
-                  {nextPayDates[checkNum - 1] && (
-                    <div className="text-xs opacity-75">
-                      {new Date(nextPayDates[checkNum - 1]).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                    </div>
-                  )}
-                </button>
-              ))}
+              {[1, 2, 3, 4].map((checkNum) => {
+                const labelInfo = payDateLabels[checkNum - 1];
+                return (
+                  <button
+                    key={checkNum}
+                    onClick={() => setAssignedCheck(checkNum)}
+                    className={`p-3 rounded-xl font-semibold text-center transition-all ${
+                      assignedCheck === checkNum
+                        ? 'bg-emerald-600 text-white'
+                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                    }`}
+                  >
+                    <div className="text-lg">{labelInfo?.label || `#${checkNum}`}</div>
+                    {nextPayDates[checkNum - 1] && (
+                      <div className="text-xs opacity-75">
+                        {new Date(nextPayDates[checkNum - 1]).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                      </div>
+                    )}
+                  </button>
+                );
+              })}
             </div>
           </div>
 
@@ -352,7 +358,7 @@ export const Checklist = ({
                         className="text-emerald-600 hover:text-emerald-700 font-medium flex items-center gap-1"
                       >
                         <Clock size={14} />
-                        Check #{i.assignedCheck}
+                        {getMonthCheckLabel(i.assignedPayDate, nextPayDates) || `Check #${i.assignedCheck}`}
                         <ChevronDown size={12} />
                       </button>
                     )}

@@ -49,3 +49,53 @@ export const sameMonth = (a, b) =>
 
 export const idForInstance = (name, dueDate) =>
   `${name.replace(/\s+/g, '_')}_${toYMD(dueDate)}`;
+
+/**
+ * Format pay dates as "Mon.#" (e.g., "Feb.1", "Feb.2", "Mar.1")
+ * Takes an array of pay dates and returns an array of { date, label, monthKey } objects
+ */
+export const formatPayDatesAsMonthCheck = (payDates) => {
+  if (!payDates || payDates.length === 0) return [];
+
+  // Group pay dates by month
+  const monthCounts = {};
+
+  return payDates.map((dateVal) => {
+    const date = new Date(dateVal);
+    const monthKey = `${date.getFullYear()}-${date.getMonth()}`;
+    const monthName = date.toLocaleDateString('en-US', { month: 'short' });
+
+    // Increment count for this month
+    monthCounts[monthKey] = (monthCounts[monthKey] || 0) + 1;
+    const checkNum = monthCounts[monthKey];
+
+    return {
+      date,
+      label: `${monthName}.${checkNum}`,
+      monthKey,
+      checkNum,
+    };
+  });
+};
+
+/**
+ * Get Month.Check# label for a specific pay date given the list of all pay dates
+ */
+export const getMonthCheckLabel = (payDate, allPayDates) => {
+  if (!payDate || !allPayDates || allPayDates.length === 0) return null;
+
+  const targetDate = new Date(payDate);
+  const formatted = formatPayDatesAsMonthCheck(allPayDates);
+
+  // Find matching pay date
+  const match = formatted.find((f) => {
+    const fDate = new Date(f.date);
+    return (
+      fDate.getFullYear() === targetDate.getFullYear() &&
+      fDate.getMonth() === targetDate.getMonth() &&
+      fDate.getDate() === targetDate.getDate()
+    );
+  });
+
+  return match ? match.label : null;
+};

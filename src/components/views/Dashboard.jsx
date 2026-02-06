@@ -1,7 +1,7 @@
 import React from 'react';
 import { DollarSign, TrendingUp, AlertTriangle, CheckCircle, Clock, Wallet, Check } from 'lucide-react';
 import { parseAmt } from '../../utils/formatters';
-import { parseLocalDate } from '../../utils/dateHelpers';
+import { parseLocalDate, formatPayDatesAsMonthCheck } from '../../utils/dateHelpers';
 
 export const Dashboard = ({
   overview,
@@ -16,9 +16,15 @@ export const Dashboard = ({
   // Use new bills array if available, fallback to legacy billInstances
   const allBills = bills.length > 0 ? bills : billInstances;
 
+  // Generate Month.Check# labels for pay dates
+  const payDateLabels = React.useMemo(
+    () => formatPayDatesAsMonthCheck(nextPayDates),
+    [nextPayDates]
+  );
+
   const fourCheckPlan = React.useMemo(() => {
     const checks = nextPayDates.slice(0, 4);
-    if (!checks.length) return { checks: [], groups: [], totals: [], leftovers: [] };
+    if (!checks.length) return { checks: [], groups: [], totals: [], leftovers: [], labels: [] };
     const perCheck = parseAmt(paySchedule?.payAmount);
 
     // Group bills by their assigned check
@@ -39,12 +45,13 @@ export const Dashboard = ({
     );
     const totals = groups.map(g => g.reduce((s, i) => s + parseAmt(i.amountEstimate ?? i.amount), 0));
     const leftovers = totals.map(t => perCheck - perCheckEnvelopeSum - t);
-    return { checks, groups, totals, leftovers };
-  }, [allBills, nextPayDates, paySchedule, perCheckEnvelopeSum]);
+    const labels = payDateLabels.slice(0, 4).map(p => p?.label || '');
+    return { checks, groups, totals, leftovers, labels };
+  }, [allBills, nextPayDates, paySchedule, perCheckEnvelopeSum, payDateLabels]);
 
   // Check for underfunded checks
   const underfundedChecks = fourCheckPlan.leftovers
-    .map((l, i) => ({ check: i + 1, amount: l }))
+    .map((l, i) => ({ check: i + 1, label: fourCheckPlan.labels[i] || `#${i + 1}`, amount: l }))
     .filter(c => c.amount < 0);
 
   const perCheck = parseAmt(paySchedule?.payAmount);
@@ -60,7 +67,7 @@ export const Dashboard = ({
             <p className="text-red-100 text-sm">
               {underfundedChecks.map(c => (
                 <span key={c.check} className="mr-3">
-                  Check {c.check}: <strong>${Math.abs(c.amount).toFixed(2)} short</strong>
+                  {c.label}: <strong>${Math.abs(c.amount).toFixed(2)} short</strong>
                 </span>
               ))}
             </p>
@@ -218,10 +225,10 @@ export const Dashboard = ({
                 >
                   <div className="flex items-center justify-between mb-2">
                     <div className="flex items-center gap-2">
-                      <span className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${
+                      <span className={`px-2 py-1 rounded-full flex items-center justify-center text-sm font-bold ${
                         isUnderfunded ? 'bg-red-500 text-white' : 'bg-emerald-500 text-white'
                       }`}>
-                        {idx + 1}
+                        {fourCheckPlan.labels[idx] || `#${idx + 1}`}
                       </span>
                       <div>
                         <div className="font-semibold text-slate-800">
