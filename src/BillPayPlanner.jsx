@@ -1445,29 +1445,79 @@ const BillPayPlanner = () => {
             onImportBackup={importBackupFromFile}
             bills={bills}
             onDeduplicateBills={() => {
-              // Remove duplicate bills, keeping the first occurrence
-              const seen = new Set();
-              const unique = [];
+              // Smart deduplication: keep only one bill per name per month
+              // This handles the timezone bug where dates shifted by 1 day
+              const billsByNameMonth = {};
               let removed = 0;
 
               for (const bill of bills) {
-                if (seen.has(bill.id)) {
-                  removed++;
+                const dueDate = parseMMDDYYYY(bill.dueDate);
+                if (!dueDate) continue;
+
+                // Create key from name + year + month
+                const monthKey = `${bill.name}-${dueDate.getFullYear()}-${dueDate.getMonth()}`;
+
+                if (!billsByNameMonth[monthKey]) {
+                  billsByNameMonth[monthKey] = [];
+                }
+                billsByNameMonth[monthKey].push(bill);
+              }
+
+              // For each group, keep the bill that matches the template's dueDay
+              const unique = [];
+              for (const key in billsByNameMonth) {
+                const group = billsByNameMonth[key];
+                if (group.length === 1) {
+                  unique.push(group[0]);
                 } else {
-                  seen.add(bill.id);
-                  unique.push(bill);
+                  // Multiple bills for same name/month - pick the best one
+                  // Prefer: paid bills, then bills matching template dueDay
+                  const template = billTemplates.find(t => t.id === group[0].templateId);
+                  const templateDueDay = template?.dueDay;
+
+                  // Sort to prefer: paid first, then matching dueDay, then earliest
+                  group.sort((a, b) => {
+                    // Paid bills first
+                    if (a.paid && !b.paid) return -1;
+                    if (!a.paid && b.paid) return 1;
+
+                    // Matching template dueDay next
+                    const aDate = parseMMDDYYYY(a.dueDate);
+                    const bDate = parseMMDDYYYY(b.dueDate);
+                    const aMatches = aDate?.getDate() === templateDueDay;
+                    const bMatches = bDate?.getDate() === templateDueDay;
+                    if (aMatches && !bMatches) return -1;
+                    if (!aMatches && bMatches) return 1;
+
+                    return 0;
+                  });
+
+                  unique.push(group[0]);
+                  removed += group.length - 1;
                 }
               }
 
               setBills(unique);
 
-              // Also dedupe legacy instances
-              const seenLegacy = new Set();
-              setBillInstances(prev => prev.filter(inst => {
-                if (seenLegacy.has(inst.id)) return false;
-                seenLegacy.add(inst.id);
-                return true;
-              }));
+              // Also dedupe legacy instances the same way
+              const instancesByNameMonth = {};
+              for (const inst of billInstances) {
+                const dueDate = new Date(inst.dueDate);
+                const monthKey = `${inst.name}-${dueDate.getFullYear()}-${dueDate.getMonth()}`;
+                if (!instancesByNameMonth[monthKey]) {
+                  instancesByNameMonth[monthKey] = [];
+                }
+                instancesByNameMonth[monthKey].push(inst);
+              }
+
+              const uniqueInstances = [];
+              for (const key in instancesByNameMonth) {
+                const group = instancesByNameMonth[key];
+                // Keep first (or paid) one
+                group.sort((a, b) => (a.paid && !b.paid ? -1 : !a.paid && b.paid ? 1 : 0));
+                uniqueInstances.push(group[0]);
+              }
+              setBillInstances(uniqueInstances);
 
               return removed;
             }}

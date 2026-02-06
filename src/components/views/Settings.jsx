@@ -12,16 +12,17 @@ const DataCleanup = ({ bills, onDeduplicateBills, onMarkPastBillsPaid }) => {
 
   // Calculate duplicates and past unpaid bills
   const stats = useMemo(() => {
-    const idCounts = {};
+    // Find duplicates by name + year + month (not just exact ID)
+    // This catches timezone-shifted duplicates
+    const billsByNameMonth = {};
     bills.forEach(bill => {
-      idCounts[bill.id] = (idCounts[bill.id] || 0) + 1;
+      const dueDate = parseMMDDYYYY(bill.dueDate);
+      if (!dueDate) return;
+      const monthKey = `${bill.name}-${dueDate.getFullYear()}-${dueDate.getMonth()}`;
+      billsByNameMonth[monthKey] = (billsByNameMonth[monthKey] || 0) + 1;
     });
 
-    const duplicateIds = Object.entries(idCounts)
-      .filter(([_, count]) => count > 1)
-      .map(([id]) => id);
-
-    const duplicateCount = Object.values(idCounts)
+    const duplicateCount = Object.values(billsByNameMonth)
       .filter(count => count > 1)
       .reduce((sum, count) => sum + count - 1, 0);
 
@@ -36,7 +37,6 @@ const DataCleanup = ({ bills, onDeduplicateBills, onMarkPastBillsPaid }) => {
 
     return {
       duplicateCount,
-      duplicateIds,
       pastUnpaidCount: pastUnpaidBills.length,
       pastUnpaidBills,
       total: bills.length,
