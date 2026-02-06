@@ -667,15 +667,8 @@ const BillPayPlanner = () => {
     setScannedReceipts((prev) => prev.filter((r) => r.id !== id));
 
   // ---------- Calendar ----------
-  const connectGoogleCalendar = async (connected) => {
-    // If called with boolean, use it; otherwise toggle
-    const newState = typeof connected === 'boolean' ? connected : !calendarConnected;
-    setCalendarConnected(newState);
-  };
-
-  const syncToCalendar = async () => {
-    // This is now handled in Settings component
-  };
+  // Calendar export is now handled directly in Settings via ICS file download
+  // No account connection needed - users just download and import the .ics file
 
   // ---------- Overview helpers ----------
   const currentMonthInstances = useMemo(() => {
@@ -915,7 +908,6 @@ const BillPayPlanner = () => {
             paySchedule={paySchedule}
             envelopes={envelopes}
             budgets={budgets}
-            calendarConnected={calendarConnected}
             backupFileInputRef={backupFileInputRef}
             perCheckEnvelopeSum={perCheckEnvelopeSum()}
             billInstances={billInstances}
@@ -945,8 +937,6 @@ const BillPayPlanner = () => {
               const cap = parseAmt(prompt('Monthly cap:') || 0);
               setBudgets({ ...budgets, [cat]: cap });
             }}
-            onConnectCalendar={connectGoogleCalendar}
-            onSyncCalendar={syncToCalendar}
             onExportBackup={exportBackup}
             onImportBackup={importBackupFromFile}
           />
