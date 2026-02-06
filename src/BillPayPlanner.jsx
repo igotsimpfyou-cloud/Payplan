@@ -9,6 +9,12 @@ import {
   Calendar,
   Flame,
   Check,
+  Wallet,
+  ChevronDown,
+  ChevronUp,
+  Menu,
+  ClipboardCheck,
+  TrendingUp,
 } from 'lucide-react';
 
 // Utils
@@ -57,6 +63,7 @@ import { Settings } from './components/views/Settings';
  */
 const BillPayPlanner = () => {
   const [view, setView] = useState('dashboard');
+  const [openDrawer, setOpenDrawer] = useState(null); // Track which nav drawer is open
 
   // Core (instances model)
   const [billTemplates, setBillTemplates] = useState([]);
@@ -718,84 +725,154 @@ const BillPayPlanner = () => {
     };
   }, [currentMonthInstances, oneTimeBills, paySchedule, nextPayDates]);
 
+  // ---------- Navigation Configuration ----------
+  const navCategories = [
+    {
+      id: 'home',
+      label: 'Home',
+      icon: Home,
+      view: 'dashboard', // Direct link, no drawer
+    },
+    {
+      id: 'bills',
+      label: 'Bills',
+      icon: Receipt,
+      items: [
+        { view: 'bills', label: 'Templates', icon: Receipt },
+        { view: 'checklist', label: 'Checklist', icon: List },
+        { view: 'onetime', label: 'One-Time', icon: Calendar },
+        { view: 'propane', label: 'Propane', icon: Flame },
+      ],
+    },
+    {
+      id: 'money',
+      label: 'Money',
+      icon: Wallet,
+      items: [
+        { view: 'assets', label: 'Assets', icon: Building2 },
+        // Future: { view: 'retirement', label: 'Retirement', icon: TrendingUp },
+      ],
+    },
+    {
+      id: 'track',
+      label: 'Track',
+      icon: ClipboardCheck,
+      items: [
+        { view: 'submit', label: 'Submit Actuals', icon: Check },
+      ],
+    },
+    {
+      id: 'more',
+      label: 'More',
+      icon: Menu,
+      items: [
+        { view: 'analytics', label: 'Analytics', icon: BarChart3 },
+        { view: 'settings', label: 'Settings', icon: SettingsIcon },
+      ],
+    },
+  ];
+
+  // Check if current view is in a category
+  const getActiveCategory = () => {
+    for (const cat of navCategories) {
+      if (cat.view === view) return cat.id;
+      if (cat.items?.some((item) => item.view === view)) return cat.id;
+    }
+    return null;
+  };
+
+  const handleNavClick = (category) => {
+    if (category.view) {
+      // Direct link - go to view and close any drawer
+      setView(category.view);
+      setOpenDrawer(null);
+    } else {
+      // Toggle drawer
+      setOpenDrawer(openDrawer === category.id ? null : category.id);
+    }
+  };
+
+  const handleSubItemClick = (itemView) => {
+    setView(itemView);
+    setOpenDrawer(null);
+  };
+
   // ---------- Header ----------
-  const Header = () => (
-    <div className="mb-6">
-      <div className="text-center md:text-left mb-4">
-        <h1 className="text-3xl md:text-5xl font-black text-white">
-          PayPlan Pro
-        </h1>
-        <p className="text-emerald-100 text-sm md:text-base">
-          Instances-based bill planning (2+ months ahead)
-        </p>
+  const Header = () => {
+    const activeCategory = getActiveCategory();
+    const activeDrawerItems = navCategories.find((c) => c.id === openDrawer)?.items;
+
+    return (
+      <div className="mb-6">
+        <div className="text-center md:text-left mb-4">
+          <h1 className="text-3xl md:text-5xl font-black text-white">
+            PayPlan Pro
+          </h1>
+          <p className="text-emerald-100 text-sm md:text-base">
+            Smart bill planning & expense tracking
+          </p>
+        </div>
+
+        {/* Main Navigation */}
+        <div className="flex justify-center gap-2 md:gap-3">
+          {navCategories.map((category) => {
+            const Icon = category.icon;
+            const isActive = activeCategory === category.id;
+            const isOpen = openDrawer === category.id;
+            const hasDrawer = !!category.items;
+
+            return (
+              <button
+                key={category.id}
+                onClick={() => handleNavClick(category)}
+                title={category.label}
+                className={`relative px-3 py-2 md:px-5 md:py-3 rounded-xl font-semibold flex items-center gap-2 transition-all ${
+                  isActive
+                    ? 'bg-white text-emerald-600 shadow-lg'
+                    : 'bg-white/20 text-white hover:bg-white/30'
+                }`}
+              >
+                <Icon size={20} />
+                <span className="hidden sm:inline text-sm">{category.label}</span>
+                {hasDrawer && (
+                  <span className="hidden sm:inline">
+                    {isOpen ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Drawer - Sub Items */}
+        {activeDrawerItems && (
+          <div className="mt-3 flex justify-center">
+            <div className="bg-white/95 backdrop-blur rounded-2xl shadow-xl p-2 flex flex-wrap justify-center gap-2">
+              {activeDrawerItems.map((item) => {
+                const ItemIcon = item.icon;
+                const isItemActive = view === item.view;
+
+                return (
+                  <button
+                    key={item.view}
+                    onClick={() => handleSubItemClick(item.view)}
+                    className={`px-4 py-2 rounded-xl font-medium flex items-center gap-2 transition-all ${
+                      isItemActive
+                        ? 'bg-emerald-600 text-white'
+                        : 'text-slate-700 hover:bg-emerald-100'
+                    }`}
+                  >
+                    <ItemIcon size={18} />
+                    <span className="text-sm">{item.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
       </div>
-      <div className="grid grid-cols-5 md:grid-cols-9 gap-2">
-        <NavButton
-          view="dashboard"
-          icon={Home}
-          label="Dashboard"
-          currentView={view}
-          setView={setView}
-        />
-        <NavButton
-          view="checklist"
-          icon={List}
-          label="Checklist"
-          currentView={view}
-          setView={setView}
-        />
-        <NavButton
-          view="submit"
-          icon={Check}
-          label="Submit"
-          currentView={view}
-          setView={setView}
-        />
-        <NavButton
-          view="bills"
-          icon={Receipt}
-          label="Bills"
-          currentView={view}
-          setView={setView}
-        />
-        <NavButton
-          view="assets"
-          icon={Building2}
-          label="Assets"
-          currentView={view}
-          setView={setView}
-        />
-        <NavButton
-          view="onetime"
-          icon={Calendar}
-          label="One-Time"
-          currentView={view}
-          setView={setView}
-        />
-        <NavButton
-          view="propane"
-          icon={Flame}
-          label="Propane"
-          currentView={view}
-          setView={setView}
-        />
-        <NavButton
-          view="analytics"
-          icon={BarChart3}
-          label="Analytics"
-          currentView={view}
-          setView={setView}
-        />
-        <NavButton
-          view="settings"
-          icon={SettingsIcon}
-          label="Settings"
-          currentView={view}
-          setView={setView}
-        />
-      </div>
-    </div>
-  );
+    );
+  };
 
   // ---------- Shell & Routing ----------
   if (loading) {
@@ -1020,21 +1097,5 @@ const BillPayPlanner = () => {
     </div>
   );
 };
-
-// Navigation button component
-const NavButton = ({ view, icon: Icon, label, currentView, setView }) => (
-  <button
-    onClick={() => setView(view)}
-    title={label}
-    className={`p-2 md:px-4 md:py-2 rounded-xl font-semibold flex items-center justify-center gap-2 ${
-      currentView === view
-        ? 'bg-white text-emerald-600'
-        : 'bg-white/20 text-white hover:bg-white/30'
-    }`}
-  >
-    <Icon size={20} className="md:w-[18px] md:h-[18px]" />
-    <span className="hidden md:inline text-sm">{label}</span>
-  </button>
-);
 
 export default BillPayPlanner;
