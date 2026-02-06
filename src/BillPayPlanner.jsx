@@ -481,7 +481,13 @@ const BillPayPlanner = () => {
   );
 
   // Calculate assignment for a bill based on due date
-  const calculateBillAssignment = (dueDate, checks) => {
+  // Returns null if bill is due after the 4-check window
+  const calculateBillAssignment = (dueDate, checks, cutoffDate) => {
+    // If due date is after our cutoff, don't assign yet
+    if (cutoffDate && dueDate > cutoffDate) {
+      return null;
+    }
+
     let idx = 1;
     for (let i = 0; i < checks.length; i++) {
       if (checks[i] <= dueDate) {
@@ -498,16 +504,31 @@ const BillPayPlanner = () => {
     if (!nextPayDates.length) return;
     const checks = nextPayDates.slice(0, 4).map(toLocalMidnight);
 
+    // Calculate cutoff: ~2 weeks after Check #4 (or when Check #5 would be)
+    const check5 = nextPayDates[4] ? toLocalMidnight(nextPayDates[4]) : null;
+    const cutoffDate = check5 || new Date(checks[3].getTime() + 14 * 24 * 60 * 60 * 1000);
+
     // Update legacy billInstances - force reassign all
     setBillInstances((prev) =>
       prev.map((inst) => {
         const due = parseLocalDate(inst.dueDate);
-        const idx = calculateBillAssignment(due, checks);
+        const idx = calculateBillAssignment(due, checks, cutoffDate);
+
+        // If null, bill is too far in future - clear assignment
+        if (idx === null) {
+          return {
+            ...inst,
+            assignedCheck: null,
+            assignedPayDate: null,
+            manuallyAssigned: false,
+          };
+        }
+
         return {
           ...inst,
           assignedCheck: idx,
           assignedPayDate: toYMD(checks[idx - 1]),
-          manuallyAssigned: false, // Clear manual flag on reassign
+          manuallyAssigned: false,
         };
       })
     );
@@ -518,7 +539,19 @@ const BillPayPlanner = () => {
         if (bill.paid) return bill;
         const due = parseMMDDYYYY(bill.dueDate);
         if (!due) return bill;
-        const idx = calculateBillAssignment(due, checks);
+
+        const idx = calculateBillAssignment(due, checks, cutoffDate);
+
+        // If null, bill is too far in future - clear assignment
+        if (idx === null) {
+          return {
+            ...bill,
+            assignedCheck: null,
+            assignedPayDate: null,
+            manuallyAssigned: false,
+          };
+        }
+
         return {
           ...bill,
           assignedCheck: idx,
@@ -534,12 +567,20 @@ const BillPayPlanner = () => {
     if (!nextPayDates.length) return;
     const checks = nextPayDates.slice(0, 4).map(toLocalMidnight);
 
+    // Calculate cutoff: ~2 weeks after Check #4 (or when Check #5 would be)
+    const check5 = nextPayDates[4] ? toLocalMidnight(nextPayDates[4]) : null;
+    const cutoffDate = check5 || new Date(checks[3].getTime() + 14 * 24 * 60 * 60 * 1000);
+
     setBillInstances((prev) =>
       prev.map((inst) => {
         // Skip if already assigned
         if (inst.assignedCheck) return inst;
         const due = parseLocalDate(inst.dueDate);
-        const idx = calculateBillAssignment(due, checks);
+        const idx = calculateBillAssignment(due, checks, cutoffDate);
+
+        // If null, bill is too far in future - don't assign
+        if (idx === null) return inst;
+
         return {
           ...inst,
           assignedCheck: idx,
@@ -554,7 +595,12 @@ const BillPayPlanner = () => {
         if (bill.paid || bill.assignedCheck) return bill;
         const due = parseMMDDYYYY(bill.dueDate);
         if (!due) return bill;
-        const idx = calculateBillAssignment(due, checks);
+
+        const idx = calculateBillAssignment(due, checks, cutoffDate);
+
+        // If null, bill is too far in future - don't assign
+        if (idx === null) return bill;
+
         return {
           ...bill,
           assignedCheck: idx,
