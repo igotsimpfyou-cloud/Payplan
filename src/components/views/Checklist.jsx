@@ -32,8 +32,8 @@ const BillEditModal = ({ bill, nextPayDates, onSave, onClose }) => {
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6">
+    <div className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-50 p-0 sm:p-4">
+      <div className="bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl w-full sm:max-w-md p-4 sm:p-6 max-h-[90vh] overflow-y-auto">
         <div className="flex justify-between items-center mb-4">
           <h3 className="text-xl font-bold text-slate-800">Edit Bill</h3>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600">
@@ -55,20 +55,20 @@ const BillEditModal = ({ bill, nextPayDates, onSave, onClose }) => {
             <label className="block text-sm font-semibold text-slate-600 mb-2">
               Assign to Paycheck
             </label>
-            <div className="grid grid-cols-4 gap-2">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
               {[1, 2, 3, 4].map((checkNum) => {
                 const labelInfo = payDateLabels[checkNum - 1];
                 return (
                   <button
                     key={checkNum}
                     onClick={() => setAssignedCheck(checkNum)}
-                    className={`p-3 rounded-xl font-semibold text-center transition-all ${
+                    className={`p-2.5 sm:p-3 rounded-xl font-semibold text-center transition-all ${
                       assignedCheck === checkNum
                         ? 'bg-emerald-600 text-white'
-                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200 active:bg-slate-300'
                     }`}
                   >
-                    <div className="text-lg">{labelInfo?.label || `#${checkNum}`}</div>
+                    <div className="text-base sm:text-lg">{labelInfo?.label || `#${checkNum}`}</div>
                     {nextPayDates[checkNum - 1] && (
                       <div className="text-xs opacity-75">
                         {new Date(nextPayDates[checkNum - 1]).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}

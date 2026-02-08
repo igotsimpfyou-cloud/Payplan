@@ -1261,7 +1261,7 @@ const BillPayPlanner = () => {
           </div>
 
           {/* Main Navigation - Grid Layout */}
-          <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
+          <div className="grid grid-cols-3 sm:grid-cols-5 gap-1.5 sm:gap-2">
             {navCategories.map((category) => {
               const Icon = category.icon;
               const isActive = activeCategory === category.id;
@@ -1273,7 +1273,7 @@ const BillPayPlanner = () => {
                   key={category.id}
                   onClick={() => handleNavClick(category)}
                   title={category.label}
-                  className={`relative px-2 py-2.5 rounded-xl font-semibold flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2 transition-all border-2 ${
+                  className={`relative px-1.5 sm:px-2 py-2 sm:py-2.5 rounded-xl font-semibold flex flex-col sm:flex-row items-center justify-center gap-0.5 sm:gap-2 transition-all border-2 active:scale-95 ${
                     isActive
                       ? 'bg-white text-emerald-600 shadow-lg border-white'
                       : isOpen
@@ -1281,11 +1281,11 @@ const BillPayPlanner = () => {
                       : 'bg-white/25 text-white border-transparent hover:bg-white/35 hover:border-white/30'
                   }`}
                 >
-                  <Icon size={18} />
-                  <span className="text-xs font-bold">{category.label}</span>
+                  <Icon size={16} className="sm:w-[18px] sm:h-[18px]" />
+                  <span className="text-[10px] sm:text-xs font-bold leading-tight">{category.label}</span>
                   {hasDrawer && (
-                    <span className="absolute top-1 right-1 sm:static">
-                      {isOpen ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                    <span className="absolute top-0.5 right-0.5 sm:static">
+                      {isOpen ? <ChevronUp size={10} className="sm:w-3 sm:h-3" /> : <ChevronDown size={10} className="sm:w-3 sm:h-3" />}
                     </span>
                   )}
                 </button>
@@ -1334,7 +1334,7 @@ const BillPayPlanner = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-emerald-500 via-teal-500 to-cyan-600 p-4 md:p-8">
+    <div className="min-h-screen bg-gradient-to-br from-emerald-500 via-teal-500 to-cyan-600 p-2 sm:p-4 md:p-8">
       <div className="max-w-7xl mx-auto">
         <Header />
 
