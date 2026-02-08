@@ -365,33 +365,40 @@ const formatFullCurrency = (value) => {
 // INVESTMENT CALCULATOR (Ramsey-style)
 // ============================================
 const InvestmentCalculator = () => {
-  const [initialAmount, setInitialAmount] = useState(10000);
-  const [monthlyContribution, setMonthlyContribution] = useState(500);
-  const [years, setYears] = useState(30);
+  const [initialAmount, setInitialAmount] = useState('');
+  const [monthlyContribution, setMonthlyContribution] = useState('');
+  const [years, setYears] = useState('');
   const [annualReturn, setAnnualReturn] = useState(10);
 
+  // Parse values for calculations (empty = 0)
+  const initAmt = Number(initialAmount) || 0;
+  const monthlyAmt = Number(monthlyContribution) || 0;
+  const yearsNum = Number(years) || 0;
+
   const results = useMemo(() => {
+    if (yearsNum <= 0) return { totalValue: 0, totalContributions: 0, totalInterest: 0, yearlyData: [] };
+
     const monthlyRate = annualReturn / 100 / 12;
-    const months = years * 12;
-    const futureValueInitial = initialAmount * Math.pow(1 + monthlyRate, months);
-    const futureValueContributions = monthlyContribution *
+    const months = yearsNum * 12;
+    const futureValueInitial = initAmt * Math.pow(1 + monthlyRate, months);
+    const futureValueContributions = monthlyAmt *
       ((Math.pow(1 + monthlyRate, months) - 1) / monthlyRate);
     const totalValue = futureValueInitial + futureValueContributions;
-    const totalContributions = initialAmount + (monthlyContribution * months);
+    const totalContributions = initAmt + (monthlyAmt * months);
     const totalInterest = totalValue - totalContributions;
 
     const yearlyData = [];
-    let balance = initialAmount;
-    for (let y = 0; y <= years; y++) {
-      yearlyData.push({ year: y, balance, contributions: initialAmount + (monthlyContribution * 12 * y) });
+    let balance = initAmt;
+    for (let y = 0; y <= yearsNum; y++) {
+      yearlyData.push({ year: y, balance, contributions: initAmt + (monthlyAmt * 12 * y) });
       for (let m = 0; m < 12; m++) {
-        balance = balance * (1 + monthlyRate) + monthlyContribution;
+        balance = balance * (1 + monthlyRate) + monthlyAmt;
       }
     }
     return { totalValue, totalContributions, totalInterest, yearlyData };
-  }, [initialAmount, monthlyContribution, years, annualReturn]);
+  }, [initAmt, monthlyAmt, yearsNum, annualReturn]);
 
-  const maxBalance = Math.max(...results.yearlyData.map(d => d.balance));
+  const maxBalance = results.yearlyData.length > 0 ? Math.max(...results.yearlyData.map(d => d.balance)) : 1;
 
   return (
     <div className="space-y-6">
@@ -411,22 +418,22 @@ const InvestmentCalculator = () => {
             <label className="block text-sm font-medium text-slate-600 mb-1">Starting Amount</label>
             <div className="relative">
               <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">$</span>
-              <input type="number" value={initialAmount} onChange={(e) => setInitialAmount(Number(e.target.value))}
-                className="w-full pl-8 pr-4 py-3 border-2 rounded-xl focus:border-emerald-500 focus:outline-none" min={0} />
+              <input type="number" value={initialAmount} onChange={(e) => setInitialAmount(e.target.value)}
+                placeholder="10,000" className="w-full pl-8 pr-4 py-3 border-2 rounded-xl focus:border-emerald-500 focus:outline-none" min={0} />
             </div>
           </div>
           <div>
             <label className="block text-sm font-medium text-slate-600 mb-1">Monthly Contribution</label>
             <div className="relative">
               <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">$</span>
-              <input type="number" value={monthlyContribution} onChange={(e) => setMonthlyContribution(Number(e.target.value))}
-                className="w-full pl-8 pr-4 py-3 border-2 rounded-xl focus:border-emerald-500 focus:outline-none" min={0} />
+              <input type="number" value={monthlyContribution} onChange={(e) => setMonthlyContribution(e.target.value)}
+                placeholder="500" className="w-full pl-8 pr-4 py-3 border-2 rounded-xl focus:border-emerald-500 focus:outline-none" min={0} />
             </div>
           </div>
           <div>
             <label className="block text-sm font-medium text-slate-600 mb-1">Years to Invest</label>
-            <input type="number" value={years} onChange={(e) => setYears(Number(e.target.value))}
-              className="w-full px-4 py-3 border-2 rounded-xl focus:border-emerald-500 focus:outline-none" min={1} max={50} />
+            <input type="number" value={years} onChange={(e) => setYears(e.target.value)}
+              placeholder="30" className="w-full px-4 py-3 border-2 rounded-xl focus:border-emerald-500 focus:outline-none" min={1} max={50} />
           </div>
           <div>
             <label className="block text-sm font-medium text-slate-600 mb-1">Expected Return: {annualReturn}%</label>
@@ -482,24 +489,33 @@ const InvestmentCalculator = () => {
 // RETIREMENT NEEDS CALCULATOR (25x Rule)
 // ============================================
 const RetirementNeedsCalculator = () => {
-  const [currentAge, setCurrentAge] = useState(35);
-  const [retirementAge, setRetirementAge] = useState(65);
-  const [monthlyExpenses, setMonthlyExpenses] = useState(4000);
-  const [currentSavings, setCurrentSavings] = useState(50000);
+  const [currentAge, setCurrentAge] = useState('');
+  const [retirementAge, setRetirementAge] = useState('');
+  const [monthlyExpenses, setMonthlyExpenses] = useState('');
+  const [currentSavings, setCurrentSavings] = useState('');
   const [annualReturn, setAnnualReturn] = useState(10);
 
+  // Parse values for calculations
+  const curAge = Number(currentAge) || 0;
+  const retAge = Number(retirementAge) || 0;
+  const monthExp = Number(monthlyExpenses) || 0;
+  const curSavings = Number(currentSavings) || 0;
+
   const results = useMemo(() => {
-    const annualExpenses = monthlyExpenses * 12;
+    const annualExpenses = monthExp * 12;
     const targetNestEgg = annualExpenses * 25;
-    const yearsToRetirement = retirementAge - currentAge;
+    const yearsToRetirement = Math.max(0, retAge - curAge);
+    if (yearsToRetirement <= 0 || annualExpenses <= 0) {
+      return { annualExpenses, targetNestEgg, monthlyNeeded: 0, progress: 0, yearsToRetirement: 0 };
+    }
     const monthlyRate = annualReturn / 100 / 12;
     const months = yearsToRetirement * 12;
-    const futureValueOfCurrent = currentSavings * Math.pow(1 + monthlyRate, months);
+    const futureValueOfCurrent = curSavings * Math.pow(1 + monthlyRate, months);
     const remaining = targetNestEgg - futureValueOfCurrent;
     const monthlyNeeded = remaining > 0 ? (remaining * monthlyRate) / (Math.pow(1 + monthlyRate, months) - 1) : 0;
-    const progress = (currentSavings / targetNestEgg) * 100;
+    const progress = targetNestEgg > 0 ? (curSavings / targetNestEgg) * 100 : 0;
     return { annualExpenses, targetNestEgg, monthlyNeeded: Math.max(0, monthlyNeeded), progress, yearsToRetirement };
-  }, [currentAge, retirementAge, monthlyExpenses, currentSavings, annualReturn]);
+  }, [curAge, retAge, monthExp, curSavings, annualReturn]);
 
   return (
     <div className="space-y-6">
@@ -515,28 +531,28 @@ const RetirementNeedsCalculator = () => {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <label className="block text-sm font-medium text-slate-600 mb-1">Current Age</label>
-            <input type="number" value={currentAge} onChange={(e) => setCurrentAge(Number(e.target.value))}
-              className="w-full px-4 py-3 border-2 rounded-xl" min={18} max={80} />
+            <input type="number" value={currentAge} onChange={(e) => setCurrentAge(e.target.value)}
+              placeholder="35" className="w-full px-4 py-3 border-2 rounded-xl" min={18} max={80} />
           </div>
           <div>
             <label className="block text-sm font-medium text-slate-600 mb-1">Retirement Age</label>
-            <input type="number" value={retirementAge} onChange={(e) => setRetirementAge(Number(e.target.value))}
-              className="w-full px-4 py-3 border-2 rounded-xl" min={currentAge + 1} max={80} />
+            <input type="number" value={retirementAge} onChange={(e) => setRetirementAge(e.target.value)}
+              placeholder="65" className="w-full px-4 py-3 border-2 rounded-xl" min={curAge + 1} max={80} />
           </div>
           <div>
             <label className="block text-sm font-medium text-slate-600 mb-1">Monthly Expenses in Retirement</label>
             <div className="relative">
               <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">$</span>
-              <input type="number" value={monthlyExpenses} onChange={(e) => setMonthlyExpenses(Number(e.target.value))}
-                className="w-full pl-8 pr-4 py-3 border-2 rounded-xl" min={0} />
+              <input type="number" value={monthlyExpenses} onChange={(e) => setMonthlyExpenses(e.target.value)}
+                placeholder="4,000" className="w-full pl-8 pr-4 py-3 border-2 rounded-xl" min={0} />
             </div>
           </div>
           <div>
             <label className="block text-sm font-medium text-slate-600 mb-1">Current Savings</label>
             <div className="relative">
               <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">$</span>
-              <input type="number" value={currentSavings} onChange={(e) => setCurrentSavings(Number(e.target.value))}
-                className="w-full pl-8 pr-4 py-3 border-2 rounded-xl" min={0} />
+              <input type="number" value={currentSavings} onChange={(e) => setCurrentSavings(e.target.value)}
+                placeholder="50,000" className="w-full pl-8 pr-4 py-3 border-2 rounded-xl" min={0} />
             </div>
           </div>
         </div>
@@ -550,7 +566,7 @@ const RetirementNeedsCalculator = () => {
             <div className="h-full bg-gradient-to-r from-blue-500 to-indigo-500" style={{ width: `${Math.min(100, results.progress)}%` }} />
           </div>
           <div className="flex justify-between text-xs text-slate-500 mt-1">
-            <span>{formatCurrency(currentSavings)} ({results.progress.toFixed(1)}%)</span>
+            <span>{formatCurrency(curSavings)} ({results.progress.toFixed(1)}%)</span>
             <span>{formatCurrency(results.targetNestEgg)}</span>
           </div>
         </div>
@@ -570,31 +586,38 @@ const RetirementNeedsCalculator = () => {
 // NEST EGG CALCULATOR
 // ============================================
 const NestEggCalculator = () => {
-  const [nestEgg, setNestEgg] = useState(1000000);
-  const [monthlyWithdrawal, setMonthlyWithdrawal] = useState(4000);
+  const [nestEgg, setNestEgg] = useState('');
+  const [monthlyWithdrawal, setMonthlyWithdrawal] = useState('');
   const [annualReturn, setAnnualReturn] = useState(6);
   const [inflationRate, setInflationRate] = useState(3);
 
+  // Parse values for calculations
+  const nestEggAmt = Number(nestEgg) || 0;
+  const monthlyAmt = Number(monthlyWithdrawal) || 0;
+
   const results = useMemo(() => {
+    if (nestEggAmt <= 0) {
+      return { years: 0, months: 0, willLastForever: false, withdrawalRate: 0, yearlyData: [{ year: 0, balance: 0 }] };
+    }
     const monthlyRate = annualReturn / 100 / 12;
     const monthlyInflation = inflationRate / 100 / 12;
-    let balance = nestEgg;
+    let balance = nestEggAmt;
     let months = 0;
     const maxMonths = 600;
-    const yearlyData = [{ year: 0, balance: nestEgg }];
+    const yearlyData = [{ year: 0, balance: nestEggAmt }];
 
     while (balance > 0 && months < maxMonths) {
       balance *= (1 + monthlyRate);
-      balance -= monthlyWithdrawal * Math.pow(1 + monthlyInflation, months);
+      balance -= monthlyAmt * Math.pow(1 + monthlyInflation, months);
       months++;
       if (months % 12 === 0) yearlyData.push({ year: months / 12, balance: Math.max(0, balance) });
     }
 
-    const withdrawalRate = (monthlyWithdrawal * 12 / nestEgg) * 100;
+    const withdrawalRate = nestEggAmt > 0 ? (monthlyAmt * 12 / nestEggAmt) * 100 : 0;
     return { years: months / 12, months, willLastForever: months >= maxMonths, withdrawalRate, yearlyData };
-  }, [nestEgg, monthlyWithdrawal, annualReturn, inflationRate]);
+  }, [nestEggAmt, monthlyAmt, annualReturn, inflationRate]);
 
-  const maxBalance = Math.max(...results.yearlyData.map(d => d.balance));
+  const maxBalance = results.yearlyData.length > 0 ? Math.max(...results.yearlyData.map(d => d.balance)) : 1;
 
   return (
     <div className="space-y-6">
@@ -612,16 +635,16 @@ const NestEggCalculator = () => {
             <label className="block text-sm font-medium text-slate-600 mb-1">Nest Egg</label>
             <div className="relative">
               <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">$</span>
-              <input type="number" value={nestEgg} onChange={(e) => setNestEgg(Number(e.target.value))}
-                className="w-full pl-8 pr-4 py-3 border-2 rounded-xl" min={0} step={10000} />
+              <input type="number" value={nestEgg} onChange={(e) => setNestEgg(e.target.value)}
+                placeholder="1,000,000" className="w-full pl-8 pr-4 py-3 border-2 rounded-xl" min={0} step={10000} />
             </div>
           </div>
           <div>
             <label className="block text-sm font-medium text-slate-600 mb-1">Monthly Withdrawal</label>
             <div className="relative">
               <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">$</span>
-              <input type="number" value={monthlyWithdrawal} onChange={(e) => setMonthlyWithdrawal(Number(e.target.value))}
-                className="w-full pl-8 pr-4 py-3 border-2 rounded-xl" min={0} />
+              <input type="number" value={monthlyWithdrawal} onChange={(e) => setMonthlyWithdrawal(e.target.value)}
+                placeholder="4,000" className="w-full pl-8 pr-4 py-3 border-2 rounded-xl" min={0} />
             </div>
           </div>
           <div>
@@ -663,25 +686,25 @@ const NestEggCalculator = () => {
 // ============================================
 const MonteCarloSimulator = () => {
   // Basic info
-  const [currentAge, setCurrentAge] = useState(35);
-  const [retirementAge, setRetirementAge] = useState(65);
-  const [lifeExpectancy, setLifeExpectancy] = useState(95);
+  const [currentAge, setCurrentAge] = useState('');
+  const [retirementAge, setRetirementAge] = useState('');
+  const [lifeExpectancy, setLifeExpectancy] = useState('');
 
   // Account balances
-  const [traditionalBalance, setTraditionalBalance] = useState(100000);
-  const [rothBalance, setRothBalance] = useState(50000);
-  const [taxableBalance, setTaxableBalance] = useState(25000);
+  const [traditionalBalance, setTraditionalBalance] = useState('');
+  const [rothBalance, setRothBalance] = useState('');
+  const [taxableBalance, setTaxableBalance] = useState('');
 
   // Contributions
-  const [annualContribution, setAnnualContribution] = useState(20000);
+  const [annualContribution, setAnnualContribution] = useState('');
   const [contributionType, setContributionType] = useState('split'); // 'traditional', 'roth', 'split'
 
   // Spending
-  const [annualSpending, setAnnualSpending] = useState(50000);
+  const [annualSpending, setAnnualSpending] = useState('');
 
   // Social Security
-  const [ssBaseBenefit, setSsBaseBenefit] = useState(24000); // At FRA
-  const [ssClaimingAge, setSsClaimingAge] = useState(67);
+  const [ssBaseBenefit, setSsBaseBenefit] = useState('');
+  const [ssClaimingAge, setSsClaimingAge] = useState('');
 
   // Allocation
   const [stocksPercent, setStocksPercent] = useState(70);
@@ -693,28 +716,45 @@ const MonteCarloSimulator = () => {
   const [inflationRate, setInflationRate] = useState(0.025);
   const [taxRate, setTaxRate] = useState(0.22);
   const [includeHealthcare, setIncludeHealthcare] = useState(true);
-  const [healthcareCostBase, setHealthcareCostBase] = useState(8000);
+  const [healthcareCostBase, setHealthcareCostBase] = useState('');
 
   // Results
   const [results, setResults] = useState(null);
   const [isRunning, setIsRunning] = useState(false);
   const [progress, setProgress] = useState(0);
 
+  // Parse values for calculations
+  const curAge = Number(currentAge) || 0;
+  const retAge = Number(retirementAge) || 0;
+  const lifeExp = Number(lifeExpectancy) || 0;
+  const tradBal = Number(traditionalBalance) || 0;
+  const rothBal = Number(rothBalance) || 0;
+  const taxBal = Number(taxableBalance) || 0;
+  const annContrib = Number(annualContribution) || 0;
+  const annSpend = Number(annualSpending) || 0;
+  const ssBenefit = Number(ssBaseBenefit) || 0;
+  const ssAge = Number(ssClaimingAge) || 67;
+  const healthCost = Number(healthcareCostBase) || 0;
+
   const cashPercent = 100 - stocksPercent - bondsPercent;
-  const totalBalance = traditionalBalance + rothBalance + taxableBalance;
+  const totalBalance = tradBal + rothBal + taxBal;
 
   const runSimulations = () => {
+    if (curAge <= 0 || retAge <= 0 || lifeExp <= 0) {
+      alert('Please enter your current age, retirement age, and life expectancy');
+      return;
+    }
     setIsRunning(true);
     setProgress(0);
 
     setTimeout(() => {
       const params = {
-        currentAge, retirementAge, lifeExpectancy,
-        traditionalBalance, rothBalance, taxableBalance,
-        annualContribution, contributionType,
-        annualSpending, ssBaseBenefit, ssClaimingAge,
+        currentAge: curAge, retirementAge: retAge, lifeExpectancy: lifeExp,
+        traditionalBalance: tradBal, rothBalance: rothBal, taxableBalance: taxBal,
+        annualContribution: annContrib, contributionType,
+        annualSpending: annSpend, ssBaseBenefit: ssBenefit, ssClaimingAge: ssAge,
         stocksPercent, bondsPercent, useGlidePath,
-        inflationRate, taxRate, includeHealthcare, healthcareCostBase,
+        inflationRate, taxRate, includeHealthcare, healthcareCostBase: healthCost,
       };
 
       const simulationResults = runEnhancedMonteCarloSimulation(params, setProgress);
@@ -783,18 +823,18 @@ const MonteCarloSimulator = () => {
         <div className="grid grid-cols-3 gap-4">
           <div>
             <label className="block text-sm text-slate-600 mb-1">Current Age</label>
-            <input type="number" value={currentAge} onChange={(e) => setCurrentAge(Number(e.target.value))}
-              className="w-full px-3 py-2 border-2 rounded-xl" min={18} max={80} />
+            <input type="number" value={currentAge} onChange={(e) => setCurrentAge(e.target.value)}
+              placeholder="35" className="w-full px-3 py-2 border-2 rounded-xl" min={18} max={80} />
           </div>
           <div>
             <label className="block text-sm text-slate-600 mb-1">Retire At</label>
-            <input type="number" value={retirementAge} onChange={(e) => setRetirementAge(Number(e.target.value))}
-              className="w-full px-3 py-2 border-2 rounded-xl" min={currentAge + 1} max={80} />
+            <input type="number" value={retirementAge} onChange={(e) => setRetirementAge(e.target.value)}
+              placeholder="65" className="w-full px-3 py-2 border-2 rounded-xl" min={curAge + 1} max={80} />
           </div>
           <div>
             <label className="block text-sm text-slate-600 mb-1">Plan Until Age</label>
-            <input type="number" value={lifeExpectancy} onChange={(e) => setLifeExpectancy(Number(e.target.value))}
-              className="w-full px-3 py-2 border-2 rounded-xl" min={retirementAge + 1} max={110} />
+            <input type="number" value={lifeExpectancy} onChange={(e) => setLifeExpectancy(e.target.value)}
+              placeholder="95" className="w-full px-3 py-2 border-2 rounded-xl" min={retAge + 1} max={110} />
           </div>
         </div>
       </div>
@@ -809,8 +849,8 @@ const MonteCarloSimulator = () => {
             <label className="block text-sm text-slate-600 mb-1">Traditional 401(k)/IRA</label>
             <div className="relative">
               <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">$</span>
-              <input type="number" value={traditionalBalance} onChange={(e) => setTraditionalBalance(Number(e.target.value))}
-                className="w-full pl-8 pr-4 py-2 border-2 rounded-xl" min={0} step={1000} />
+              <input type="number" value={traditionalBalance} onChange={(e) => setTraditionalBalance(e.target.value)}
+                placeholder="100,000" className="w-full pl-8 pr-4 py-2 border-2 rounded-xl" min={0} step={1000} />
             </div>
             <p className="text-xs text-slate-500 mt-1">Taxed on withdrawal</p>
           </div>
@@ -818,8 +858,8 @@ const MonteCarloSimulator = () => {
             <label className="block text-sm text-slate-600 mb-1">Roth 401(k)/IRA</label>
             <div className="relative">
               <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">$</span>
-              <input type="number" value={rothBalance} onChange={(e) => setRothBalance(Number(e.target.value))}
-                className="w-full pl-8 pr-4 py-2 border-2 rounded-xl" min={0} step={1000} />
+              <input type="number" value={rothBalance} onChange={(e) => setRothBalance(e.target.value)}
+                placeholder="50,000" className="w-full pl-8 pr-4 py-2 border-2 rounded-xl" min={0} step={1000} />
             </div>
             <p className="text-xs text-slate-500 mt-1">Tax-free withdrawal</p>
           </div>
@@ -827,8 +867,8 @@ const MonteCarloSimulator = () => {
             <label className="block text-sm text-slate-600 mb-1">Taxable Brokerage</label>
             <div className="relative">
               <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">$</span>
-              <input type="number" value={taxableBalance} onChange={(e) => setTaxableBalance(Number(e.target.value))}
-                className="w-full pl-8 pr-4 py-2 border-2 rounded-xl" min={0} step={1000} />
+              <input type="number" value={taxableBalance} onChange={(e) => setTaxableBalance(e.target.value)}
+                placeholder="25,000" className="w-full pl-8 pr-4 py-2 border-2 rounded-xl" min={0} step={1000} />
             </div>
             <p className="text-xs text-slate-500 mt-1">Capital gains tax</p>
           </div>
@@ -849,8 +889,8 @@ const MonteCarloSimulator = () => {
             <label className="block text-sm text-slate-600 mb-1">Annual Contribution (until retirement)</label>
             <div className="relative">
               <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">$</span>
-              <input type="number" value={annualContribution} onChange={(e) => setAnnualContribution(Number(e.target.value))}
-                className="w-full pl-8 pr-4 py-2 border-2 rounded-xl" min={0} step={1000} />
+              <input type="number" value={annualContribution} onChange={(e) => setAnnualContribution(e.target.value)}
+                placeholder="20,000" className="w-full pl-8 pr-4 py-2 border-2 rounded-xl" min={0} step={1000} />
             </div>
           </div>
           <div>
@@ -866,8 +906,8 @@ const MonteCarloSimulator = () => {
             <label className="block text-sm text-slate-600 mb-1">Annual Spending in Retirement</label>
             <div className="relative">
               <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">$</span>
-              <input type="number" value={annualSpending} onChange={(e) => setAnnualSpending(Number(e.target.value))}
-                className="w-full pl-8 pr-4 py-2 border-2 rounded-xl" min={0} step={1000} />
+              <input type="number" value={annualSpending} onChange={(e) => setAnnualSpending(e.target.value)}
+                placeholder="50,000" className="w-full pl-8 pr-4 py-2 border-2 rounded-xl" min={0} step={1000} />
             </div>
           </div>
         </div>
@@ -883,14 +923,14 @@ const MonteCarloSimulator = () => {
             <label className="block text-sm text-slate-600 mb-1">Estimated Annual Benefit (at age 67)</label>
             <div className="relative">
               <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">$</span>
-              <input type="number" value={ssBaseBenefit} onChange={(e) => setSsBaseBenefit(Number(e.target.value))}
-                className="w-full pl-8 pr-4 py-2 border-2 rounded-xl" min={0} step={1000} />
+              <input type="number" value={ssBaseBenefit} onChange={(e) => setSsBaseBenefit(e.target.value)}
+                placeholder="24,000" className="w-full pl-8 pr-4 py-2 border-2 rounded-xl" min={0} step={1000} />
             </div>
             <p className="text-xs text-slate-500 mt-1">Check ssa.gov for your estimate</p>
           </div>
           <div>
-            <label className="block text-sm text-slate-600 mb-1">Claiming Age: {ssClaimingAge}</label>
-            <input type="range" value={ssClaimingAge} onChange={(e) => setSsClaimingAge(Number(e.target.value))}
+            <label className="block text-sm text-slate-600 mb-1">Claiming Age: {ssAge}</label>
+            <input type="range" value={ssClaimingAge} onChange={(e) => setSsClaimingAge(e.target.value)}
               className="w-full" min={62} max={70} step={1} />
             <div className="flex justify-between text-xs text-slate-500">
               <span>62 (-30%)</span>
@@ -898,7 +938,7 @@ const MonteCarloSimulator = () => {
               <span>70 (+24%)</span>
             </div>
             <p className="text-center text-sm font-medium mt-2">
-              Adjusted benefit: {formatFullCurrency(Math.round(ssBaseBenefit * (SS_ADJUSTMENT[ssClaimingAge] || 1)))}/year
+              Adjusted benefit: {formatFullCurrency(Math.round(ssBenefit * (SS_ADJUSTMENT[ssAge] || 1)))}/year
             </p>
           </div>
         </div>
@@ -917,7 +957,7 @@ const MonteCarloSimulator = () => {
             <span className="font-medium">Use automatic glide path (recommended)</span>
           </label>
           <p className="text-sm text-slate-500 ml-7">
-            Automatically shifts from stocks to bonds as you age (starts ~{110 - currentAge}% stocks)
+            Automatically shifts from stocks to bonds as you age {curAge > 0 ? `(starts ~${110 - curAge}% stocks)` : ''}
           </p>
         </div>
 
@@ -990,8 +1030,8 @@ const MonteCarloSimulator = () => {
                 <label className="block text-sm text-slate-600 mb-1">Annual Healthcare Cost (today's $)</label>
                 <div className="relative">
                   <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">$</span>
-                  <input type="number" value={healthcareCostBase} onChange={(e) => setHealthcareCostBase(Number(e.target.value))}
-                    className="w-full pl-8 pr-4 py-2 border-2 rounded-xl" min={0} step={1000} />
+                  <input type="number" value={healthcareCostBase} onChange={(e) => setHealthcareCostBase(e.target.value)}
+                    placeholder="8,000" className="w-full pl-8 pr-4 py-2 border-2 rounded-xl" min={0} step={1000} />
                 </div>
               </div>
             )}
