@@ -1,15 +1,21 @@
 import React, { useMemo } from 'react';
-import { X, Flame, TrendingUp, Calendar, PieChart, Archive } from 'lucide-react';
+import { X, Flame, TrendingUp, Calendar, PieChart, Archive, Receipt } from 'lucide-react';
 import { parseAmt } from '../../utils/formatters';
 import { parseMMDDYYYY } from '../../utils/billDatabase';
+import { parseLocalDate } from '../../utils/dateHelpers';
 
-const CATEGORIES = ['utilities', 'subscription', 'insurance', 'loan', 'rent', 'other'];
+// Extended categories to include receipt categories
+const CATEGORIES = ['utilities', 'subscription', 'insurance', 'loan', 'rent', 'groceries', 'dining', 'transport', 'shopping', 'other'];
 const CATEGORY_COLORS = {
   utilities: '#10b981',
   subscription: '#6366f1',
   insurance: '#f59e0b',
   loan: '#ef4444',
   rent: '#8b5cf6',
+  groceries: '#22c55e',
+  dining: '#f97316',
+  transport: '#3b82f6',
+  shopping: '#ec4899',
   other: '#64748b',
 };
 
@@ -19,6 +25,7 @@ export const Analytics = ({
   billInstances,
   bills = [],           // New database format
   historicalBills = [], // Archived bills (12+ months)
+  scannedReceipts = [], // Receipts from receipt scanner
   nextPayDates,
   paySchedule,
   budgets,
@@ -43,11 +50,42 @@ export const Analytics = ({
       _date: new Date(inst.dueDate),
     }));
   }, [bills, historicalBills, billInstances]);
+
+  // Normalize receipts with date objects
+  const receiptsNormalized = useMemo(() => {
+    return scannedReceipts.map(receipt => ({
+      ...receipt,
+      _date: parseLocalDate(receipt.date),
+      amount: parseAmt(receipt.amount),
+    }));
+  }, [scannedReceipts]);
+
+  // Get current month for filtering
+  const currentMonth = useMemo(() => {
+    const now = new Date();
+    return { year: now.getFullYear(), month: now.getMonth() };
+  }, []);
+
+  // Current month receipts
+  const currentMonthReceipts = useMemo(() => {
+    return receiptsNormalized.filter(r =>
+      r._date.getFullYear() === currentMonth.year &&
+      r._date.getMonth() === currentMonth.month
+    );
+  }, [receiptsNormalized, currentMonth]);
+
   const thisMonthByCategory = CATEGORIES.map((cat) => {
-    const sum = currentMonthInstances
+    // Sum from bills
+    const billSum = currentMonthInstances
       .filter((i) => i.category === cat)
       .reduce((s, i) => s + parseAmt(i.actualPaid ?? i.amountEstimate), 0);
-    return { cat, sum, cap: parseAmt(budgets[cat] || 0) };
+
+    // Sum from receipts
+    const receiptSum = currentMonthReceipts
+      .filter((r) => r.category === cat)
+      .reduce((s, r) => s + r.amount, 0);
+
+    return { cat, sum: billSum + receiptSum, cap: parseAmt(budgets[cat] || 0) };
   });
 
   // === 1. Bill Payment Streak ===
@@ -90,6 +128,7 @@ export const Analytics = ({
       const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
       const monthName = date.toLocaleDateString('en-US', { month: 'short' });
 
+      // Bills for this month
       const monthBills = allBillsNormalized.filter((b) => {
         return (
           b._date.getFullYear() === date.getFullYear() &&
@@ -97,17 +136,29 @@ export const Analytics = ({
         );
       });
 
-      const total = monthBills.reduce(
+      const billTotal = monthBills.reduce(
         (sum, b) => sum + parseAmt(b.actualPaid ?? b.amountEstimate),
         0
       );
 
-      months.push({ monthKey, monthName, total, isCurrent: i === 0 });
+      // Receipts for this month
+      const monthReceipts = receiptsNormalized.filter((r) => {
+        return (
+          r._date.getFullYear() === date.getFullYear() &&
+          r._date.getMonth() === date.getMonth()
+        );
+      });
+
+      const receiptTotal = monthReceipts.reduce((sum, r) => sum + r.amount, 0);
+
+      const total = billTotal + receiptTotal;
+
+      months.push({ monthKey, monthName, total, billTotal, receiptTotal, isCurrent: i === 0 });
     }
 
     const maxSpend = Math.max(...months.map((m) => m.total), 1);
     return { months, maxSpend };
-  }, [allBillsNormalized]);
+  }, [allBillsNormalized, receiptsNormalized]);
 
   // === 3. Cash Flow Forecast (Next 30 Days) ===
   const cashFlowForecast = useMemo(() => {

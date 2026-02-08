@@ -1458,6 +1458,7 @@ const BillPayPlanner = () => {
             billInstances={billInstances}
             bills={bills}
             historicalBills={historicalBills}
+            scannedReceipts={scannedReceipts}
             nextPayDates={nextPayDates}
             paySchedule={paySchedule}
             budgets={budgets}
