@@ -1124,10 +1124,25 @@ const BillPayPlanner = () => {
       const currentMonth = today.getMonth();
       const currentYear = today.getFullYear();
       const payAmount = parseAmt(paySchedule.payAmount);
-      paychecksThisMonth = nextPayDates.filter(
+
+      // Get paychecks for this month
+      const thisMonthPaychecks = nextPayDates.filter(
         (d) => d.getMonth() === currentMonth && d.getFullYear() === currentYear
-      ).length;
-      monthlyIncome = payAmount * paychecksThisMonth;
+      );
+      paychecksThisMonth = thisMonthPaychecks.length;
+
+      // Calculate monthly income using actual pay entries when available
+      monthlyIncome = thisMonthPaychecks.reduce((total, paycheckDate) => {
+        // Look for an actual pay entry for this date
+        const dateStr = toYMD(paycheckDate);
+        const actualEntry = actualPayEntries.find(entry => entry.payDate === dateStr);
+
+        if (actualEntry) {
+          return total + parseAmt(actualEntry.amount);
+        }
+        return total + payAmount; // Use estimated amount if no actual entry
+      }, 0);
+
       nextPaycheckDate = nextPayDates.find((d) => d >= today);
       if (nextPaycheckDate) {
         const diff = nextPaycheckDate.getTime() - today.getTime();
@@ -1146,7 +1161,7 @@ const BillPayPlanner = () => {
       nextPaycheckDate,
       daysUntilNextPaycheck,
     };
-  }, [currentMonthInstances, oneTimeBills, paySchedule, nextPayDates]);
+  }, [currentMonthInstances, oneTimeBills, paySchedule, nextPayDates, actualPayEntries]);
 
   // ---------- Navigation Configuration ----------
   const navCategories = [
@@ -1330,9 +1345,12 @@ const BillPayPlanner = () => {
             billInstances={billInstances}
             bills={bills}
             currentMonthInstances={currentMonthInstances}
+            scannedReceipts={scannedReceipts}
+            actualPayEntries={actualPayEntries}
             nextPayDates={nextPayDates}
             perCheckEnvelopeSum={perCheckEnvelopeSum()}
             onToggleInstancePaid={toggleInstancePaid}
+            onNavigateToChecklist={() => setView('checklist')}
           />
         )}
         {view === 'bills' && (

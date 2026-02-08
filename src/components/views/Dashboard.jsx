@@ -1,7 +1,7 @@
 import React from 'react';
 import { DollarSign, TrendingUp, AlertTriangle, CheckCircle, Clock, Wallet, Check } from 'lucide-react';
 import { parseAmt } from '../../utils/formatters';
-import { parseLocalDate, formatPayDatesAsMonthCheck } from '../../utils/dateHelpers';
+import { parseLocalDate, formatPayDatesAsMonthCheck, toYMD } from '../../utils/dateHelpers';
 
 export const Dashboard = ({
   overview,
@@ -9,9 +9,12 @@ export const Dashboard = ({
   billInstances,
   currentMonthInstances = [], // New: bills for current month view
   bills = [],                 // New: all active bills
+  scannedReceipts = [],       // Receipts from receipt scanner
+  actualPayEntries = [],      // Actual pay amounts logged
   nextPayDates,
   perCheckEnvelopeSum,
   onToggleInstancePaid,
+  onNavigateToChecklist,      // Navigate to checklist view
 }) => {
   // Use new bills array if available, fallback to legacy billInstances
   const allBills = bills.length > 0 ? bills : billInstances;
@@ -24,8 +27,15 @@ export const Dashboard = ({
 
   const fourCheckPlan = React.useMemo(() => {
     const checks = nextPayDates.slice(0, 4);
-    if (!checks.length) return { checks: [], groups: [], totals: [], leftovers: [], labels: [] };
-    const perCheck = parseAmt(paySchedule?.payAmount);
+    if (!checks.length) return { checks: [], groups: [], totals: [], leftovers: [], labels: [], receiptTotals: [], perCheckAmounts: [] };
+    const defaultPerCheck = parseAmt(paySchedule?.payAmount);
+
+    // Calculate actual pay amount for each check (use actual if logged, otherwise estimated)
+    const perCheckAmounts = checks.map(checkDate => {
+      const dateStr = toYMD(checkDate);
+      const actualEntry = actualPayEntries.find(entry => entry.payDate === dateStr);
+      return actualEntry ? parseAmt(actualEntry.amount) : defaultPerCheck;
+    });
 
     // Group bills by their assigned check
     const groups = [1, 2, 3, 4].map((idx) =>
@@ -44,10 +54,25 @@ export const Dashboard = ({
         })
     );
     const totals = groups.map(g => g.reduce((s, i) => s + parseAmt(i.amountEstimate ?? i.amount), 0));
-    const leftovers = totals.map(t => perCheck - perCheckEnvelopeSum - t);
+
+    // Group receipts by pay period (between check dates)
+    const receiptTotals = checks.map((checkDate, idx) => {
+      const periodStart = idx === 0 ? new Date(0) : new Date(checks[idx - 1]);
+      const periodEnd = new Date(checkDate);
+
+      return scannedReceipts
+        .filter(r => {
+          const receiptDate = parseLocalDate(r.date);
+          return receiptDate > periodStart && receiptDate <= periodEnd;
+        })
+        .reduce((sum, r) => sum + parseAmt(r.amount), 0);
+    });
+
+    // Subtract both bills and receipts from leftover (using actual pay when available)
+    const leftovers = totals.map((t, i) => perCheckAmounts[i] - perCheckEnvelopeSum - t - receiptTotals[i]);
     const labels = payDateLabels.slice(0, 4).map(p => p?.label || '');
-    return { checks, groups, totals, leftovers, labels };
-  }, [allBills, nextPayDates, paySchedule, perCheckEnvelopeSum, payDateLabels]);
+    return { checks, groups, totals, leftovers, labels, receiptTotals, perCheckAmounts };
+  }, [allBills, nextPayDates, paySchedule, perCheckEnvelopeSum, payDateLabels, scannedReceipts, actualPayEntries]);
 
   // Check for underfunded checks
   const underfundedChecks = fourCheckPlan.leftovers
@@ -217,11 +242,12 @@ export const Dashboard = ({
               return (
                 <div
                   key={idx}
-                  className={`p-4 rounded-xl border-2 transition-all ${
+                  className={`p-4 rounded-xl border-2 transition-all cursor-pointer ${
                     isUnderfunded
-                      ? 'bg-red-50 border-red-300'
-                      : 'bg-slate-50 border-slate-200 hover:border-slate-300'
+                      ? 'bg-red-50 border-red-300 hover:border-red-400'
+                      : 'bg-slate-50 border-slate-200 hover:border-emerald-400'
                   }`}
+                  onClick={() => onNavigateToChecklist && onNavigateToChecklist()}
                 >
                   <div className="flex items-center justify-between mb-2">
                     <div className="flex items-center gap-2">
@@ -266,7 +292,7 @@ export const Dashboard = ({
                       {bucket.slice(0, 4).map((b) => (
                         <button
                           key={b.id}
-                          onClick={() => onToggleInstancePaid(b.id)}
+                          onClick={(e) => { e.stopPropagation(); onToggleInstancePaid(b.id); }}
                           className={`w-full flex items-center justify-between text-sm p-1.5 rounded-lg transition-colors ${
                             b.paid
                               ? 'bg-green-100 hover:bg-green-200'
