@@ -1415,6 +1415,7 @@ const BillPayPlanner = () => {
                           : bill.assignedPayDate,
                         paid: updatedInstance.paid,
                         paidDate: updatedInstance.paidDate,
+                        actualPaid: updatedInstance.actualPaid,
                         manuallyAssigned: true, // Mark as manually assigned
                       }
                     : bill

@@ -7,9 +7,15 @@ import { parseLocalDate, formatPayDatesAsMonthCheck, getMonthCheckLabel } from '
 const BillEditModal = ({ bill, nextPayDates, onSave, onClose }) => {
   const [assignedCheck, setAssignedCheck] = useState(bill.assignedCheck || 1);
   const [paidDate, setPaidDate] = useState(bill.paidDate || '');
+  const [actualPaid, setActualPaid] = useState(
+    bill.actualPaid != null ? bill.actualPaid.toString() : ''
+  );
 
   // Get Month.Check# labels for all pay dates
   const payDateLabels = formatPayDatesAsMonthCheck(nextPayDates);
+
+  // Check if this is a variable/estimated bill
+  const isVariable = bill.isVariable || bill.amountEstimate !== bill.amount;
 
   const handleSave = () => {
     onSave({
@@ -20,6 +26,7 @@ const BillEditModal = ({ bill, nextPayDates, onSave, onClose }) => {
         : bill.assignedPayDate,
       paidDate: paidDate || null,
       paid: !!paidDate,
+      actualPaid: actualPaid ? parseAmt(actualPaid) : null,
     });
     onClose();
   };
@@ -92,6 +99,34 @@ const BillEditModal = ({ bill, nextPayDates, onSave, onClose }) => {
                 Clear paid date (mark as unpaid)
               </button>
             )}
+          </div>
+
+          {/* Actual Amount Paid */}
+          <div>
+            <label className="block text-sm font-semibold text-slate-600 mb-2">
+              Actual Amount Paid
+              {isVariable && <span className="text-amber-600 ml-1">(estimated bill)</span>}
+            </label>
+            <div className="relative">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">$</span>
+              <input
+                type="number"
+                step="0.01"
+                value={actualPaid}
+                onChange={(e) => setActualPaid(e.target.value)}
+                placeholder={parseAmt(bill.amountEstimate).toFixed(2)}
+                className="w-full pl-8 pr-4 py-3 border-2 rounded-xl focus:border-emerald-500 focus:outline-none"
+              />
+            </div>
+            <p className="text-xs text-slate-500 mt-1">
+              Estimated: ${parseAmt(bill.amountEstimate).toFixed(2)}
+              {actualPaid && (
+                <span className={`ml-2 font-medium ${parseAmt(actualPaid) > parseAmt(bill.amountEstimate) ? 'text-red-600' : 'text-green-600'}`}>
+                  ({parseAmt(actualPaid) > parseAmt(bill.amountEstimate) ? '+' : ''}
+                  ${(parseAmt(actualPaid) - parseAmt(bill.amountEstimate)).toFixed(2)})
+                </span>
+              )}
+            </p>
           </div>
         </div>
 
