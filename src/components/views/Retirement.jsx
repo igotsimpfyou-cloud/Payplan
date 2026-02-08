@@ -723,6 +723,14 @@ const MonteCarloSimulator = () => {
   const [isRunning, setIsRunning] = useState(false);
   const [progress, setProgress] = useState(0);
 
+  // Scenario comparison
+  const [savedScenarios, setSavedScenarios] = useState([]);
+  const [scenarioName, setScenarioName] = useState('');
+  const [showScenarios, setShowScenarios] = useState(false);
+
+  // What-if adjustments
+  const [showWhatIf, setShowWhatIf] = useState(false);
+
   // Parse values for calculations
   const curAge = Number(currentAge) || 0;
   const retAge = Number(retirementAge) || 0;
@@ -785,161 +793,236 @@ const MonteCarloSimulator = () => {
     return 'Needs Work';
   };
 
+  // Calculate safe withdrawal rate
+  const calculateSWR = () => {
+    if (!results || totalBalance <= 0) return null;
+    const yearsInRetirement = lifeExp - retAge;
+    // Use the 4% rule as baseline, adjust based on success rate
+    const baseRate = 4.0;
+    const successAdjustment = (results.successRate - 80) * 0.05; // +/- 0.05% per % above/below 80%
+    const suggestedSWR = Math.max(2.5, Math.min(5.5, baseRate + successAdjustment));
+    const sustainableSpending = totalBalance * (suggestedSWR / 100);
+    return { rate: suggestedSWR, spending: sustainableSpending, yearsInRetirement };
+  };
+
+  // Save current scenario
+  const saveScenario = () => {
+    if (!results) return;
+    const name = scenarioName || `Scenario ${savedScenarios.length + 1}`;
+    const scenario = {
+      id: Date.now(),
+      name,
+      successRate: results.successRate,
+      medianBalance: results.medianFinalBalance,
+      params: {
+        currentAge: curAge, retirementAge: retAge, lifeExpectancy: lifeExp,
+        totalBalance, annualSpending: annSpend, annualContribution: annContrib,
+        ssBaseBenefit: ssBenefit, ssClaimingAge: ssAge,
+      },
+    };
+    setSavedScenarios([...savedScenarios, scenario]);
+    setScenarioName('');
+  };
+
+  // Quick what-if adjustments
+  const quickAdjustments = [
+    { label: 'Retire 2 years later', effect: '+2 years', apply: () => setRetirementAge(String(retAge + 2)) },
+    { label: 'Spend 10% less', effect: '-10%', apply: () => setAnnualSpending(String(Math.round(annSpend * 0.9))) },
+    { label: 'Save $5K more/year', effect: '+$5K', apply: () => setAnnualContribution(String(annContrib + 5000)) },
+    { label: 'Delay SS to 70', effect: '+24%', apply: () => setSsClaimingAge('70') },
+  ];
+
+  // Success rate gauge SVG component
+  const SuccessGauge = ({ rate }) => {
+    const angle = (rate / 100) * 180 - 90; // -90 to 90 degrees
+    const getGaugeColor = (r) => {
+      if (r >= 90) return '#22c55e';
+      if (r >= 75) return '#10b981';
+      if (r >= 60) return '#eab308';
+      return '#ef4444';
+    };
+    return (
+      <div className="relative w-48 h-24 mx-auto">
+        <svg viewBox="0 0 100 55" className="w-full h-full">
+          {/* Background arc */}
+          <path d="M 5 50 A 45 45 0 0 1 95 50" fill="none" stroke="#e2e8f0" strokeWidth="8" strokeLinecap="round" />
+          {/* Colored segments */}
+          <path d="M 5 50 A 45 45 0 0 1 27.5 14.5" fill="none" stroke="#ef4444" strokeWidth="8" strokeLinecap="round" />
+          <path d="M 27.5 14.5 A 45 45 0 0 1 50 5" fill="none" stroke="#eab308" strokeWidth="8" strokeLinecap="round" />
+          <path d="M 50 5 A 45 45 0 0 1 72.5 14.5" fill="none" stroke="#10b981" strokeWidth="8" strokeLinecap="round" />
+          <path d="M 72.5 14.5 A 45 45 0 0 1 95 50" fill="none" stroke="#22c55e" strokeWidth="8" strokeLinecap="round" />
+          {/* Needle */}
+          <g transform={`rotate(${angle}, 50, 50)`}>
+            <line x1="50" y1="50" x2="50" y2="15" stroke={getGaugeColor(rate)} strokeWidth="2.5" strokeLinecap="round" />
+            <circle cx="50" cy="50" r="4" fill={getGaugeColor(rate)} />
+          </g>
+        </svg>
+        <div className="absolute bottom-0 left-0 text-xs text-slate-400">0%</div>
+        <div className="absolute bottom-0 right-0 text-xs text-slate-400">100%</div>
+      </div>
+    );
+  };
+
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 rounded-2xl p-6 text-white">
-        <div className="flex items-center gap-3 mb-2">
-          <Zap size={28} />
-          <h2 className="text-2xl font-bold">Advanced Monte Carlo Simulator</h2>
+      <div className="bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 rounded-2xl p-4 sm:p-6 text-white">
+        <div className="flex items-center gap-2 sm:gap-3 mb-2">
+          <Zap size={24} className="sm:w-7 sm:h-7" />
+          <h2 className="text-xl sm:text-2xl font-bold">Monte Carlo Simulator</h2>
         </div>
-        <p className="text-indigo-100">
+        <p className="text-indigo-100 text-sm sm:text-base">
           Professional-grade simulation with {SIMULATIONS.toLocaleString()} scenarios, tax optimization,
-          Social Security timing, healthcare costs, and automatic rebalancing.
+          and automatic rebalancing.
         </p>
       </div>
 
       {/* Feature badges */}
-      <div className="flex flex-wrap gap-2">
+      <div className="flex flex-wrap gap-1.5 sm:gap-2">
         {[
-          { icon: Zap, label: '10,000 Simulations' },
+          { icon: Zap, label: '10K Sims' },
           { icon: TrendingUp, label: 'Glide Path' },
-          { icon: DollarSign, label: 'Tax Optimization' },
-          { icon: Shield, label: 'Social Security' },
-          { icon: Heart, label: 'Healthcare Costs' },
-          { icon: PieChart, label: 'Correlated Returns' },
+          { icon: DollarSign, label: 'Tax Smart' },
+          { icon: Shield, label: 'Soc. Sec.' },
+          { icon: Heart, label: 'Healthcare' },
+          { icon: PieChart, label: 'Correlated' },
         ].map(({ icon: Icon, label }) => (
-          <span key={label} className="px-3 py-1 bg-purple-100 text-purple-700 rounded-full text-sm font-medium flex items-center gap-1">
-            <Icon size={14} /> {label}
+          <span key={label} className="px-2 sm:px-3 py-1 bg-purple-100 text-purple-700 rounded-full text-xs sm:text-sm font-medium flex items-center gap-1">
+            <Icon size={12} className="sm:w-3.5 sm:h-3.5" /> {label}
           </span>
         ))}
       </div>
 
       {/* Basic Info */}
-      <div className="bg-white rounded-2xl shadow-xl p-6">
+      <div className="bg-white rounded-2xl shadow-xl p-4 sm:p-6">
         <h3 className="font-bold text-slate-800 mb-4 flex items-center gap-2">
           <Calendar size={20} className="text-purple-600" /> Timeline
         </h3>
-        <div className="grid grid-cols-3 gap-4">
+        <div className="grid grid-cols-3 gap-2 sm:gap-4">
           <div>
-            <label className="block text-sm text-slate-600 mb-1">Current Age</label>
+            <label className="block text-xs sm:text-sm text-slate-600 mb-1">Current Age</label>
             <input type="number" value={currentAge} onChange={(e) => setCurrentAge(e.target.value)}
-              placeholder="35" className="w-full px-3 py-2 border-2 rounded-xl" min={18} max={80} />
+              placeholder="35" className="w-full px-2 sm:px-3 py-2 border-2 rounded-xl text-sm sm:text-base" min={18} max={80} />
           </div>
           <div>
-            <label className="block text-sm text-slate-600 mb-1">Retire At</label>
+            <label className="block text-xs sm:text-sm text-slate-600 mb-1">Retire At</label>
             <input type="number" value={retirementAge} onChange={(e) => setRetirementAge(e.target.value)}
-              placeholder="65" className="w-full px-3 py-2 border-2 rounded-xl" min={curAge + 1} max={80} />
+              placeholder="65" className="w-full px-2 sm:px-3 py-2 border-2 rounded-xl text-sm sm:text-base" min={curAge + 1} max={80} />
           </div>
           <div>
-            <label className="block text-sm text-slate-600 mb-1">Plan Until Age</label>
+            <label className="block text-xs sm:text-sm text-slate-600 mb-1">Plan Until</label>
             <input type="number" value={lifeExpectancy} onChange={(e) => setLifeExpectancy(e.target.value)}
-              placeholder="95" className="w-full px-3 py-2 border-2 rounded-xl" min={retAge + 1} max={110} />
+              placeholder="95" className="w-full px-2 sm:px-3 py-2 border-2 rounded-xl text-sm sm:text-base" min={retAge + 1} max={110} />
           </div>
         </div>
       </div>
 
       {/* Account Balances */}
-      <div className="bg-white rounded-2xl shadow-xl p-6">
+      <div className="bg-white rounded-2xl shadow-xl p-4 sm:p-6">
         <h3 className="font-bold text-slate-800 mb-4 flex items-center gap-2">
           <Wallet size={20} className="text-green-600" /> Account Balances
         </h3>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4 mb-4">
           <div>
-            <label className="block text-sm text-slate-600 mb-1">Traditional 401(k)/IRA</label>
+            <label className="block text-xs sm:text-sm text-slate-600 mb-1">Traditional 401(k)/IRA</label>
             <div className="relative">
               <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">$</span>
               <input type="number" value={traditionalBalance} onChange={(e) => setTraditionalBalance(e.target.value)}
-                placeholder="100,000" className="w-full pl-8 pr-4 py-2 border-2 rounded-xl" min={0} step={1000} />
+                placeholder="100,000" className="w-full pl-7 sm:pl-8 pr-3 py-2 border-2 rounded-xl text-sm sm:text-base" min={0} step={1000} />
             </div>
-            <p className="text-xs text-slate-500 mt-1">Taxed on withdrawal</p>
+            <p className="text-[10px] sm:text-xs text-slate-500 mt-1">Taxed on withdrawal</p>
           </div>
           <div>
-            <label className="block text-sm text-slate-600 mb-1">Roth 401(k)/IRA</label>
+            <label className="block text-xs sm:text-sm text-slate-600 mb-1">Roth 401(k)/IRA</label>
             <div className="relative">
               <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">$</span>
               <input type="number" value={rothBalance} onChange={(e) => setRothBalance(e.target.value)}
-                placeholder="50,000" className="w-full pl-8 pr-4 py-2 border-2 rounded-xl" min={0} step={1000} />
+                placeholder="50,000" className="w-full pl-7 sm:pl-8 pr-3 py-2 border-2 rounded-xl text-sm sm:text-base" min={0} step={1000} />
             </div>
-            <p className="text-xs text-slate-500 mt-1">Tax-free withdrawal</p>
+            <p className="text-[10px] sm:text-xs text-slate-500 mt-1">Tax-free withdrawal</p>
           </div>
           <div>
-            <label className="block text-sm text-slate-600 mb-1">Taxable Brokerage</label>
+            <label className="block text-xs sm:text-sm text-slate-600 mb-1">Taxable Brokerage</label>
             <div className="relative">
               <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">$</span>
               <input type="number" value={taxableBalance} onChange={(e) => setTaxableBalance(e.target.value)}
-                placeholder="25,000" className="w-full pl-8 pr-4 py-2 border-2 rounded-xl" min={0} step={1000} />
+                placeholder="25,000" className="w-full pl-7 sm:pl-8 pr-3 py-2 border-2 rounded-xl text-sm sm:text-base" min={0} step={1000} />
             </div>
-            <p className="text-xs text-slate-500 mt-1">Capital gains tax</p>
+            <p className="text-[10px] sm:text-xs text-slate-500 mt-1">Capital gains tax</p>
           </div>
         </div>
-        <div className="bg-slate-50 rounded-xl p-3 text-center">
-          <span className="text-slate-600">Total Portfolio: </span>
-          <span className="font-bold text-lg">{formatCurrency(totalBalance)}</span>
+        <div className="bg-gradient-to-r from-slate-50 to-green-50 rounded-xl p-3 text-center border border-slate-200">
+          <span className="text-slate-600 text-sm sm:text-base">Total Portfolio: </span>
+          <span className="font-bold text-lg sm:text-xl text-green-700">{formatCurrency(totalBalance)}</span>
         </div>
       </div>
 
       {/* Contributions & Spending */}
-      <div className="bg-white rounded-2xl shadow-xl p-6">
+      <div className="bg-white rounded-2xl shadow-xl p-4 sm:p-6">
         <h3 className="font-bold text-slate-800 mb-4 flex items-center gap-2">
           <DollarSign size={20} className="text-blue-600" /> Contributions & Spending
         </h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
           <div>
-            <label className="block text-sm text-slate-600 mb-1">Annual Contribution (until retirement)</label>
+            <label className="block text-xs sm:text-sm text-slate-600 mb-1">Annual Contribution</label>
             <div className="relative">
               <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">$</span>
               <input type="number" value={annualContribution} onChange={(e) => setAnnualContribution(e.target.value)}
-                placeholder="20,000" className="w-full pl-8 pr-4 py-2 border-2 rounded-xl" min={0} step={1000} />
+                placeholder="20,000" className="w-full pl-7 sm:pl-8 pr-3 py-2 border-2 rounded-xl text-sm sm:text-base" min={0} step={1000} />
             </div>
+            <p className="text-[10px] text-slate-400 mt-1">Until retirement</p>
           </div>
           <div>
-            <label className="block text-sm text-slate-600 mb-1">Contribution Type</label>
+            <label className="block text-xs sm:text-sm text-slate-600 mb-1">Contribution Type</label>
             <select value={contributionType} onChange={(e) => setContributionType(e.target.value)}
-              className="w-full px-4 py-2 border-2 rounded-xl">
+              className="w-full px-3 sm:px-4 py-2 border-2 rounded-xl text-sm sm:text-base">
               <option value="traditional">Traditional (pre-tax)</option>
               <option value="roth">Roth (after-tax)</option>
               <option value="split">Split 50/50</option>
             </select>
           </div>
-          <div>
-            <label className="block text-sm text-slate-600 mb-1">Annual Spending in Retirement</label>
+          <div className="sm:col-span-2">
+            <label className="block text-xs sm:text-sm text-slate-600 mb-1">Annual Spending in Retirement</label>
             <div className="relative">
               <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">$</span>
               <input type="number" value={annualSpending} onChange={(e) => setAnnualSpending(e.target.value)}
-                placeholder="50,000" className="w-full pl-8 pr-4 py-2 border-2 rounded-xl" min={0} step={1000} />
+                placeholder="50,000" className="w-full pl-7 sm:pl-8 pr-3 py-2 border-2 rounded-xl text-sm sm:text-base" min={0} step={1000} />
             </div>
+            <p className="text-[10px] text-slate-400 mt-1">How much you plan to spend per year after retirement</p>
           </div>
         </div>
       </div>
 
       {/* Social Security */}
-      <div className="bg-white rounded-2xl shadow-xl p-6">
+      <div className="bg-white rounded-2xl shadow-xl p-4 sm:p-6">
         <h3 className="font-bold text-slate-800 mb-4 flex items-center gap-2">
           <Shield size={20} className="text-indigo-600" /> Social Security
         </h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
-            <label className="block text-sm text-slate-600 mb-1">Estimated Annual Benefit (at age 67)</label>
+            <label className="block text-xs sm:text-sm text-slate-600 mb-1">Annual Benefit at 67</label>
             <div className="relative">
               <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">$</span>
               <input type="number" value={ssBaseBenefit} onChange={(e) => setSsBaseBenefit(e.target.value)}
-                placeholder="24,000" className="w-full pl-8 pr-4 py-2 border-2 rounded-xl" min={0} step={1000} />
+                placeholder="24,000" className="w-full pl-7 sm:pl-8 pr-3 py-2 border-2 rounded-xl text-sm sm:text-base" min={0} step={1000} />
             </div>
-            <p className="text-xs text-slate-500 mt-1">Check ssa.gov for your estimate</p>
+            <p className="text-[10px] sm:text-xs text-slate-500 mt-1">Check ssa.gov for your estimate</p>
           </div>
           <div>
-            <label className="block text-sm text-slate-600 mb-1">Claiming Age: {ssAge}</label>
+            <label className="block text-xs sm:text-sm text-slate-600 mb-1">Claiming Age: <span className="font-bold text-indigo-600">{ssAge}</span></label>
             <input type="range" value={ssClaimingAge} onChange={(e) => setSsClaimingAge(e.target.value)}
-              className="w-full" min={62} max={70} step={1} />
-            <div className="flex justify-between text-xs text-slate-500">
+              className="w-full h-2 rounded-lg appearance-none cursor-pointer accent-indigo-600" min={62} max={70} step={1} />
+            <div className="flex justify-between text-[10px] sm:text-xs text-slate-500 mt-1">
               <span>62 (-30%)</span>
-              <span>67 (FRA)</span>
+              <span>67</span>
               <span>70 (+24%)</span>
             </div>
-            <p className="text-center text-sm font-medium mt-2">
-              Adjusted benefit: {formatFullCurrency(Math.round(ssBenefit * (SS_ADJUSTMENT[ssAge] || 1)))}/year
-            </p>
+            <div className="text-center mt-2 bg-indigo-50 rounded-lg p-2">
+              <p className="text-xs text-slate-500">Adjusted benefit:</p>
+              <p className="text-base sm:text-lg font-bold text-indigo-700">
+                {formatFullCurrency(Math.round(ssBenefit * (SS_ADJUSTMENT[ssAge] || 1)))}/year
+              </p>
+            </div>
           </div>
         </div>
       </div>
@@ -1041,16 +1124,16 @@ const MonteCarloSimulator = () => {
 
       {/* Run Button */}
       <button onClick={runSimulations} disabled={isRunning}
-        className="w-full py-4 bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 hover:from-indigo-700 hover:via-purple-700 hover:to-pink-700 text-white rounded-2xl font-bold text-lg flex items-center justify-center gap-3 disabled:opacity-50 transition-all shadow-lg">
+        className="w-full py-3 sm:py-4 bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 hover:from-indigo-700 hover:via-purple-700 hover:to-pink-700 text-white rounded-2xl font-bold text-base sm:text-lg flex items-center justify-center gap-2 sm:gap-3 disabled:opacity-50 transition-all shadow-lg active:scale-[0.98]">
         {isRunning ? (
           <>
-            <RefreshCw size={24} className="animate-spin" />
-            Running... {progress}%
+            <RefreshCw size={20} className="sm:w-6 sm:h-6 animate-spin" />
+            <span>Running... {progress}%</span>
           </>
         ) : (
           <>
-            <Play size={24} />
-            Run {SIMULATIONS.toLocaleString()} Simulations
+            <Play size={20} className="sm:w-6 sm:h-6" />
+            <span>Run {SIMULATIONS.toLocaleString()} Simulations</span>
           </>
         )}
       </button>
@@ -1062,24 +1145,52 @@ const MonteCarloSimulator = () => {
         </div>
       )}
 
+      {/* What-If Quick Adjustments */}
+      {results && (
+        <div className="bg-white rounded-2xl shadow-xl p-4 sm:p-6">
+          <button onClick={() => setShowWhatIf(!showWhatIf)}
+            className="w-full flex items-center justify-between font-bold text-slate-800 mb-2">
+            <span className="flex items-center gap-2">
+              <Target size={20} className="text-blue-600" /> What-If Adjustments
+            </span>
+            <span className="text-sm text-blue-600">{showWhatIf ? 'Hide' : 'Show'}</span>
+          </button>
+          {showWhatIf && (
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-3">
+              {quickAdjustments.map((adj, i) => (
+                <button key={i} onClick={adj.apply}
+                  className="p-3 bg-gradient-to-br from-blue-50 to-indigo-50 hover:from-blue-100 hover:to-indigo-100 rounded-xl text-left transition-all border border-blue-200">
+                  <p className="text-xs font-medium text-slate-700">{adj.label}</p>
+                  <p className="text-sm font-bold text-blue-600">{adj.effect}</p>
+                </button>
+              ))}
+            </div>
+          )}
+          <p className="text-xs text-slate-500 mt-2">Click an adjustment, then re-run simulations to see impact</p>
+        </div>
+      )}
+
       {/* Results */}
       {results && (
         <>
-          {/* Success Rate */}
-          <div className={`rounded-2xl shadow-xl p-8 border-2 ${getSuccessBg(results.successRate)}`}>
+          {/* Success Rate with Gauge */}
+          <div className={`rounded-2xl shadow-xl p-6 sm:p-8 border-2 ${getSuccessBg(results.successRate)}`}>
             <div className="text-center">
-              <div className="flex items-center justify-center gap-3 mb-2">
+              {/* Visual Gauge */}
+              <SuccessGauge rate={results.successRate} />
+
+              <div className="flex items-center justify-center gap-3 mb-2 mt-4">
                 {results.successRate >= 75 ? (
-                  <CheckCircle2 size={40} className="text-green-600" />
+                  <CheckCircle2 size={32} className="text-green-600" />
                 ) : (
-                  <AlertCircle size={40} className={results.successRate >= 60 ? 'text-yellow-600' : 'text-red-600'} />
+                  <AlertCircle size={32} className={results.successRate >= 60 ? 'text-yellow-600' : 'text-red-600'} />
                 )}
-                <span className={`text-6xl font-black ${getSuccessColor(results.successRate)}`}>
+                <span className={`text-5xl sm:text-6xl font-black ${getSuccessColor(results.successRate)}`}>
                   {results.successRate.toFixed(1)}%
                 </span>
               </div>
-              <p className="text-xl font-bold text-slate-700">{getSuccessLabel(results.successRate)}</p>
-              <p className="text-slate-600 mt-2">
+              <p className="text-lg sm:text-xl font-bold text-slate-700">{getSuccessLabel(results.successRate)} Success Rate</p>
+              <p className="text-slate-600 mt-2 text-sm sm:text-base">
                 {results.successCount.toLocaleString()} of {results.totalSimulations.toLocaleString()} simulations succeeded
               </p>
               {results.avgDepletionAge && (
@@ -1090,74 +1201,144 @@ const MonteCarloSimulator = () => {
             </div>
           </div>
 
+          {/* Safe Withdrawal Rate Analysis */}
+          {(() => {
+            const swr = calculateSWR();
+            if (!swr) return null;
+            return (
+              <div className="bg-gradient-to-br from-emerald-50 to-teal-50 rounded-2xl shadow-xl p-6 border border-emerald-200">
+                <h3 className="font-bold text-slate-800 mb-4 flex items-center gap-2">
+                  <Calculator size={20} className="text-emerald-600" /> Safe Withdrawal Rate Analysis
+                </h3>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div className="bg-white/70 rounded-xl p-4 text-center">
+                    <p className="text-xs text-slate-600 mb-1">Suggested SWR</p>
+                    <p className="text-3xl font-black text-emerald-600">{swr.rate.toFixed(1)}%</p>
+                    <p className="text-xs text-slate-500">of portfolio/year</p>
+                  </div>
+                  <div className="bg-white/70 rounded-xl p-4 text-center">
+                    <p className="text-xs text-slate-600 mb-1">Sustainable Spending</p>
+                    <p className="text-2xl font-bold text-emerald-700">{formatFullCurrency(Math.round(swr.spending))}</p>
+                    <p className="text-xs text-slate-500">per year at retirement</p>
+                  </div>
+                  <div className="bg-white/70 rounded-xl p-4 text-center">
+                    <p className="text-xs text-slate-600 mb-1">Your Planned Spending</p>
+                    <p className={`text-2xl font-bold ${annSpend <= swr.spending ? 'text-green-600' : 'text-amber-600'}`}>
+                      {formatFullCurrency(annSpend)}
+                    </p>
+                    <p className="text-xs text-slate-500">
+                      {annSpend <= swr.spending ? '✓ Within safe range' : '⚠ Above suggested'}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
+
           {/* Outcome Distribution */}
-          <div className="bg-white rounded-2xl shadow-xl p-6">
-            <h3 className="font-bold text-slate-800 mb-4">Projected Outcomes at Age {lifeExpectancy}</h3>
-            <div className="grid grid-cols-5 gap-2 text-center">
-              <div className="bg-red-50 rounded-xl p-3">
-                <p className="text-xs text-slate-600">10th %</p>
-                <p className="text-lg font-bold text-red-600">{formatCurrency(results.p10FinalBalance)}</p>
+          <div className="bg-white rounded-2xl shadow-xl p-4 sm:p-6">
+            <h3 className="font-bold text-slate-800 mb-4">Projected Portfolio at Age {lifeExpectancy}</h3>
+            {/* Mobile: 2 rows, Desktop: 1 row */}
+            <div className="grid grid-cols-3 sm:grid-cols-5 gap-2 text-center">
+              <div className="bg-red-50 rounded-xl p-2 sm:p-3">
+                <p className="text-[10px] sm:text-xs text-slate-600">Bad Luck</p>
+                <p className="text-xs sm:text-xs text-red-400">10th %</p>
+                <p className="text-sm sm:text-lg font-bold text-red-600">{formatCurrency(results.p10FinalBalance)}</p>
               </div>
-              <div className="bg-orange-50 rounded-xl p-3">
-                <p className="text-xs text-slate-600">25th %</p>
-                <p className="text-lg font-bold text-orange-600">{formatCurrency(results.p25FinalBalance)}</p>
+              <div className="bg-orange-50 rounded-xl p-2 sm:p-3">
+                <p className="text-[10px] sm:text-xs text-slate-600">Below Avg</p>
+                <p className="text-xs sm:text-xs text-orange-400">25th %</p>
+                <p className="text-sm sm:text-lg font-bold text-orange-600">{formatCurrency(results.p25FinalBalance)}</p>
               </div>
-              <div className="bg-blue-50 rounded-xl p-3">
-                <p className="text-xs text-slate-600">Median</p>
-                <p className="text-lg font-bold text-blue-600">{formatCurrency(results.medianFinalBalance)}</p>
+              <div className="bg-blue-50 rounded-xl p-2 sm:p-3 ring-2 ring-blue-300">
+                <p className="text-[10px] sm:text-xs text-slate-600">Typical</p>
+                <p className="text-xs sm:text-xs text-blue-400">Median</p>
+                <p className="text-sm sm:text-lg font-bold text-blue-600">{formatCurrency(results.medianFinalBalance)}</p>
               </div>
-              <div className="bg-emerald-50 rounded-xl p-3">
-                <p className="text-xs text-slate-600">75th %</p>
-                <p className="text-lg font-bold text-emerald-600">{formatCurrency(results.p75FinalBalance)}</p>
+              <div className="bg-emerald-50 rounded-xl p-2 sm:p-3 col-span-1">
+                <p className="text-[10px] sm:text-xs text-slate-600">Above Avg</p>
+                <p className="text-xs sm:text-xs text-emerald-400">75th %</p>
+                <p className="text-sm sm:text-lg font-bold text-emerald-600">{formatCurrency(results.p75FinalBalance)}</p>
               </div>
-              <div className="bg-green-50 rounded-xl p-3">
-                <p className="text-xs text-slate-600">90th %</p>
-                <p className="text-lg font-bold text-green-600">{formatCurrency(results.p90FinalBalance)}</p>
+              <div className="bg-green-50 rounded-xl p-2 sm:p-3 col-span-2 sm:col-span-1">
+                <p className="text-[10px] sm:text-xs text-slate-600">Good Luck</p>
+                <p className="text-xs sm:text-xs text-green-400">90th %</p>
+                <p className="text-sm sm:text-lg font-bold text-green-600">{formatCurrency(results.p90FinalBalance)}</p>
               </div>
             </div>
+            <p className="text-xs text-slate-500 mt-3 text-center">
+              The median is your most likely outcome. Plan for the 25th percentile for safety.
+            </p>
           </div>
 
-          {/* Projection Chart */}
-          <div className="bg-white rounded-2xl shadow-xl p-6">
-            <h3 className="font-bold text-slate-800 mb-4">Portfolio Projection</h3>
-            <div className="h-64 relative">
-              <svg viewBox="0 0 100 50" className="w-full h-full" preserveAspectRatio="none">
+          {/* Projection Chart - Enhanced Fan Chart */}
+          <div className="bg-white rounded-2xl shadow-xl p-4 sm:p-6">
+            <h3 className="font-bold text-slate-800 mb-2">Portfolio Projection Over Time</h3>
+            <p className="text-xs text-slate-500 mb-4">The shaded areas show the range of possible outcomes based on {SIMULATIONS.toLocaleString()} simulations</p>
+            <div className="h-48 sm:h-64 relative">
+              <svg viewBox="0 0 100 55" className="w-full h-full" preserveAspectRatio="none">
+                {/* Y-axis grid lines with labels */}
                 {[0, 25, 50, 75, 100].map((pct) => (
-                  <line key={pct} x1="0" y1={50 - pct / 2} x2="100" y2={50 - pct / 2} stroke="#e2e8f0" strokeWidth="0.2" />
+                  <g key={pct}>
+                    <line x1="0" y1={50 - pct / 2} x2="100" y2={50 - pct / 2} stroke="#e2e8f0" strokeWidth="0.2" />
+                  </g>
                 ))}
 
-                {/* Retirement line */}
-                <line x1={((retirementAge - currentAge) / (lifeExpectancy - currentAge)) * 100} y1="0"
-                  x2={((retirementAge - currentAge) / (lifeExpectancy - currentAge)) * 100} y2="50"
-                  stroke="#9333ea" strokeWidth="0.3" strokeDasharray="1,1" />
+                {/* Retirement vertical line */}
+                <line x1={((retAge - curAge) / (lifeExp - curAge)) * 100} y1="0"
+                  x2={((retAge - curAge) / (lifeExp - curAge)) * 100} y2="55"
+                  stroke="#9333ea" strokeWidth="0.4" strokeDasharray="2,1" />
 
-                {/* Confidence bands */}
+                {/* Confidence bands - smoother gradient effect */}
                 {(() => {
                   const maxVal = Math.max(...results.p90Balances, 1);
                   const totalYears = results.avgBalances.length - 1;
+                  if (totalYears <= 0) return null;
                   return (
                     <>
-                      <path d={`M 0 50 ${results.p90Balances.map((v, i) => `L ${(i / totalYears) * 100} ${50 - (v / maxVal) * 45}`).join(' ')} ${[...results.p10Balances].reverse().map((v, i) => `L ${((totalYears - i) / totalYears) * 100} ${50 - (v / maxVal) * 45}`).join(' ')} Z`}
-                        fill="rgba(139, 92, 246, 0.15)" />
-                      <path d={`M 0 50 ${results.p75Balances.map((v, i) => `L ${(i / totalYears) * 100} ${50 - (v / maxVal) * 45}`).join(' ')} ${[...results.p25Balances].reverse().map((v, i) => `L ${((totalYears - i) / totalYears) * 100} ${50 - (v / maxVal) * 45}`).join(' ')} Z`}
-                        fill="rgba(139, 92, 246, 0.2)" />
+                      {/* Outer band (10-90%) */}
+                      <path d={`M 0 ${50 - (results.p10Balances[0] / maxVal) * 45} ${results.p90Balances.map((v, i) => `L ${(i / totalYears) * 100} ${50 - (v / maxVal) * 45}`).join(' ')} ${[...results.p10Balances].reverse().map((v, i) => `L ${((totalYears - i) / totalYears) * 100} ${50 - (v / maxVal) * 45}`).join(' ')} Z`}
+                        fill="rgba(139, 92, 246, 0.12)" />
+                      {/* Middle band (25-75%) */}
+                      <path d={`M 0 ${50 - (results.p25Balances[0] / maxVal) * 45} ${results.p75Balances.map((v, i) => `L ${(i / totalYears) * 100} ${50 - (v / maxVal) * 45}`).join(' ')} ${[...results.p25Balances].reverse().map((v, i) => `L ${((totalYears - i) / totalYears) * 100} ${50 - (v / maxVal) * 45}`).join(' ')} Z`}
+                        fill="rgba(139, 92, 246, 0.18)" />
+                      {/* 75th percentile line */}
+                      <path d={results.p75Balances.map((v, i) => `${i === 0 ? 'M' : 'L'} ${(i / totalYears) * 100} ${50 - (v / maxVal) * 45}`).join(' ')}
+                        fill="none" stroke="rgba(139, 92, 246, 0.4)" strokeWidth="0.5" />
+                      {/* 25th percentile line */}
+                      <path d={results.p25Balances.map((v, i) => `${i === 0 ? 'M' : 'L'} ${(i / totalYears) * 100} ${50 - (v / maxVal) * 45}`).join(' ')}
+                        fill="none" stroke="rgba(139, 92, 246, 0.4)" strokeWidth="0.5" />
+                      {/* Median line (50th percentile) - bold */}
                       <path d={results.p50Balances.map((v, i) => `${i === 0 ? 'M' : 'L'} ${(i / totalYears) * 100} ${50 - (v / maxVal) * 45}`).join(' ')}
-                        fill="none" stroke="#8b5cf6" strokeWidth="1" />
+                        fill="none" stroke="#7c3aed" strokeWidth="1.5" />
+                      {/* Zero line */}
+                      <line x1="0" y1="50" x2="100" y2="50" stroke="#dc2626" strokeWidth="0.3" strokeDasharray="1,2" />
                     </>
                   );
                 })()}
               </svg>
-              <div className="absolute bottom-0 left-0 text-xs text-slate-500">Age {currentAge}</div>
-              <div className="absolute bottom-0 right-0 text-xs text-slate-500">Age {lifeExpectancy}</div>
-              <div className="absolute bottom-0 text-xs text-purple-600 font-medium"
-                style={{ left: `${((retirementAge - currentAge) / (lifeExpectancy - currentAge)) * 100}%`, transform: 'translateX(-50%)' }}>
+              {/* Labels */}
+              <div className="absolute bottom-0 left-0 text-[10px] sm:text-xs text-slate-500">Age {curAge}</div>
+              <div className="absolute bottom-0 right-0 text-[10px] sm:text-xs text-slate-500">Age {lifeExp}</div>
+              <div className="absolute bottom-0 text-[10px] sm:text-xs text-purple-600 font-medium"
+                style={{ left: `${((retAge - curAge) / (lifeExp - curAge)) * 100}%`, transform: 'translateX(-50%)' }}>
                 Retire
               </div>
+              {/* Y-axis context */}
+              <div className="absolute top-0 left-0 text-[9px] text-slate-400">Peak</div>
+              <div className="absolute top-1/2 left-0 text-[9px] text-slate-400 -translate-y-1/2">Mid</div>
             </div>
-            <div className="flex justify-center gap-4 mt-4 text-xs">
-              <span className="flex items-center gap-1"><span className="w-3 h-3 bg-purple-500 rounded"></span> Median</span>
-              <span className="flex items-center gap-1"><span className="w-3 h-3 bg-purple-300 rounded"></span> 25-75%</span>
-              <span className="flex items-center gap-1"><span className="w-3 h-3 bg-purple-100 rounded"></span> 10-90%</span>
+            {/* Legend */}
+            <div className="flex flex-wrap justify-center gap-3 sm:gap-4 mt-4 text-[10px] sm:text-xs">
+              <span className="flex items-center gap-1">
+                <span className="w-4 h-1 bg-purple-600 rounded"></span> Median (50%)
+              </span>
+              <span className="flex items-center gap-1">
+                <span className="w-3 h-3 bg-purple-300/60 rounded"></span> Likely (25-75%)
+              </span>
+              <span className="flex items-center gap-1">
+                <span className="w-3 h-3 bg-purple-200/40 rounded"></span> Possible (10-90%)
+              </span>
             </div>
           </div>
 
@@ -1221,6 +1402,81 @@ const MonteCarloSimulator = () => {
               </div>
             </div>
           </div>
+
+          {/* Save Scenario */}
+          <div className="bg-white rounded-2xl shadow-xl p-4 sm:p-6">
+            <h3 className="font-bold text-slate-800 mb-4 flex items-center gap-2">
+              <Wallet size={20} className="text-indigo-600" /> Save This Scenario
+            </h3>
+            <div className="flex flex-col sm:flex-row gap-2">
+              <input type="text" value={scenarioName} onChange={(e) => setScenarioName(e.target.value)}
+                placeholder="Scenario name (optional)"
+                className="flex-1 px-4 py-2 border-2 rounded-xl focus:border-indigo-400 focus:ring-2 focus:ring-indigo-200 outline-none" />
+              <button onClick={saveScenario}
+                className="px-6 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-semibold transition-colors">
+                Save
+              </button>
+            </div>
+            {savedScenarios.length > 0 && (
+              <button onClick={() => setShowScenarios(!showScenarios)}
+                className="mt-3 text-sm text-indigo-600 font-medium">
+                {showScenarios ? 'Hide' : 'Show'} {savedScenarios.length} saved scenario{savedScenarios.length !== 1 ? 's' : ''}
+              </button>
+            )}
+          </div>
+
+          {/* Scenario Comparison */}
+          {showScenarios && savedScenarios.length > 0 && (
+            <div className="bg-gradient-to-br from-indigo-50 to-purple-50 rounded-2xl shadow-xl p-4 sm:p-6 border border-indigo-200">
+              <h3 className="font-bold text-slate-800 mb-4 flex items-center gap-2">
+                <PieChart size={20} className="text-purple-600" /> Scenario Comparison
+              </h3>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-indigo-200">
+                      <th className="text-left py-2 px-2 font-semibold text-slate-700">Scenario</th>
+                      <th className="text-right py-2 px-2 font-semibold text-slate-700">Success</th>
+                      <th className="text-right py-2 px-2 font-semibold text-slate-700 hidden sm:table-cell">Median</th>
+                      <th className="text-right py-2 px-2 font-semibold text-slate-700 hidden sm:table-cell">Spending</th>
+                      <th className="py-2 px-2"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {savedScenarios.map((scenario, i) => (
+                      <tr key={scenario.id} className="border-b border-indigo-100 hover:bg-white/50">
+                        <td className="py-2 px-2 font-medium">{scenario.name}</td>
+                        <td className={`py-2 px-2 text-right font-bold ${getSuccessColor(scenario.successRate)}`}>
+                          {scenario.successRate.toFixed(1)}%
+                        </td>
+                        <td className="py-2 px-2 text-right hidden sm:table-cell">{formatCurrency(scenario.medianBalance)}</td>
+                        <td className="py-2 px-2 text-right hidden sm:table-cell">{formatCurrency(scenario.params.annualSpending)}/yr</td>
+                        <td className="py-2 px-2 text-right">
+                          <button onClick={() => {
+                            const newScenarios = savedScenarios.filter((_, idx) => idx !== i);
+                            setSavedScenarios(newScenarios);
+                          }}
+                            className="text-red-500 hover:text-red-700 text-xs">
+                            Remove
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                    {/* Current scenario for comparison */}
+                    <tr className="bg-indigo-100/50">
+                      <td className="py-2 px-2 font-medium text-indigo-700">Current (unsaved)</td>
+                      <td className={`py-2 px-2 text-right font-bold ${getSuccessColor(results.successRate)}`}>
+                        {results.successRate.toFixed(1)}%
+                      </td>
+                      <td className="py-2 px-2 text-right hidden sm:table-cell">{formatCurrency(results.medianFinalBalance)}</td>
+                      <td className="py-2 px-2 text-right hidden sm:table-cell">{formatCurrency(annSpend)}/yr</td>
+                      <td className="py-2 px-2"></td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
         </>
       )}
     </div>
