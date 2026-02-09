@@ -24,12 +24,12 @@ import {
 // ============================================
 const SIMULATIONS = 10000; // Professional-grade: 10,000 simulations
 
-// Historical return data (real returns based on market history)
+// Historical return data (nominal returns — inflation is applied separately to spending)
 const HISTORICAL_RETURNS = {
-  // Mean real returns (after inflation) and standard deviations
-  stocks: { mean: 0.07, stdDev: 0.17, realMean: 0.07 },  // ~10% nominal, ~7% real
-  bonds: { mean: 0.02, stdDev: 0.05, realMean: 0.02 },   // ~5% nominal, ~2% real
-  cash: { mean: 0.00, stdDev: 0.01, realMean: 0.00 },    // ~2% nominal, ~0% real
+  // Mean nominal returns and standard deviations based on long-run market history
+  stocks: { mean: 0.10, stdDev: 0.17 },  // ~10% nominal (S&P 500 long-run average)
+  bonds: { mean: 0.05, stdDev: 0.05 },   // ~5% nominal (aggregate bond index)
+  cash: { mean: 0.03, stdDev: 0.01 },    // ~3% nominal (T-bills / money market)
 };
 
 // Correlation matrix (stocks and bonds can correlate in crashes)
