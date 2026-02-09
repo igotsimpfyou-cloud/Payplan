@@ -933,6 +933,7 @@ const MonteCarloSimulator = () => {
         <h3 className="font-bold text-slate-800 mb-4 flex items-center gap-2">
           <Wallet size={20} className="text-green-600" /> Account Balances
         </h3>
+        <p className="text-xs text-slate-500 -mt-3 mb-4">Enter your current balances as of today — the simulator will project growth to retirement.</p>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4 mb-4">
           <div>
             <label className="block text-xs sm:text-sm text-slate-600 mb-1">Traditional 401(k)/IRA</label>
@@ -941,7 +942,7 @@ const MonteCarloSimulator = () => {
               <input type="number" value={traditionalBalance} onChange={(e) => setTraditionalBalance(e.target.value)}
                 placeholder="100,000" className="w-full pl-7 sm:pl-8 pr-3 py-2 border-2 rounded-xl text-sm sm:text-base" min={0} step={1000} />
             </div>
-            <p className="text-[10px] sm:text-xs text-slate-500 mt-1">Taxed on withdrawal</p>
+            <p className="text-[10px] sm:text-xs text-slate-500 mt-1">Today's balance — taxed on withdrawal</p>
           </div>
           <div>
             <label className="block text-xs sm:text-sm text-slate-600 mb-1">Roth 401(k)/IRA</label>
@@ -950,7 +951,7 @@ const MonteCarloSimulator = () => {
               <input type="number" value={rothBalance} onChange={(e) => setRothBalance(e.target.value)}
                 placeholder="50,000" className="w-full pl-7 sm:pl-8 pr-3 py-2 border-2 rounded-xl text-sm sm:text-base" min={0} step={1000} />
             </div>
-            <p className="text-[10px] sm:text-xs text-slate-500 mt-1">Tax-free withdrawal</p>
+            <p className="text-[10px] sm:text-xs text-slate-500 mt-1">Today's balance — tax-free withdrawal</p>
           </div>
           <div>
             <label className="block text-xs sm:text-sm text-slate-600 mb-1">Taxable Brokerage</label>
@@ -959,7 +960,7 @@ const MonteCarloSimulator = () => {
               <input type="number" value={taxableBalance} onChange={(e) => setTaxableBalance(e.target.value)}
                 placeholder="25,000" className="w-full pl-7 sm:pl-8 pr-3 py-2 border-2 rounded-xl text-sm sm:text-base" min={0} step={1000} />
             </div>
-            <p className="text-[10px] sm:text-xs text-slate-500 mt-1">Capital gains tax</p>
+            <p className="text-[10px] sm:text-xs text-slate-500 mt-1">Today's balance — capital gains tax</p>
           </div>
         </div>
         <div className="bg-gradient-to-r from-slate-50 to-green-50 rounded-xl p-3 text-center border border-slate-200">
