@@ -171,6 +171,12 @@ const runEnhancedSimulation = (params) => {
     // Update inflation
     cumulativeInflation *= (1 + inflationRate);
 
+    // Healthcare costs grow every year (inflation + excess healthcare inflation)
+    // even pre-retirement, so the cost is correct when retirement begins
+    if (includeHealthcare) {
+      healthcareCost *= (1 + inflationRate + HEALTHCARE_INCREASE);
+    }
+
     // Get allocation (either fixed or glide path)
     const allocation = useGlidePath
       ? getGlidePath(age, retirementAge, true)
@@ -194,9 +200,8 @@ const runEnhancedSimulation = (params) => {
       // Calculate required spending (inflation-adjusted)
       let requiredSpending = annualSpending * cumulativeInflation;
 
-      // Add healthcare costs if enabled
+      // Add healthcare costs if enabled (already inflation-adjusted above)
       if (includeHealthcare) {
-        healthcareCost *= (1 + inflationRate + HEALTHCARE_INCREASE);
         requiredSpending += healthcareCost;
       }
 
