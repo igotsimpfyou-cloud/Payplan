@@ -70,6 +70,8 @@ const BillPayPlanner = () => {
   const [showOneTimeForm, setShowOneTimeForm] = useState(false);
   const [editingOneTime, setEditingOneTime] = useState(null);
   const [showPropaneForm, setShowPropaneForm] = useState(false);
+  const [showDebtForm, setShowDebtForm] = useState(false);
+  const [editingDebt, setEditingDebt] = useState(null);
   const [loading, setLoading] = useState(true);
 
   // Backup / Restore
@@ -507,6 +509,71 @@ const BillPayPlanner = () => {
     return { schedule, totalInterest, totalPayments: period, payoffDate: schedule[schedule.length - 1]?.date };
   };
 
+  // ---------- Debt Payoff Calculation ----------
+  const calculateDebtPayoff = (debt) => {
+    const balance = parseAmt(debt.balance);
+    const annualRate = parseAmt(debt.rate) / 100;
+    const monthlyRate = annualRate / 12;
+    const payment = parseAmt(debt.payment);
+
+    if (payment <= 0 || balance <= 0) return { months: 0, totalInterest: 0, totalPaid: 0, payoffDate: null };
+
+    if (monthlyRate > 0 && payment <= balance * monthlyRate) {
+      return { months: Infinity, totalInterest: Infinity, totalPaid: Infinity, payoffDate: null };
+    }
+
+    let months;
+    if (monthlyRate === 0) {
+      months = Math.ceil(balance / payment);
+    } else {
+      months = Math.ceil(-Math.log(1 - (monthlyRate * balance) / payment) / Math.log(1 + monthlyRate));
+    }
+
+    let remaining = balance;
+    let totalInterest = 0;
+    for (let i = 0; i < months && remaining > 0.01; i++) {
+      const interest = remaining * monthlyRate;
+      const principal = Math.min(payment - interest, remaining);
+      totalInterest += interest;
+      remaining -= principal;
+    }
+
+    const startDate = debt.startDate ? new Date(debt.startDate) : new Date();
+    const payoffDate = new Date(startDate);
+    payoffDate.setMonth(payoffDate.getMonth() + months);
+
+    return { months, totalInterest, totalPaid: balance + totalInterest, payoffDate: toYMD(payoffDate) };
+  };
+
+  const addDebt = (form) => {
+    const debt = {
+      id: Date.now(),
+      name: form.name,
+      loanAmount: parseAmt(form.loanAmount),
+      balance: parseAmt(form.balance),
+      rate: parseAmt(form.rate),
+      loanTerm: parseInt(form.loanTerm) || 0,
+      startDate: form.startDate,
+      payment: parseAmt(form.payment)
+    };
+    setDebtPayoff([...debtPayoff, debt]);
+    setShowDebtForm(false);
+  };
+
+  const updateDebt = (form) => {
+    setDebtPayoff(debtPayoff.map(d => d.id === editingDebt.id ? {
+      ...editingDebt,
+      name: form.name,
+      loanAmount: parseAmt(form.loanAmount),
+      balance: parseAmt(form.balance),
+      rate: parseAmt(form.rate),
+      loanTerm: parseInt(form.loanTerm) || 0,
+      startDate: form.startDate,
+      payment: parseAmt(form.payment)
+    } : d));
+    setEditingDebt(null);
+  };
+
   // ---------- One-Time Bills ----------
   const saveOneTime = async (updated) => setOneTimeBills(updated);
   const addOneTimeBill = async (billData) => {
@@ -811,6 +878,74 @@ const BillPayPlanner = () => {
               <div className="flex gap-3 pt-2">
                 <button type="button" onClick={onCancel} className="flex-1 px-4 py-3 bg-slate-100 hover:bg-slate-200 rounded-xl font-semibold">Cancel</button>
                 <button type="submit" className="flex-1 px-4 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-semibold">{bill ? 'Update' : 'Add'}</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const DebtForm = ({ debt, onSubmit, onCancel }) => {
+    const [form, setForm] = useState(debt ? {
+      name: debt.name,
+      loanAmount: debt.loanAmount || debt.balance || '',
+      balance: debt.balance || '',
+      rate: debt.rate || '',
+      loanTerm: debt.loanTerm || '',
+      startDate: debt.startDate || new Date().toISOString().split('T')[0],
+      payment: debt.payment || ''
+    } : {
+      name: '',
+      loanAmount: '',
+      balance: '',
+      rate: '',
+      loanTerm: '',
+      startDate: new Date().toISOString().split('T')[0],
+      payment: ''
+    });
+    return (
+      <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+        <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full max-h-[90vh] overflow-y-auto">
+          <div className="p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-2xl font-bold">{debt ? 'Edit Debt' : 'Add Debt'}</h2>
+              <button className="p-2 rounded-lg hover:bg-slate-100" onClick={onCancel}><X size={20} /></button>
+            </div>
+            <form onSubmit={(e) => { e.preventDefault(); onSubmit(form); }} className="space-y-3">
+              <div>
+                <label className="text-sm font-semibold">Debt Name</label>
+                <input className="w-full mt-1 px-3 py-2 border-2 rounded-xl" placeholder="e.g., Credit Card, Auto Loan" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} required />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-sm font-semibold">Original Loan Amount</label>
+                  <input type="number" step="0.01" className="w-full mt-1 px-3 py-2 border-2 rounded-xl" value={form.loanAmount} onChange={e => setForm({ ...form, loanAmount: e.target.value })} required />
+                </div>
+                <div>
+                  <label className="text-sm font-semibold">Current Balance</label>
+                  <input type="number" step="0.01" className="w-full mt-1 px-3 py-2 border-2 rounded-xl" value={form.balance} onChange={e => setForm({ ...form, balance: e.target.value })} required />
+                </div>
+                <div>
+                  <label className="text-sm font-semibold">Interest Rate (%)</label>
+                  <input type="number" step="0.01" className="w-full mt-1 px-3 py-2 border-2 rounded-xl" placeholder="e.g., 18.5" value={form.rate} onChange={e => setForm({ ...form, rate: e.target.value })} required />
+                </div>
+                <div>
+                  <label className="text-sm font-semibold">Loan Term (months)</label>
+                  <input type="number" className="w-full mt-1 px-3 py-2 border-2 rounded-xl" placeholder="e.g., 60" value={form.loanTerm} onChange={e => setForm({ ...form, loanTerm: e.target.value })} required />
+                </div>
+              </div>
+              <div>
+                <label className="text-sm font-semibold">Loan Start Date</label>
+                <input type="date" className="w-full mt-1 px-3 py-2 border-2 rounded-xl" value={form.startDate} onChange={e => setForm({ ...form, startDate: e.target.value })} required />
+              </div>
+              <div>
+                <label className="text-sm font-semibold">Monthly Payment</label>
+                <input type="number" step="0.01" className="w-full mt-1 px-3 py-2 border-2 rounded-xl" value={form.payment} onChange={e => setForm({ ...form, payment: e.target.value })} required />
+              </div>
+              <div className="flex gap-3 pt-2">
+                <button type="button" onClick={onCancel} className="flex-1 px-4 py-3 bg-slate-100 hover:bg-slate-200 rounded-xl font-semibold">Cancel</button>
+                <button type="submit" className="flex-1 px-4 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-semibold">{debt ? 'Update' : 'Add'}</button>
               </div>
             </form>
           </div>
@@ -1298,8 +1433,8 @@ const BillPayPlanner = () => {
           </div>
         )}
       </div>
-    </div>
   );
+  };
 
   const AnalyticsView = () => {
     const categories = ['utilities', 'subscription', 'insurance', 'loan', 'rent', 'other'];
@@ -1371,31 +1506,40 @@ const BillPayPlanner = () => {
             <h3 className="text-xl font-bold">Debt Payoff Tracker</h3>
             <button
               className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-sm font-semibold"
-              onClick={() => {
-                const name = prompt('Debt name (e.g., Credit Card):');
-                if (!name) return;
-                const balance = parseAmt(prompt('Current balance:') || 0);
-                const rate = parseAmt(prompt('Interest rate % (e.g., 18.5):') || 0);
-                const payment = parseAmt(prompt('Monthly payment:') || 0);
-                const debt = { id: Date.now(), name, balance, rate, payment };
-                setDebtPayoff([...debtPayoff, debt]);
-              }}
+              onClick={() => setShowDebtForm(true)}
             >Add Debt</button>
           </div>
           {debtPayoff.length ? (
             <div className="space-y-3">
               {debtPayoff.map(debt => {
-                const monthsToPayoff = debt.payment > 0 ? Math.ceil(debt.balance / debt.payment) : 0;
-                const totalInterest = debt.payment > 0 ? (debt.payment * monthsToPayoff) - debt.balance : 0;
+                const payoff = calculateDebtPayoff(debt);
+                const isInfinite = !isFinite(payoff.months);
                 return (
                   <div key={debt.id} className="p-4 bg-slate-50 rounded-xl">
                     <div className="flex items-center justify-between mb-2">
                       <span className="font-semibold">{debt.name}</span>
-                      <button className="text-red-600 hover:bg-red-50 p-1 rounded transition-colors" onClick={() => setDebtPayoff(debtPayoff.filter(d => d.id !== debt.id))}><X size={16} /></button>
+                      <div className="flex items-center gap-1">
+                        <button className="text-blue-600 hover:bg-blue-50 p-1 rounded transition-colors" onClick={() => setEditingDebt(debt)}><Edit2 size={16} /></button>
+                        <button className="text-red-600 hover:bg-red-50 p-1 rounded transition-colors" onClick={() => setDebtPayoff(debtPayoff.filter(d => d.id !== debt.id))}><X size={16} /></button>
+                      </div>
                     </div>
-                    <p className="text-sm text-slate-600">Balance: ${debt.balance.toFixed(2)} @ {debt.rate}%</p>
-                    <p className="text-sm text-slate-600">Payment: ${debt.payment.toFixed(2)}/mo</p>
-                    <p className="text-sm font-semibold text-emerald-600 mt-2">Payoff: {monthsToPayoff} months | Interest: ${totalInterest.toFixed(2)}</p>
+                    <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm text-slate-600">
+                      {debt.loanAmount > 0 && <p>Original Loan: ${parseAmt(debt.loanAmount).toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>}
+                      <p>Balance: ${parseAmt(debt.balance).toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                      <p>Rate: {debt.rate}%</p>
+                      <p>Payment: ${parseAmt(debt.payment).toLocaleString('en-US', { minimumFractionDigits: 2 })}/mo</p>
+                      {debt.loanTerm > 0 && <p>Loan Term: {debt.loanTerm} months</p>}
+                      {debt.startDate && <p>Start: {new Date(debt.startDate + 'T00:00:00').toLocaleDateString()}</p>}
+                    </div>
+                    {isInfinite ? (
+                      <p className="text-sm font-semibold text-red-600 mt-2">Payment does not cover monthly interest. Increase payment above ${(parseAmt(debt.balance) * parseAmt(debt.rate) / 100 / 12).toFixed(2)}/mo</p>
+                    ) : (
+                      <div className="mt-2 p-2 bg-emerald-50 rounded-lg">
+                        <p className="text-sm font-semibold text-emerald-700">Payoff: {payoff.months} months | Total Interest: ${payoff.totalInterest.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                        {payoff.payoffDate && <p className="text-xs text-emerald-600">Est. Payoff Date: {new Date(payoff.payoffDate + 'T00:00:00').toLocaleDateString()}</p>}
+                        <p className="text-xs text-slate-500">Total Paid: ${payoff.totalPaid.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                      </div>
+                    )}
                   </div>
                 );
               })}
@@ -1639,6 +1783,21 @@ const BillPayPlanner = () => {
         )}
 
         {showPropaneForm && <PropaneModal />}
+
+        {showDebtForm && (
+          <DebtForm
+            onSubmit={addDebt}
+            onCancel={() => setShowDebtForm(false)}
+          />
+        )}
+
+        {editingDebt && (
+          <DebtForm
+            debt={editingDebt}
+            onSubmit={updateDebt}
+            onCancel={() => setEditingDebt(null)}
+          />
+        )}
       </div>
     </div>
   );
