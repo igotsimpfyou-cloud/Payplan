@@ -115,8 +115,11 @@ const getGlidePath = (age, retirementAge, useGlidePath) => {
 };
 
 // Calculate RMD for a given age and traditional balance
-const calculateRMD = (age, traditionalBalance) => {
-  if (age < 73 || !RMD_FACTORS[age]) return 0;
+// SECURE 2.0 Act: RMD age is 73 (2023-2032) and 75 (2033+)
+// birthYear determines which threshold applies
+const calculateRMD = (age, traditionalBalance, birthYear) => {
+  const rmdStartAge = (birthYear && (birthYear + 73) >= 2033) ? 75 : 73;
+  if (age < rmdStartAge || !RMD_FACTORS[age]) return 0;
   return traditionalBalance / RMD_FACTORS[age];
 };
 
@@ -166,7 +169,7 @@ const runEnhancedSimulation = (params) => {
 
   for (let year = 1; year <= totalYears; year++) {
     const age = currentAge + year;
-    const isRetired = age > retirementAge;
+    const isRetired = age >= retirementAge;
 
     // Update inflation
     cumulativeInflation *= (1 + inflationRate);
@@ -210,7 +213,8 @@ const runEnhancedSimulation = (params) => {
       requiredSpending = Math.max(0, requiredSpending - ssIncome);
 
       // Calculate RMD (must withdraw from traditional)
-      const rmd = calculateRMD(age, traditional);
+      const birthYear = new Date().getFullYear() - currentAge;
+      const rmd = calculateRMD(age, traditional, birthYear);
       const rmdAfterTax = rmd * (1 - taxRate);
 
       // Withdrawal strategy: RMD first, then taxable, then traditional, then Roth
