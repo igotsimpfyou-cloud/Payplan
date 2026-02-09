@@ -130,18 +130,18 @@ const calculateSocialSecurity = (baseBenefit, claimingAge, currentAge) => {
   return baseBenefit * adjustment;
 };
 
-// Calculate tax on withdrawal (simplified)
-const calculateTax = (withdrawal, accountType, taxRate) => {
-  switch (accountType) {
-    case 'traditional':
-      return withdrawal * taxRate;
-    case 'roth':
-      return 0; // Tax-free
-    case 'taxable':
-      return withdrawal * 0.5 * 0.15; // Assume 50% is gains, 15% LTCG rate
-    default:
-      return 0;
-  }
+// Derive long-term capital gains rate from marginal income tax rate
+const getLTCGRate = (taxRate) => {
+  if (taxRate <= 0.12) return 0;     // 10-12% bracket: 0% LTCG
+  if (taxRate <= 0.35) return 0.15;  // 22-35% bracket: 15% LTCG
+  return 0.20;                        // 37% bracket: 20% LTCG
+};
+
+// Calculate effective tax on taxable account withdrawal
+// Assumes ~50% of the balance is cost basis (not taxed), rest is gains
+const getTaxableEffectiveRate = (taxRate) => {
+  const ltcgRate = getLTCGRate(taxRate);
+  return 0.5 * ltcgRate; // 50% gains assumption * LTCG rate
 };
 
 // Run a single enhanced simulation
@@ -228,9 +228,11 @@ const runEnhancedSimulation = (params) => {
 
       // Withdraw from taxable (most tax-efficient after RMD)
       if (remaining > 0 && taxable > 0) {
-        const taxableWithdrawal = Math.min(taxable, remaining / 0.925); // Account for ~7.5% effective tax
+        const taxableEffRate = getTaxableEffectiveRate(taxRate);
+        const taxableKeepRate = 1 - taxableEffRate;
+        const taxableWithdrawal = Math.min(taxable, remaining / taxableKeepRate);
         taxable -= taxableWithdrawal;
-        remaining -= taxableWithdrawal * 0.925;
+        remaining -= taxableWithdrawal * taxableKeepRate;
       }
 
       // Withdraw from traditional
