@@ -2,20 +2,12 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Home,
   Settings as SettingsIcon,
-  List,
   BarChart3,
   Receipt,
-  Building2,
-  Calendar,
-  Flame,
-  Check,
-  Wallet,
-  ChevronDown,
-  ChevronUp,
-  Menu,
-  ClipboardCheck,
-  TrendingUp,
-  LineChart,
+  DollarSign,
+  Target,
+  Wrench,
+  LayoutDashboard,
 } from 'lucide-react';
 
 // Utils
@@ -86,7 +78,6 @@ import { Investments } from './components/views/Investments';
  */
 const BillPayPlanner = () => {
   const [view, setView] = useState('dashboard');
-  const [openDrawer, setOpenDrawer] = useState(null); // Track which nav drawer is open
 
   // Core (new database model)
   const [billTemplates, setBillTemplates] = useState([]);
@@ -1164,155 +1155,124 @@ const BillPayPlanner = () => {
   }, [currentMonthInstances, oneTimeBills, paySchedule, nextPayDates, actualPayEntries]);
 
   // ---------- Navigation Configuration ----------
-  const navCategories = [
-    {
-      id: 'home',
-      label: 'Home',
-      icon: Home,
-      view: 'dashboard', // Direct link, no drawer
-    },
+  // Map of which views belong to which tab and sub-tab
+  const NAV_TABS = [
+    { id: 'home', label: 'Home', icon: Home, defaultView: 'dashboard' },
+    { id: 'income', label: 'Income', icon: DollarSign, defaultView: 'income' },
     {
       id: 'bills',
       label: 'Bills',
       icon: Receipt,
-      items: [
-        { view: 'bills', label: 'Templates', icon: Receipt },
-        { view: 'checklist', label: 'Checklist', icon: List },
-        { view: 'onetime', label: 'One-Time', icon: Calendar },
-        { view: 'propane', label: 'Propane', icon: Flame },
+      defaultView: 'bills-dashboard',
+      subTabs: [
+        { id: 'setup', label: 'Setup', icon: Wrench, view: 'bills-setup' },
+        { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, view: 'bills-dashboard' },
+        { id: 'analytics', label: 'Analytics', icon: BarChart3, view: 'bills-analytics' },
       ],
     },
     {
-      id: 'money',
-      label: 'Money',
-      icon: Wallet,
-      items: [
-        { view: 'assets', label: 'Assets', icon: Building2 },
-        { view: 'investments', label: 'Investments', icon: LineChart },
-        { view: 'retirement', label: 'Retirement', icon: TrendingUp },
-      ],
-    },
-    {
-      id: 'track',
-      label: 'Track',
-      icon: ClipboardCheck,
-      items: [
-        { view: 'submit', label: 'Submit Actuals', icon: Check },
-      ],
-    },
-    {
-      id: 'more',
-      label: 'More',
-      icon: Menu,
-      items: [
-        { view: 'analytics', label: 'Analytics', icon: BarChart3 },
-        { view: 'settings', label: 'Settings', icon: SettingsIcon },
+      id: 'goals',
+      label: 'Goals',
+      icon: Target,
+      defaultView: 'goals-dashboard',
+      subTabs: [
+        { id: 'setup', label: 'Setup', icon: Wrench, view: 'goals-setup' },
+        { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, view: 'goals-dashboard' },
+        { id: 'analytics', label: 'Analytics', icon: BarChart3, view: 'goals-analytics' },
       ],
     },
   ];
 
-  // Check if current view is in a category
-  const getActiveCategory = () => {
-    for (const cat of navCategories) {
-      if (cat.view === view) return cat.id;
-      if (cat.items?.some((item) => item.view === view)) return cat.id;
-    }
-    return null;
-  };
-
-  const handleNavClick = (category) => {
-    if (category.view) {
-      // Direct link - go to view and close any drawer
-      setView(category.view);
-      setOpenDrawer(null);
+  // All valid views mapped to their parent tab
+  const viewToTab = {};
+  NAV_TABS.forEach((tab) => {
+    if (tab.subTabs) {
+      tab.subTabs.forEach((sub) => { viewToTab[sub.view] = tab.id; });
     } else {
-      // Toggle drawer
-      setOpenDrawer(openDrawer === category.id ? null : category.id);
+      viewToTab[tab.defaultView] = tab.id;
     }
+  });
+  // Settings is special — not a tab
+  viewToTab['settings'] = null;
+
+  const activeTabId = viewToTab[view] || 'home';
+  const activeTab = NAV_TABS.find((t) => t.id === activeTabId);
+
+  const handleTabClick = (tab) => {
+    setView(tab.defaultView);
   };
 
-  const handleSubItemClick = (itemView) => {
-    setView(itemView);
-    setOpenDrawer(null);
+  const handleSubTabClick = (subView) => {
+    setView(subView);
   };
 
   // ---------- Header ----------
   const Header = () => {
-    const activeCategory = getActiveCategory();
-    const activeDrawerItems = navCategories.find((c) => c.id === openDrawer)?.items;
-    const currentViewLabel = navCategories
-      .flatMap((c) => c.items || [{ view: c.view, label: c.label }])
-      .find((item) => item.view === view)?.label;
-
     return (
       <div className="mb-6">
-        {/* Navigation Container */}
         <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-3 border border-white/20">
-          {/* Header Row: Title + Current Page */}
+          {/* Header Row: Title + Settings Gear */}
           <div className="flex items-center justify-between mb-3 px-1">
             <h1 className="text-xl md:text-2xl font-black text-white">
               PayPlan Pro
             </h1>
-            {currentViewLabel && (
-              <span className="text-white bg-white/20 px-3 py-1 rounded-lg text-sm font-semibold">
-                {currentViewLabel}
-              </span>
-            )}
+            <button
+              onClick={() => setView('settings')}
+              className={`p-2 rounded-xl transition-all ${
+                view === 'settings'
+                  ? 'bg-white text-emerald-600 shadow-lg'
+                  : 'bg-white/20 text-white hover:bg-white/30'
+              }`}
+              title="Settings"
+            >
+              <SettingsIcon size={20} />
+            </button>
           </div>
 
-          {/* Main Navigation - Grid Layout */}
-          <div className="grid grid-cols-3 sm:grid-cols-5 gap-1.5 sm:gap-2">
-            {navCategories.map((category) => {
-              const Icon = category.icon;
-              const isActive = activeCategory === category.id;
-              const isOpen = openDrawer === category.id;
-              const hasDrawer = !!category.items;
+          {/* Main Navigation - 4 Tabs */}
+          <div className="grid grid-cols-4 gap-1.5 sm:gap-2">
+            {NAV_TABS.map((tab) => {
+              const Icon = tab.icon;
+              const isActive = activeTabId === tab.id;
 
               return (
                 <button
-                  key={category.id}
-                  onClick={() => handleNavClick(category)}
-                  title={category.label}
-                  className={`relative px-1.5 sm:px-2 py-2 sm:py-2.5 rounded-xl font-semibold flex flex-col sm:flex-row items-center justify-center gap-0.5 sm:gap-2 transition-all border-2 active:scale-95 ${
+                  key={tab.id}
+                  onClick={() => handleTabClick(tab)}
+                  title={tab.label}
+                  className={`px-1.5 sm:px-2 py-2 sm:py-2.5 rounded-xl font-semibold flex flex-col sm:flex-row items-center justify-center gap-0.5 sm:gap-2 transition-all border-2 active:scale-95 ${
                     isActive
                       ? 'bg-white text-emerald-600 shadow-lg border-white'
-                      : isOpen
-                      ? 'bg-white/40 text-white border-white/50 shadow-md'
                       : 'bg-white/25 text-white border-transparent hover:bg-white/35 hover:border-white/30'
                   }`}
                 >
                   <Icon size={16} className="sm:w-[18px] sm:h-[18px]" />
-                  <span className="text-[10px] sm:text-xs font-bold leading-tight">{category.label}</span>
-                  {hasDrawer && (
-                    <span className="absolute top-0.5 right-0.5 sm:static">
-                      {isOpen ? <ChevronUp size={10} className="sm:w-3 sm:h-3" /> : <ChevronDown size={10} className="sm:w-3 sm:h-3" />}
-                    </span>
-                  )}
+                  <span className="text-[10px] sm:text-xs font-bold leading-tight">{tab.label}</span>
                 </button>
               );
             })}
           </div>
 
-          {/* Drawer - Sub Items */}
-          {activeDrawerItems && (
+          {/* Sub-tabs for Bills and Goals */}
+          {activeTab?.subTabs && (
             <div className="mt-3">
-              <div className="bg-white rounded-2xl shadow-xl p-2 grid grid-cols-2 sm:flex sm:flex-wrap sm:justify-center gap-2 border border-slate-200">
-                {activeDrawerItems.map((item) => {
-                  const ItemIcon = item.icon;
-                  const isItemActive = view === item.view;
+              <div className="bg-white rounded-2xl shadow-xl p-1.5 flex gap-1 border border-slate-200">
+                {activeTab.subTabs.map((sub) => {
+                  const SubIcon = sub.icon;
+                  const isSubActive = view === sub.view;
 
                   return (
                     <button
-                      key={item.view}
-                      onClick={() => handleSubItemClick(item.view)}
-                      className={`px-3 py-2.5 rounded-xl font-semibold flex items-center justify-center gap-2 transition-all ${
-                        isItemActive
+                      key={sub.view}
+                      onClick={() => handleSubTabClick(sub.view)}
+                      className={`flex-1 px-2 py-2 rounded-xl font-semibold flex items-center justify-center gap-1.5 transition-all ${
+                        isSubActive
                           ? 'bg-emerald-600 text-white shadow-md'
                           : 'text-slate-600 hover:bg-emerald-50 hover:text-emerald-700'
                       }`}
                     >
-                      <ItemIcon size={18} />
-                      <span className="text-sm">{item.label}</span>
+                      <SubIcon size={14} />
+                      <span className="text-xs sm:text-sm">{sub.label}</span>
                     </button>
                   );
                 })}
@@ -1338,6 +1298,7 @@ const BillPayPlanner = () => {
       <div className="max-w-7xl mx-auto">
         <Header />
 
+        {/* ===== HOME ===== */}
         {view === 'dashboard' && (
           <Dashboard
             overview={overview}
@@ -1350,90 +1311,12 @@ const BillPayPlanner = () => {
             nextPayDates={nextPayDates}
             perCheckEnvelopeSum={perCheckEnvelopeSum()}
             onToggleInstancePaid={toggleInstancePaid}
-            onNavigateToChecklist={() => setView('checklist')}
+            onNavigateToChecklist={() => setView('bills-dashboard')}
           />
         )}
-        {view === 'bills' && (
-          <BillsTemplates
-            billTemplates={billTemplates}
-            billInstances={billInstances}
-            onAddTemplate={() => {
-              setEditingTemplate(null);
-              setShowTemplateForm(true);
-            }}
-            onEditTemplate={(t) => {
-              setEditingTemplate(t);
-              setShowTemplateForm(true);
-            }}
-            onRetireTemplate={retireTemplate}
-            onUpdateHistoricalPayments={(templateId, historicalPayments, newEstimate) => {
-              // Update template with new historical payments and estimate
-              setBillTemplates((prev) =>
-                prev.map((t) =>
-                  t.id === templateId
-                    ? { ...t, historicalPayments, amount: newEstimate }
-                    : t
-                )
-              );
 
-              // Update future unpaid bills with new estimate
-              setBills((prev) =>
-                prev.map((bill) => {
-                  if (bill.templateId !== templateId) return bill;
-                  if (bill.paid) return bill; // Don't update paid bills
-                  return { ...bill, amount: newEstimate };
-                })
-              );
-
-              // Also update legacy billInstances
-              setBillInstances((prev) =>
-                prev.map((inst) => {
-                  if (inst.templateId !== templateId) return inst;
-                  if (inst.paid) return inst;
-                  return { ...inst, amountEstimate: newEstimate };
-                })
-              );
-            }}
-          />
-        )}
-        {view === 'checklist' && (
-          <Checklist
-            currentMonthInstances={currentMonthInstances}
-            allBills={bills}
-            onToggleInstancePaid={toggleInstancePaid}
-            onReassignChecks={assignInstancesToChecks}
-            onUpdateInstance={(updatedInstance) => {
-              // Update in new bills array - mark as manually assigned
-              setBills((prev) =>
-                prev.map((bill) =>
-                  bill.id === updatedInstance.id
-                    ? {
-                        ...bill,
-                        assignedCheck: updatedInstance.assignedCheck,
-                        assignedPayDate: updatedInstance.assignedPayDate
-                          ? toMMDDYYYY(parseLocalDate(updatedInstance.assignedPayDate))
-                          : bill.assignedPayDate,
-                        paid: updatedInstance.paid,
-                        paidDate: updatedInstance.paidDate,
-                        actualPaid: updatedInstance.actualPaid,
-                        manuallyAssigned: true, // Mark as manually assigned
-                      }
-                    : bill
-                )
-              );
-              // Legacy support - also mark as manually assigned
-              setBillInstances((prev) =>
-                prev.map((inst) =>
-                  inst.id === updatedInstance.id
-                    ? { ...updatedInstance, manuallyAssigned: true }
-                    : inst
-                )
-              );
-            }}
-            nextPayDates={nextPayDates}
-          />
-        )}
-        {view === 'submit' && (
+        {/* ===== INCOME ===== */}
+        {view === 'income' && (
           <SubmitActuals
             currentMonthInstances={currentMonthInstances}
             onSubmitActual={submitActualPaid}
@@ -1446,31 +1329,104 @@ const BillPayPlanner = () => {
             onDeleteReceipt={deleteScannedReceipt}
           />
         )}
-        {view === 'assets' && (
-          <Assets
-            assets={assets}
-            onAddAsset={() => setShowAssetForm(true)}
-            onEditAsset={(a) => setEditingAsset(a)}
-            onDeleteAsset={deleteAsset}
+
+        {/* ===== BILLS > SETUP ===== */}
+        {view === 'bills-setup' && (
+          <>
+            <BillsTemplates
+              billTemplates={billTemplates}
+              billInstances={billInstances}
+              onAddTemplate={() => {
+                setEditingTemplate(null);
+                setShowTemplateForm(true);
+              }}
+              onEditTemplate={(t) => {
+                setEditingTemplate(t);
+                setShowTemplateForm(true);
+              }}
+              onRetireTemplate={retireTemplate}
+              onUpdateHistoricalPayments={(templateId, historicalPayments, newEstimate) => {
+                setBillTemplates((prev) =>
+                  prev.map((t) =>
+                    t.id === templateId
+                      ? { ...t, historicalPayments, amount: newEstimate }
+                      : t
+                  )
+                );
+                setBills((prev) =>
+                  prev.map((bill) => {
+                    if (bill.templateId !== templateId) return bill;
+                    if (bill.paid) return bill;
+                    return { ...bill, amount: newEstimate };
+                  })
+                );
+                setBillInstances((prev) =>
+                  prev.map((inst) => {
+                    if (inst.templateId !== templateId) return inst;
+                    if (inst.paid) return inst;
+                    return { ...inst, amountEstimate: newEstimate };
+                  })
+                );
+              }}
+            />
+            <div className="mt-6">
+              <OneTime
+                oneTimeBills={oneTimeBills}
+                onAddOneTime={() => setShowOneTimeForm(true)}
+                onEditOneTime={(b) => setEditingOneTime(b)}
+                onDeleteOneTime={deleteOneTimeBill}
+                onToggleOneTimePaid={toggleOneTimePaid}
+              />
+            </div>
+            <div className="mt-6">
+              <Propane
+                propaneFills={propaneFills}
+                onAddPropaneFill={() => setShowPropaneForm(true)}
+                onDeletePropaneFill={deletePropaneFill}
+              />
+            </div>
+          </>
+        )}
+
+        {/* ===== BILLS > DASHBOARD ===== */}
+        {view === 'bills-dashboard' && (
+          <Checklist
+            currentMonthInstances={currentMonthInstances}
+            allBills={bills}
+            onToggleInstancePaid={toggleInstancePaid}
+            onReassignChecks={assignInstancesToChecks}
+            onUpdateInstance={(updatedInstance) => {
+              setBills((prev) =>
+                prev.map((bill) =>
+                  bill.id === updatedInstance.id
+                    ? {
+                        ...bill,
+                        assignedCheck: updatedInstance.assignedCheck,
+                        assignedPayDate: updatedInstance.assignedPayDate
+                          ? toMMDDYYYY(parseLocalDate(updatedInstance.assignedPayDate))
+                          : bill.assignedPayDate,
+                        paid: updatedInstance.paid,
+                        paidDate: updatedInstance.paidDate,
+                        actualPaid: updatedInstance.actualPaid,
+                        manuallyAssigned: true,
+                      }
+                    : bill
+                )
+              );
+              setBillInstances((prev) =>
+                prev.map((inst) =>
+                  inst.id === updatedInstance.id
+                    ? { ...updatedInstance, manuallyAssigned: true }
+                    : inst
+                )
+              );
+            }}
+            nextPayDates={nextPayDates}
           />
         )}
-        {view === 'onetime' && (
-          <OneTime
-            oneTimeBills={oneTimeBills}
-            onAddOneTime={() => setShowOneTimeForm(true)}
-            onEditOneTime={(b) => setEditingOneTime(b)}
-            onDeleteOneTime={deleteOneTimeBill}
-            onToggleOneTimePaid={toggleOneTimePaid}
-          />
-        )}
-        {view === 'propane' && (
-          <Propane
-            propaneFills={propaneFills}
-            onAddPropaneFill={() => setShowPropaneForm(true)}
-            onDeletePropaneFill={deletePropaneFill}
-          />
-        )}
-        {view === 'analytics' && (
+
+        {/* ===== BILLS > ANALYTICS ===== */}
+        {view === 'bills-analytics' && (
           <Analytics
             overview={overview}
             currentMonthInstances={currentMonthInstances}
@@ -1496,15 +1452,36 @@ const BillPayPlanner = () => {
             }
           />
         )}
-        {view === 'investments' && (
-          <Investments
-            holdings={investments}
-            onAddHolding={addInvestment}
-            onUpdateHolding={updateInvestment}
-            onDeleteHolding={deleteInvestment}
-          />
+
+        {/* ===== GOALS > SETUP ===== */}
+        {view === 'goals-setup' && (
+          <>
+            <Assets
+              assets={assets}
+              onAddAsset={() => setShowAssetForm(true)}
+              onEditAsset={(a) => setEditingAsset(a)}
+              onDeleteAsset={deleteAsset}
+            />
+            <div className="mt-6">
+              <Investments
+                holdings={investments}
+                onAddHolding={addInvestment}
+                onUpdateHolding={updateInvestment}
+                onDeleteHolding={deleteInvestment}
+              />
+            </div>
+          </>
         )}
-        {view === 'retirement' && <Retirement />}
+
+        {/* ===== GOALS > DASHBOARD ===== */}
+        {view === 'goals-dashboard' && (
+          <Retirement />
+        )}
+
+        {/* ===== GOALS > ANALYTICS ===== */}
+        {view === 'goals-analytics' && (
+          <Retirement />
+        )}
         {view === 'settings' && (
           <Settings
             paySchedule={paySchedule}
