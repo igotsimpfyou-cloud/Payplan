@@ -87,3 +87,42 @@ export const calculateNextPayDates = (paySchedule) => {
 
 export const monthlyTotal = (instances) =>
   instances.reduce((s, i) => s + parseAmt(i.actualPaid ?? i.amountEstimate), 0);
+
+/**
+ * Calculate debt payoff timeline using proper amortization formula.
+ * Uses: n = -log(1 - rB/P) / log(1+r)
+ */
+export const calculateDebtPayoff = (debt) => {
+  const balance = parseAmt(debt.balance);
+  const annualRate = parseAmt(debt.rate) / 100;
+  const monthlyRate = annualRate / 12;
+  const payment = parseAmt(debt.payment);
+
+  if (payment <= 0 || balance <= 0) return { months: 0, totalInterest: 0, totalPaid: 0, payoffDate: null };
+
+  if (monthlyRate > 0 && payment <= balance * monthlyRate) {
+    return { months: Infinity, totalInterest: Infinity, totalPaid: Infinity, payoffDate: null };
+  }
+
+  let months;
+  if (monthlyRate === 0) {
+    months = Math.ceil(balance / payment);
+  } else {
+    months = Math.ceil(-Math.log(1 - (monthlyRate * balance) / payment) / Math.log(1 + monthlyRate));
+  }
+
+  let remaining = balance;
+  let totalInterest = 0;
+  for (let i = 0; i < months && remaining > 0.01; i++) {
+    const interest = remaining * monthlyRate;
+    const principal = Math.min(payment - interest, remaining);
+    totalInterest += interest;
+    remaining -= principal;
+  }
+
+  const startDate = debt.startDate ? new Date(debt.startDate) : new Date();
+  const payoffDate = new Date(startDate);
+  payoffDate.setMonth(payoffDate.getMonth() + months);
+
+  return { months, totalInterest, totalPaid: balance + totalInterest, payoffDate: toYMD(payoffDate) };
+};

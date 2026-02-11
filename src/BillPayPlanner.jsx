@@ -8,6 +8,7 @@ import {
   Target,
   Wrench,
   LayoutDashboard,
+  X,
 } from 'lucide-react';
 
 // Utils
@@ -72,6 +73,8 @@ import { Settings } from './components/views/Settings';
 import { Retirement } from './components/views/Retirement';
 import { Income } from './components/views/Income';
 import { Investments } from './components/views/Investments';
+import { DebtTracker } from './components/views/DebtTracker';
+import { GoalsDashboard } from './components/views/GoalsDashboard';
 
 /**
  * PayPlan Pro - Slim Orchestrator
@@ -120,6 +123,7 @@ const BillPayPlanner = () => {
   const [showOneTimeForm, setShowOneTimeForm] = useState(false);
   const [editingOneTime, setEditingOneTime] = useState(null);
   const [showPropaneForm, setShowPropaneForm] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
   const [loading, setLoading] = useState(true);
 
   // Backup / Restore
@@ -1193,8 +1197,6 @@ const BillPayPlanner = () => {
       viewToTab[tab.defaultView] = tab.id;
     }
   });
-  // Settings is special — not a tab
-  viewToTab['settings'] = null;
 
   const activeTabId = viewToTab[view] || 'home';
   const activeTab = NAV_TABS.find((t) => t.id === activeTabId);
@@ -1218,12 +1220,8 @@ const BillPayPlanner = () => {
               PayPlan Pro
             </h1>
             <button
-              onClick={() => setView('settings')}
-              className={`p-2 rounded-xl transition-all ${
-                view === 'settings'
-                  ? 'bg-white text-emerald-600 shadow-lg'
-                  : 'bg-white/20 text-white hover:bg-white/30'
-              }`}
+              onClick={() => setShowSettings(true)}
+              className="p-2 rounded-xl transition-all bg-white/20 text-white hover:bg-white/30"
               title="Settings"
             >
               <SettingsIcon size={20} />
@@ -1385,6 +1383,98 @@ const BillPayPlanner = () => {
                 onDeletePropaneFill={deletePropaneFill}
               />
             </div>
+
+            {/* Envelopes */}
+            <div className="bg-white rounded-2xl shadow-xl p-5 mt-6">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="font-bold text-slate-800">Envelopes</h3>
+                <button
+                  className="px-3 py-1.5 rounded-xl bg-emerald-100 text-emerald-700 font-semibold text-sm"
+                  onClick={() => {
+                    const name = prompt('Envelope name:');
+                    if (!name) return;
+                    const amt = parseAmt(prompt('Amount per check:') || 0);
+                    setEnvelopes([...envelopes, { id: Date.now(), name, perCheck: amt }]);
+                  }}
+                >
+                  Add
+                </button>
+              </div>
+              {envelopes.length ? (
+                <div className="space-y-2">
+                  {envelopes.map((e) => (
+                    <div
+                      key={e.id}
+                      className="p-3 bg-slate-50 rounded-xl flex items-center justify-between"
+                    >
+                      <div className="font-semibold text-sm">{e.name}</div>
+                      <div className="flex items-center gap-2">
+                        <div className="text-slate-600 text-sm">
+                          ${parseAmt(e.perCheck).toFixed(2)} / check
+                        </div>
+                        <button
+                          className="px-2 py-1 text-blue-700 bg-blue-100 rounded-lg text-xs"
+                          onClick={() => {
+                            const v = parseAmt(
+                              prompt(`New amount for "${e.name}":`, e.perCheck) || 0
+                            );
+                            setEnvelopes(
+                              envelopes.map((x) => (x.id === e.id ? { ...x, perCheck: v } : x))
+                            );
+                          }}
+                        >
+                          Edit
+                        </button>
+                        <button
+                          className="px-2 py-1 text-red-700 bg-red-100 rounded-lg text-xs"
+                          onClick={() =>
+                            setEnvelopes(envelopes.filter((x) => x.id !== e.id))
+                          }
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                  <div className="text-sm text-slate-500">
+                    Total reserved per check: <b>${perCheckEnvelopeSum().toFixed(2)}</b>
+                  </div>
+                </div>
+              ) : (
+                <p className="text-slate-400 text-sm">No envelopes yet. Envelopes reserve money from each paycheck for specific purposes.</p>
+              )}
+            </div>
+
+            {/* Category Budgets */}
+            <div className="bg-white rounded-2xl shadow-xl p-5 mt-6">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="font-bold text-slate-800">Category Budgets</h3>
+                <button
+                  className="px-3 py-1.5 rounded-xl bg-emerald-100 text-emerald-700 font-semibold text-sm"
+                  onClick={() => {
+                    const cat = prompt(
+                      'Category (utilities, subscription, insurance, loan, rent, other):'
+                    );
+                    if (!cat) return;
+                    const cap = parseAmt(prompt('Monthly cap:') || 0);
+                    setBudgets({ ...budgets, [cat]: cap });
+                  }}
+                >
+                  Set/Update
+                </button>
+              </div>
+              <div className="grid grid-cols-2 gap-2 text-sm">
+                {Object.entries(budgets).map(([k, v]) => (
+                  <div
+                    key={k}
+                    className="p-3 bg-slate-50 rounded-xl flex items-center justify-between"
+                  >
+                    <span className="font-semibold capitalize">{k}</span>
+                    <span>${parseAmt(v).toFixed(2)}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
           </>
         )}
 
@@ -1454,30 +1544,27 @@ const BillPayPlanner = () => {
             paySchedule={paySchedule}
             budgets={budgets}
             debtPayoff={debtPayoff}
-            onAddDebt={() => {
-              const name = prompt('Debt name (e.g., Credit Card):');
-              if (!name) return;
-              const balance = parseAmt(prompt('Current balance:') || 0);
-              const rate = parseAmt(prompt('Interest rate % (e.g., 18.5):') || 0);
-              const payment = parseAmt(prompt('Monthly payment:') || 0);
-              const debt = { id: Date.now(), name, balance, rate, payment };
-              setDebtPayoff([...debtPayoff, debt]);
-            }}
-            onRemoveDebt={(id) =>
-              setDebtPayoff(debtPayoff.filter((d) => d.id !== id))
-            }
+            onNavigateToGoals={() => setView('goals-setup')}
           />
         )}
 
         {/* ===== GOALS > SETUP ===== */}
         {view === 'goals-setup' && (
           <>
-            <Assets
-              assets={assets}
-              onAddAsset={() => setShowAssetForm(true)}
-              onEditAsset={(a) => setEditingAsset(a)}
-              onDeleteAsset={deleteAsset}
+            <DebtTracker
+              debtPayoff={debtPayoff}
+              onAddDebt={(debt) => setDebtPayoff([...debtPayoff, debt])}
+              onEditDebt={(debt) => setDebtPayoff(debtPayoff.map(d => d.id === debt.id ? debt : d))}
+              onRemoveDebt={(id) => setDebtPayoff(debtPayoff.filter(d => d.id !== id))}
             />
+            <div className="mt-6">
+              <Assets
+                assets={assets}
+                onAddAsset={() => setShowAssetForm(true)}
+                onEditAsset={(a) => setEditingAsset(a)}
+                onDeleteAsset={deleteAsset}
+              />
+            </div>
             <div className="mt-6">
               <Investments
                 holdings={investments}
@@ -1491,157 +1578,19 @@ const BillPayPlanner = () => {
 
         {/* ===== GOALS > DASHBOARD ===== */}
         {view === 'goals-dashboard' && (
-          <Retirement />
+          <GoalsDashboard
+            debtPayoff={debtPayoff}
+            assets={assets}
+            investments={investments}
+            onNavigateToSetup={() => setView('goals-setup')}
+            onNavigateToAnalytics={() => setView('goals-analytics')}
+          />
         )}
 
         {/* ===== GOALS > ANALYTICS ===== */}
         {view === 'goals-analytics' && (
           <Retirement />
         )}
-        {view === 'settings' && (
-          <Settings
-            paySchedule={paySchedule}
-            envelopes={envelopes}
-            budgets={budgets}
-            backupFileInputRef={backupFileInputRef}
-            perCheckEnvelopeSum={perCheckEnvelopeSum()}
-            billInstances={billInstances}
-            onEditPaySchedule={() => setShowPayForm(true)}
-            onAddEnvelope={() => {
-              const name = prompt('Envelope name:');
-              if (!name) return;
-              const amt = parseAmt(prompt('Amount per check:') || 0);
-              setEnvelopes([...envelopes, { id: Date.now(), name, perCheck: amt }]);
-            }}
-            onEditEnvelope={(e) => {
-              const v = parseAmt(
-                prompt(`New amount for "${e.name}":`, e.perCheck) || 0
-              );
-              setEnvelopes(
-                envelopes.map((x) => (x.id === e.id ? { ...x, perCheck: v } : x))
-              );
-            }}
-            onRemoveEnvelope={(id) =>
-              setEnvelopes(envelopes.filter((x) => x.id !== id))
-            }
-            onSetBudget={() => {
-              const cat = prompt(
-                'Category (utilities, subscription, insurance, loan, rent, other):'
-              );
-              if (!cat) return;
-              const cap = parseAmt(prompt('Monthly cap:') || 0);
-              setBudgets({ ...budgets, [cat]: cap });
-            }}
-            onExportBackup={exportBackup}
-            onImportBackup={importBackupFromFile}
-            bills={bills}
-            onDeduplicateBills={() => {
-              // Smart deduplication: keep only one bill per name per month
-              // This handles the timezone bug where dates shifted by 1 day
-              const billsByNameMonth = {};
-              let removed = 0;
-
-              for (const bill of bills) {
-                const dueDate = parseMMDDYYYY(bill.dueDate);
-                if (!dueDate) continue;
-
-                // Create key from name + year + month
-                const monthKey = `${bill.name}-${dueDate.getFullYear()}-${dueDate.getMonth()}`;
-
-                if (!billsByNameMonth[monthKey]) {
-                  billsByNameMonth[monthKey] = [];
-                }
-                billsByNameMonth[monthKey].push(bill);
-              }
-
-              // For each group, keep the bill that matches the template's dueDay
-              const unique = [];
-              for (const key in billsByNameMonth) {
-                const group = billsByNameMonth[key];
-                if (group.length === 1) {
-                  unique.push(group[0]);
-                } else {
-                  // Multiple bills for same name/month - pick the best one
-                  // Prefer: paid bills, then bills matching template dueDay
-                  const template = billTemplates.find(t => t.id === group[0].templateId);
-                  const templateDueDay = template?.dueDay;
-
-                  // Sort to prefer: paid first, then matching dueDay, then earliest
-                  group.sort((a, b) => {
-                    // Paid bills first
-                    if (a.paid && !b.paid) return -1;
-                    if (!a.paid && b.paid) return 1;
-
-                    // Matching template dueDay next
-                    const aDate = parseMMDDYYYY(a.dueDate);
-                    const bDate = parseMMDDYYYY(b.dueDate);
-                    const aMatches = aDate?.getDate() === templateDueDay;
-                    const bMatches = bDate?.getDate() === templateDueDay;
-                    if (aMatches && !bMatches) return -1;
-                    if (!aMatches && bMatches) return 1;
-
-                    return 0;
-                  });
-
-                  unique.push(group[0]);
-                  removed += group.length - 1;
-                }
-              }
-
-              setBills(unique);
-
-              // Also dedupe legacy instances the same way
-              const instancesByNameMonth = {};
-              for (const inst of billInstances) {
-                const dueDate = new Date(inst.dueDate);
-                const monthKey = `${inst.name}-${dueDate.getFullYear()}-${dueDate.getMonth()}`;
-                if (!instancesByNameMonth[monthKey]) {
-                  instancesByNameMonth[monthKey] = [];
-                }
-                instancesByNameMonth[monthKey].push(inst);
-              }
-
-              const uniqueInstances = [];
-              for (const key in instancesByNameMonth) {
-                const group = instancesByNameMonth[key];
-                // Keep first (or paid) one
-                group.sort((a, b) => (a.paid && !b.paid ? -1 : !a.paid && b.paid ? 1 : 0));
-                uniqueInstances.push(group[0]);
-              }
-              setBillInstances(uniqueInstances);
-
-              return removed;
-            }}
-            onMarkPastBillsPaid={() => {
-              const today = new Date();
-              today.setHours(0, 0, 0, 0);
-              let marked = 0;
-
-              setBills(prev => prev.map(bill => {
-                if (bill.paid) return bill;
-                const dueDate = parseMMDDYYYY(bill.dueDate);
-                if (dueDate && dueDate < today) {
-                  marked++;
-                  return { ...bill, paid: true, paidDate: null }; // null paidDate indicates "paid before app"
-                }
-                return bill;
-              }));
-
-              // Also update legacy instances
-              setBillInstances(prev => prev.map(inst => {
-                if (inst.paid) return inst;
-                const dueDate = new Date(inst.dueDate);
-                if (dueDate < today) {
-                  return { ...inst, paid: true };
-                }
-                return inst;
-              }));
-
-              return marked;
-            }}
-          />
-        )}
-
         {/* Modals */}
         {showTemplateForm && (
           <TemplateForm
@@ -1715,6 +1664,122 @@ const BillPayPlanner = () => {
             onSubmit={addPropaneFill}
             onCancel={() => setShowPropaneForm(false)}
           />
+        )}
+
+        {/* Settings Slide-Out Panel */}
+        {showSettings && (
+          <div className="fixed inset-0 z-50">
+            <div className="absolute inset-0 bg-black/40" onClick={() => setShowSettings(false)} />
+            <div className="absolute right-0 top-0 bottom-0 w-full max-w-md bg-slate-50 shadow-2xl overflow-y-auto animate-slide-in">
+              <div className="sticky top-0 z-10 bg-white border-b px-5 py-4 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <SettingsIcon size={20} className="text-slate-600" />
+                  <h2 className="text-lg font-bold text-slate-800">Settings</h2>
+                </div>
+                <button
+                  onClick={() => setShowSettings(false)}
+                  className="p-2 hover:bg-slate-100 rounded-xl transition-colors"
+                >
+                  <X size={20} className="text-slate-500" />
+                </button>
+              </div>
+              <div className="p-4">
+                <Settings
+                  backupFileInputRef={backupFileInputRef}
+                  billInstances={billInstances}
+                  onExportBackup={exportBackup}
+                  onImportBackup={importBackupFromFile}
+                  bills={bills}
+                  onDeduplicateBills={() => {
+                    const billsByNameMonth = {};
+                    let removed = 0;
+
+                    for (const bill of bills) {
+                      const dueDate = parseMMDDYYYY(bill.dueDate);
+                      if (!dueDate) continue;
+                      const monthKey = `${bill.name}-${dueDate.getFullYear()}-${dueDate.getMonth()}`;
+                      if (!billsByNameMonth[monthKey]) {
+                        billsByNameMonth[monthKey] = [];
+                      }
+                      billsByNameMonth[monthKey].push(bill);
+                    }
+
+                    const unique = [];
+                    for (const key in billsByNameMonth) {
+                      const group = billsByNameMonth[key];
+                      if (group.length === 1) {
+                        unique.push(group[0]);
+                      } else {
+                        const template = billTemplates.find(t => t.id === group[0].templateId);
+                        const templateDueDay = template?.dueDay;
+                        group.sort((a, b) => {
+                          if (a.paid && !b.paid) return -1;
+                          if (!a.paid && b.paid) return 1;
+                          const aDate = parseMMDDYYYY(a.dueDate);
+                          const bDate = parseMMDDYYYY(b.dueDate);
+                          const aMatches = aDate?.getDate() === templateDueDay;
+                          const bMatches = bDate?.getDate() === templateDueDay;
+                          if (aMatches && !bMatches) return -1;
+                          if (!aMatches && bMatches) return 1;
+                          return 0;
+                        });
+                        unique.push(group[0]);
+                        removed += group.length - 1;
+                      }
+                    }
+
+                    setBills(unique);
+
+                    const instancesByNameMonth = {};
+                    for (const inst of billInstances) {
+                      const dueDate = new Date(inst.dueDate);
+                      const monthKey = `${inst.name}-${dueDate.getFullYear()}-${dueDate.getMonth()}`;
+                      if (!instancesByNameMonth[monthKey]) {
+                        instancesByNameMonth[monthKey] = [];
+                      }
+                      instancesByNameMonth[monthKey].push(inst);
+                    }
+
+                    const uniqueInstances = [];
+                    for (const key in instancesByNameMonth) {
+                      const group = instancesByNameMonth[key];
+                      group.sort((a, b) => (a.paid && !b.paid ? -1 : !a.paid && b.paid ? 1 : 0));
+                      uniqueInstances.push(group[0]);
+                    }
+                    setBillInstances(uniqueInstances);
+
+                    return removed;
+                  }}
+                  onMarkPastBillsPaid={() => {
+                    const today = new Date();
+                    today.setHours(0, 0, 0, 0);
+                    let marked = 0;
+
+                    setBills(prev => prev.map(bill => {
+                      if (bill.paid) return bill;
+                      const dueDate = parseMMDDYYYY(bill.dueDate);
+                      if (dueDate && dueDate < today) {
+                        marked++;
+                        return { ...bill, paid: true, paidDate: null };
+                      }
+                      return bill;
+                    }));
+
+                    setBillInstances(prev => prev.map(inst => {
+                      if (inst.paid) return inst;
+                      const dueDate = new Date(inst.dueDate);
+                      if (dueDate < today) {
+                        return { ...inst, paid: true };
+                      }
+                      return inst;
+                    }));
+
+                    return marked;
+                  }}
+                />
+              </div>
+            </div>
+          </div>
         )}
       </div>
     </div>

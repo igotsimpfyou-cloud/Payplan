@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Download, Upload, RefreshCw, Camera, Eye, EyeOff, ExternalLink, Calendar, CheckCircle2, Trash2, AlertTriangle } from 'lucide-react';
-import { parseAmt } from '../../utils/formatters';
 import { downloadICSFile, generateFilename } from '../../utils/calendarExport';
 import { parseMMDDYYYY } from '../../utils/billDatabase';
 
@@ -152,16 +151,7 @@ const DataCleanup = ({ bills, onDeduplicateBills, onMarkPastBillsPaid }) => {
 };
 
 export const Settings = ({
-  paySchedule,
-  envelopes,
-  budgets,
   backupFileInputRef,
-  perCheckEnvelopeSum,
-  onEditPaySchedule,
-  onAddEnvelope,
-  onEditEnvelope,
-  onRemoveEnvelope,
-  onSetBudget,
   onExportBackup,
   onImportBackup,
   billInstances = [],
@@ -214,102 +204,6 @@ export const Settings = ({
 
   return (
     <div>
-      {/* Pay Schedule */}
-      <div className="bg-white rounded-2xl shadow-xl p-6 mb-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <h3 className="text-xl font-bold">Pay Schedule</h3>
-            {paySchedule ? (
-              <div className="text-sm text-slate-600 mt-1">
-                {paySchedule.frequency} • $
-                {parseAmt(paySchedule.payAmount).toFixed(2)} per check • Next{' '}
-                {new Date(paySchedule.nextPayDate).toLocaleDateString()}
-              </div>
-            ) : (
-              <div className="text-sm text-slate-600 mt-1">Not set.</div>
-            )}
-          </div>
-          <button
-            className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold"
-            onClick={onEditPaySchedule}
-          >
-            {paySchedule ? 'Edit' : 'Set up'}
-          </button>
-        </div>
-      </div>
-
-      {/* Envelopes */}
-      <div className="bg-white rounded-2xl shadow-xl p-6 mb-6">
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="text-xl font-bold">Envelopes</h3>
-          <button
-            className="px-3 py-2 rounded-xl bg-emerald-100 text-emerald-700 font-semibold"
-            onClick={onAddEnvelope}
-          >
-            Add
-          </button>
-        </div>
-        {envelopes.length ? (
-          <div className="space-y-2">
-            {envelopes.map((e) => (
-              <div
-                key={e.id}
-                className="p-3 bg-slate-50 rounded-xl flex items-center justify-between"
-              >
-                <div className="font-semibold">{e.name}</div>
-                <div className="flex items-center gap-2">
-                  <div className="text-slate-600">
-                    ${parseAmt(e.perCheck).toFixed(2)} / check
-                  </div>
-                  <button
-                    className="px-2 py-1 text-blue-700 bg-blue-100 rounded-lg"
-                    onClick={() => onEditEnvelope(e)}
-                  >
-                    Edit
-                  </button>
-                  <button
-                    className="px-2 py-1 text-red-700 bg-red-100 rounded-lg"
-                    onClick={() => onRemoveEnvelope(e.id)}
-                  >
-                    Remove
-                  </button>
-                </div>
-              </div>
-            ))}
-            <div className="text-sm text-slate-600">
-              Total reserved per check:{' '}
-              <b>${perCheckEnvelopeSum.toFixed(2)}</b>
-            </div>
-          </div>
-        ) : (
-          <div className="text-slate-600">No envelopes yet.</div>
-        )}
-      </div>
-
-      {/* Category Budgets */}
-      <div className="bg-white rounded-2xl shadow-xl p-6 mb-6">
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="text-xl font-bold">Category Budgets</h3>
-          <button
-            className="px-3 py-2 rounded-xl bg-emerald-100 text-emerald-700 font-semibold"
-            onClick={onSetBudget}
-          >
-            Set/Update
-          </button>
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-2 text-sm">
-          {Object.entries(budgets).map(([k, v]) => (
-            <div
-              key={k}
-              className="p-3 bg-slate-50 rounded-xl flex items-center justify-between"
-            >
-              <span className="font-semibold capitalize">{k}</span>
-              <span>${parseAmt(v).toFixed(2)}</span>
-            </div>
-          ))}
-        </div>
-      </div>
-
       {/* Receipt Scanner OCR */}
       <div className="bg-white rounded-2xl shadow-xl p-6 mb-6">
         <div className="flex items-center gap-3 mb-4">
