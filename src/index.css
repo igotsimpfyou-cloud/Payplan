@@ -4,3 +4,12 @@
 
 /* Small iPhone polish */
 html, body { height: 100%; }
+
+/* Settings slide-in animation */
+@keyframes slide-in-right {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
+}
+.animate-slide-in {
+  animation: slide-in-right 0.25s ease-out;
+}

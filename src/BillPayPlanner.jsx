@@ -8,6 +8,7 @@ import {
   Target,
   Wrench,
   LayoutDashboard,
+  X,
 } from 'lucide-react';
 
 // Utils
@@ -122,6 +123,7 @@ const BillPayPlanner = () => {
   const [showOneTimeForm, setShowOneTimeForm] = useState(false);
   const [editingOneTime, setEditingOneTime] = useState(null);
   const [showPropaneForm, setShowPropaneForm] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
   const [loading, setLoading] = useState(true);
 
   // Backup / Restore
@@ -1195,8 +1197,6 @@ const BillPayPlanner = () => {
       viewToTab[tab.defaultView] = tab.id;
     }
   });
-  // Settings is special — not a tab
-  viewToTab['settings'] = null;
 
   const activeTabId = viewToTab[view] || 'home';
   const activeTab = NAV_TABS.find((t) => t.id === activeTabId);
@@ -1220,12 +1220,8 @@ const BillPayPlanner = () => {
               PayPlan Pro
             </h1>
             <button
-              onClick={() => setView('settings')}
-              className={`p-2 rounded-xl transition-all ${
-                view === 'settings'
-                  ? 'bg-white text-emerald-600 shadow-lg'
-                  : 'bg-white/20 text-white hover:bg-white/30'
-              }`}
+              onClick={() => setShowSettings(true)}
+              className="p-2 rounded-xl transition-all bg-white/20 text-white hover:bg-white/30"
               title="Settings"
             >
               <SettingsIcon size={20} />
@@ -1595,120 +1591,6 @@ const BillPayPlanner = () => {
         {view === 'goals-analytics' && (
           <Retirement />
         )}
-        {view === 'settings' && (
-          <Settings
-            backupFileInputRef={backupFileInputRef}
-            billInstances={billInstances}
-            onExportBackup={exportBackup}
-            onImportBackup={importBackupFromFile}
-            bills={bills}
-            onDeduplicateBills={() => {
-              // Smart deduplication: keep only one bill per name per month
-              // This handles the timezone bug where dates shifted by 1 day
-              const billsByNameMonth = {};
-              let removed = 0;
-
-              for (const bill of bills) {
-                const dueDate = parseMMDDYYYY(bill.dueDate);
-                if (!dueDate) continue;
-
-                // Create key from name + year + month
-                const monthKey = `${bill.name}-${dueDate.getFullYear()}-${dueDate.getMonth()}`;
-
-                if (!billsByNameMonth[monthKey]) {
-                  billsByNameMonth[monthKey] = [];
-                }
-                billsByNameMonth[monthKey].push(bill);
-              }
-
-              // For each group, keep the bill that matches the template's dueDay
-              const unique = [];
-              for (const key in billsByNameMonth) {
-                const group = billsByNameMonth[key];
-                if (group.length === 1) {
-                  unique.push(group[0]);
-                } else {
-                  // Multiple bills for same name/month - pick the best one
-                  // Prefer: paid bills, then bills matching template dueDay
-                  const template = billTemplates.find(t => t.id === group[0].templateId);
-                  const templateDueDay = template?.dueDay;
-
-                  // Sort to prefer: paid first, then matching dueDay, then earliest
-                  group.sort((a, b) => {
-                    // Paid bills first
-                    if (a.paid && !b.paid) return -1;
-                    if (!a.paid && b.paid) return 1;
-
-                    // Matching template dueDay next
-                    const aDate = parseMMDDYYYY(a.dueDate);
-                    const bDate = parseMMDDYYYY(b.dueDate);
-                    const aMatches = aDate?.getDate() === templateDueDay;
-                    const bMatches = bDate?.getDate() === templateDueDay;
-                    if (aMatches && !bMatches) return -1;
-                    if (!aMatches && bMatches) return 1;
-
-                    return 0;
-                  });
-
-                  unique.push(group[0]);
-                  removed += group.length - 1;
-                }
-              }
-
-              setBills(unique);
-
-              // Also dedupe legacy instances the same way
-              const instancesByNameMonth = {};
-              for (const inst of billInstances) {
-                const dueDate = new Date(inst.dueDate);
-                const monthKey = `${inst.name}-${dueDate.getFullYear()}-${dueDate.getMonth()}`;
-                if (!instancesByNameMonth[monthKey]) {
-                  instancesByNameMonth[monthKey] = [];
-                }
-                instancesByNameMonth[monthKey].push(inst);
-              }
-
-              const uniqueInstances = [];
-              for (const key in instancesByNameMonth) {
-                const group = instancesByNameMonth[key];
-                // Keep first (or paid) one
-                group.sort((a, b) => (a.paid && !b.paid ? -1 : !a.paid && b.paid ? 1 : 0));
-                uniqueInstances.push(group[0]);
-              }
-              setBillInstances(uniqueInstances);
-
-              return removed;
-            }}
-            onMarkPastBillsPaid={() => {
-              const today = new Date();
-              today.setHours(0, 0, 0, 0);
-              let marked = 0;
-
-              setBills(prev => prev.map(bill => {
-                if (bill.paid) return bill;
-                const dueDate = parseMMDDYYYY(bill.dueDate);
-                if (dueDate && dueDate < today) {
-                  marked++;
-                  return { ...bill, paid: true, paidDate: null }; // null paidDate indicates "paid before app"
-                }
-                return bill;
-              }));
-
-              // Also update legacy instances
-              setBillInstances(prev => prev.map(inst => {
-                if (inst.paid) return inst;
-                const dueDate = new Date(inst.dueDate);
-                if (dueDate < today) {
-                  return { ...inst, paid: true };
-                }
-                return inst;
-              }));
-
-              return marked;
-            }}
-          />
-        )}
-
         {/* Modals */}
         {showTemplateForm && (
           <TemplateForm
@@ -1782,6 +1664,122 @@ const BillPayPlanner = () => {
             onSubmit={addPropaneFill}
             onCancel={() => setShowPropaneForm(false)}
           />
+        )}
+
+        {/* Settings Slide-Out Panel */}
+        {showSettings && (
+          <div className="fixed inset-0 z-50">
+            <div className="absolute inset-0 bg-black/40" onClick={() => setShowSettings(false)} />
+            <div className="absolute right-0 top-0 bottom-0 w-full max-w-md bg-slate-50 shadow-2xl overflow-y-auto animate-slide-in">
+              <div className="sticky top-0 z-10 bg-white border-b px-5 py-4 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <SettingsIcon size={20} className="text-slate-600" />
+                  <h2 className="text-lg font-bold text-slate-800">Settings</h2>
+                </div>
+                <button
+                  onClick={() => setShowSettings(false)}
+                  className="p-2 hover:bg-slate-100 rounded-xl transition-colors"
+                >
+                  <X size={20} className="text-slate-500" />
+                </button>
+              </div>
+              <div className="p-4">
+                <Settings
+                  backupFileInputRef={backupFileInputRef}
+                  billInstances={billInstances}
+                  onExportBackup={exportBackup}
+                  onImportBackup={importBackupFromFile}
+                  bills={bills}
+                  onDeduplicateBills={() => {
+                    const billsByNameMonth = {};
+                    let removed = 0;
+
+                    for (const bill of bills) {
+                      const dueDate = parseMMDDYYYY(bill.dueDate);
+                      if (!dueDate) continue;
+                      const monthKey = `${bill.name}-${dueDate.getFullYear()}-${dueDate.getMonth()}`;
+                      if (!billsByNameMonth[monthKey]) {
+                        billsByNameMonth[monthKey] = [];
+                      }
+                      billsByNameMonth[monthKey].push(bill);
+                    }
+
+                    const unique = [];
+                    for (const key in billsByNameMonth) {
+                      const group = billsByNameMonth[key];
+                      if (group.length === 1) {
+                        unique.push(group[0]);
+                      } else {
+                        const template = billTemplates.find(t => t.id === group[0].templateId);
+                        const templateDueDay = template?.dueDay;
+                        group.sort((a, b) => {
+                          if (a.paid && !b.paid) return -1;
+                          if (!a.paid && b.paid) return 1;
+                          const aDate = parseMMDDYYYY(a.dueDate);
+                          const bDate = parseMMDDYYYY(b.dueDate);
+                          const aMatches = aDate?.getDate() === templateDueDay;
+                          const bMatches = bDate?.getDate() === templateDueDay;
+                          if (aMatches && !bMatches) return -1;
+                          if (!aMatches && bMatches) return 1;
+                          return 0;
+                        });
+                        unique.push(group[0]);
+                        removed += group.length - 1;
+                      }
+                    }
+
+                    setBills(unique);
+
+                    const instancesByNameMonth = {};
+                    for (const inst of billInstances) {
+                      const dueDate = new Date(inst.dueDate);
+                      const monthKey = `${inst.name}-${dueDate.getFullYear()}-${dueDate.getMonth()}`;
+                      if (!instancesByNameMonth[monthKey]) {
+                        instancesByNameMonth[monthKey] = [];
+                      }
+                      instancesByNameMonth[monthKey].push(inst);
+                    }
+
+                    const uniqueInstances = [];
+                    for (const key in instancesByNameMonth) {
+                      const group = instancesByNameMonth[key];
+                      group.sort((a, b) => (a.paid && !b.paid ? -1 : !a.paid && b.paid ? 1 : 0));
+                      uniqueInstances.push(group[0]);
+                    }
+                    setBillInstances(uniqueInstances);
+
+                    return removed;
+                  }}
+                  onMarkPastBillsPaid={() => {
+                    const today = new Date();
+                    today.setHours(0, 0, 0, 0);
+                    let marked = 0;
+
+                    setBills(prev => prev.map(bill => {
+                      if (bill.paid) return bill;
+                      const dueDate = parseMMDDYYYY(bill.dueDate);
+                      if (dueDate && dueDate < today) {
+                        marked++;
+                        return { ...bill, paid: true, paidDate: null };
+                      }
+                      return bill;
+                    }));
+
+                    setBillInstances(prev => prev.map(inst => {
+                      if (inst.paid) return inst;
+                      const dueDate = new Date(inst.dueDate);
+                      if (dueDate < today) {
+                        return { ...inst, paid: true };
+                      }
+                      return inst;
+                    }));
+
+                    return marked;
+                  }}
+                />
+              </div>
+            </div>
+          </div>
         )}
       </div>
     </div>
