@@ -1,6 +1,7 @@
 import React, { useMemo } from 'react';
-import { X, Edit2, Flame, TrendingUp, Calendar, PieChart, Archive, Receipt } from 'lucide-react';
+import { Flame, TrendingUp, Calendar, PieChart, CreditCard, TrendingDown } from 'lucide-react';
 import { parseAmt } from '../../utils/formatters';
+import { calculateDebtPayoff } from '../../utils/calculations';
 import { parseMMDDYYYY } from '../../utils/billDatabase';
 import { parseLocalDate } from '../../utils/dateHelpers';
 
@@ -19,43 +20,6 @@ const CATEGORY_COLORS = {
   other: '#64748b',
 };
 
-// Proper debt payoff calculation with compound interest
-const calculateDebtPayoff = (debt) => {
-  const balance = parseAmt(debt.balance);
-  const annualRate = parseAmt(debt.rate) / 100;
-  const monthlyRate = annualRate / 12;
-  const payment = parseAmt(debt.payment);
-
-  if (payment <= 0 || balance <= 0) return { months: 0, totalInterest: 0, totalPaid: 0, payoffDate: null };
-
-  if (monthlyRate > 0 && payment <= balance * monthlyRate) {
-    return { months: Infinity, totalInterest: Infinity, totalPaid: Infinity, payoffDate: null };
-  }
-
-  let months;
-  if (monthlyRate === 0) {
-    months = Math.ceil(balance / payment);
-  } else {
-    months = Math.ceil(-Math.log(1 - (monthlyRate * balance) / payment) / Math.log(1 + monthlyRate));
-  }
-
-  let remaining = balance;
-  let totalInterest = 0;
-  for (let i = 0; i < months && remaining > 0.01; i++) {
-    const interest = remaining * monthlyRate;
-    const principal = Math.min(payment - interest, remaining);
-    totalInterest += interest;
-    remaining -= principal;
-  }
-
-  const startDate = debt.startDate ? new Date(debt.startDate) : new Date();
-  const payoffDate = new Date(startDate);
-  payoffDate.setMonth(payoffDate.getMonth() + months);
-  const toYMD = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-
-  return { months, totalInterest, totalPaid: balance + totalInterest, payoffDate: toYMD(payoffDate) };
-};
-
 export const Analytics = ({
   overview,
   currentMonthInstances,
@@ -66,10 +30,8 @@ export const Analytics = ({
   nextPayDates,
   paySchedule,
   budgets,
-  debtPayoff,
-  onAddDebt,
-  onEditDebt,
-  onRemoveDebt,
+  debtPayoff = [],
+  onNavigateToGoals,
 }) => {
   // Combine active and historical bills for analytics, normalizing dates
   const allBillsNormalized = useMemo(() => {
@@ -547,75 +509,62 @@ export const Analytics = ({
         </div>
       </div>
 
-      {/* Debts quick view */}
+      {/* Debt Summary (read-only — managed in Goals > Setup) */}
       <div className="bg-white rounded-2xl shadow-xl p-6">
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-xl font-bold">Debt Payoff Tracker</h3>
-          <button
-            className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-sm font-semibold"
-            onClick={onAddDebt}
-          >
-            Add Debt
-          </button>
+          <div className="flex items-center gap-3">
+            <div className="p-3 bg-gradient-to-br from-red-500 to-rose-500 rounded-xl text-white">
+              <CreditCard size={24} />
+            </div>
+            <h3 className="text-xl font-bold">Debt Summary</h3>
+          </div>
+          {onNavigateToGoals && (
+            <button
+              className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-sm font-semibold transition-colors"
+              onClick={onNavigateToGoals}
+            >
+              Manage in Goals
+            </button>
+          )}
         </div>
-        {debtPayoff.length ? (
+        {debtPayoff.length > 0 ? (
           <div className="space-y-3">
             {debtPayoff.map((debt) => {
               const payoff = calculateDebtPayoff(debt);
               const isInfinite = !isFinite(payoff.months);
               return (
-                <div key={debt.id} className="p-4 bg-slate-50 rounded-xl">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="font-semibold">{debt.name}</span>
-                    <div className="flex items-center gap-1">
-                      {onEditDebt && (
-                        <button className="text-blue-600 hover:bg-blue-50 p-1 rounded transition-colors" onClick={() => onEditDebt(debt)}>
-                          <Edit2 size={16} />
-                        </button>
-                      )}
-                      <button
-                        className="text-red-600 hover:bg-red-50 p-1 rounded transition-colors"
-                        onClick={() => onRemoveDebt(debt.id)}
-                      >
-                        <X size={16} />
-                      </button>
-                    </div>
+                <div key={debt.id} className="p-3 bg-slate-50 rounded-xl">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="font-semibold text-slate-800">{debt.name}</span>
+                    <span className="font-bold text-red-600">
+                      ${parseAmt(debt.balance).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                    </span>
                   </div>
-                  <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm text-slate-600">
-                    {debt.loanAmount > 0 && <p>Original Loan: ${parseAmt(debt.loanAmount).toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>}
-                    <p>Balance: ${parseAmt(debt.balance).toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
-                    <p>Rate: {debt.rate}%</p>
-                    <p>Payment: ${parseAmt(debt.payment).toLocaleString('en-US', { minimumFractionDigits: 2 })}/mo</p>
-                    {debt.loanTerm > 0 && <p>Loan Term: {debt.loanTerm} months</p>}
-                    {debt.startDate && <p>Start: {new Date(debt.startDate + 'T00:00:00').toLocaleDateString()}</p>}
+                  <div className="flex gap-3 text-xs text-slate-500">
+                    <span>{debt.rate}% APR</span>
+                    <span>${parseAmt(debt.payment).toFixed(2)}/mo</span>
+                    {!isInfinite && payoff.months > 0 && (
+                      <span className="text-emerald-600 font-medium flex items-center gap-0.5">
+                        <TrendingDown size={11} />
+                        {payoff.months}mo to payoff
+                      </span>
+                    )}
+                    {isInfinite && (
+                      <span className="text-red-600 font-medium">Payment too low</span>
+                    )}
                   </div>
-                  {isInfinite ? (
-                    <p className="text-sm font-semibold text-red-600 mt-2">
-                      Payment does not cover monthly interest. Increase payment above $
-                      {(parseAmt(debt.balance) * parseAmt(debt.rate) / 100 / 12).toFixed(2)}/mo
-                    </p>
-                  ) : (
-                    <div className="mt-2 p-2 bg-emerald-50 rounded-lg">
-                      <p className="text-sm font-semibold text-emerald-700">
-                        Payoff: {payoff.months} months | Total Interest: $
-                        {payoff.totalInterest.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                      </p>
-                      {payoff.payoffDate && (
-                        <p className="text-xs text-emerald-600">
-                          Est. Payoff Date: {new Date(payoff.payoffDate + 'T00:00:00').toLocaleDateString()}
-                        </p>
-                      )}
-                      <p className="text-xs text-slate-500">
-                        Total Paid: ${payoff.totalPaid.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                      </p>
-                    </div>
-                  )}
                 </div>
               );
             })}
+            <div className="text-center pt-2 border-t">
+              <span className="text-sm text-slate-500">Total Debt: </span>
+              <span className="font-bold text-red-600">
+                ${debtPayoff.reduce((s, d) => s + parseAmt(d.balance), 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </span>
+            </div>
           </div>
         ) : (
-          <p className="text-slate-500">Add debts to track payoff timeline</p>
+          <p className="text-slate-400 text-sm text-center py-4">No debts tracked — add them in Goals &gt; Setup</p>
         )}
       </div>
     </div>

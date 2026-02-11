@@ -72,6 +72,7 @@ import { Settings } from './components/views/Settings';
 import { Retirement } from './components/views/Retirement';
 import { Income } from './components/views/Income';
 import { Investments } from './components/views/Investments';
+import { DebtTracker } from './components/views/DebtTracker';
 
 /**
  * PayPlan Pro - Slim Orchestrator
@@ -1546,30 +1547,27 @@ const BillPayPlanner = () => {
             paySchedule={paySchedule}
             budgets={budgets}
             debtPayoff={debtPayoff}
-            onAddDebt={() => {
-              const name = prompt('Debt name (e.g., Credit Card):');
-              if (!name) return;
-              const balance = parseAmt(prompt('Current balance:') || 0);
-              const rate = parseAmt(prompt('Interest rate % (e.g., 18.5):') || 0);
-              const payment = parseAmt(prompt('Monthly payment:') || 0);
-              const debt = { id: Date.now(), name, balance, rate, payment };
-              setDebtPayoff([...debtPayoff, debt]);
-            }}
-            onRemoveDebt={(id) =>
-              setDebtPayoff(debtPayoff.filter((d) => d.id !== id))
-            }
+            onNavigateToGoals={() => setView('goals-setup')}
           />
         )}
 
         {/* ===== GOALS > SETUP ===== */}
         {view === 'goals-setup' && (
           <>
-            <Assets
-              assets={assets}
-              onAddAsset={() => setShowAssetForm(true)}
-              onEditAsset={(a) => setEditingAsset(a)}
-              onDeleteAsset={deleteAsset}
+            <DebtTracker
+              debtPayoff={debtPayoff}
+              onAddDebt={(debt) => setDebtPayoff([...debtPayoff, debt])}
+              onEditDebt={(debt) => setDebtPayoff(debtPayoff.map(d => d.id === debt.id ? debt : d))}
+              onRemoveDebt={(id) => setDebtPayoff(debtPayoff.filter(d => d.id !== id))}
             />
+            <div className="mt-6">
+              <Assets
+                assets={assets}
+                onAddAsset={() => setShowAssetForm(true)}
+                onEditAsset={(a) => setEditingAsset(a)}
+                onDeleteAsset={deleteAsset}
+              />
+            </div>
             <div className="mt-6">
               <Investments
                 holdings={investments}
