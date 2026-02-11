@@ -1385,6 +1385,98 @@ const BillPayPlanner = () => {
                 onDeletePropaneFill={deletePropaneFill}
               />
             </div>
+
+            {/* Envelopes */}
+            <div className="bg-white rounded-2xl shadow-xl p-5 mt-6">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="font-bold text-slate-800">Envelopes</h3>
+                <button
+                  className="px-3 py-1.5 rounded-xl bg-emerald-100 text-emerald-700 font-semibold text-sm"
+                  onClick={() => {
+                    const name = prompt('Envelope name:');
+                    if (!name) return;
+                    const amt = parseAmt(prompt('Amount per check:') || 0);
+                    setEnvelopes([...envelopes, { id: Date.now(), name, perCheck: amt }]);
+                  }}
+                >
+                  Add
+                </button>
+              </div>
+              {envelopes.length ? (
+                <div className="space-y-2">
+                  {envelopes.map((e) => (
+                    <div
+                      key={e.id}
+                      className="p-3 bg-slate-50 rounded-xl flex items-center justify-between"
+                    >
+                      <div className="font-semibold text-sm">{e.name}</div>
+                      <div className="flex items-center gap-2">
+                        <div className="text-slate-600 text-sm">
+                          ${parseAmt(e.perCheck).toFixed(2)} / check
+                        </div>
+                        <button
+                          className="px-2 py-1 text-blue-700 bg-blue-100 rounded-lg text-xs"
+                          onClick={() => {
+                            const v = parseAmt(
+                              prompt(`New amount for "${e.name}":`, e.perCheck) || 0
+                            );
+                            setEnvelopes(
+                              envelopes.map((x) => (x.id === e.id ? { ...x, perCheck: v } : x))
+                            );
+                          }}
+                        >
+                          Edit
+                        </button>
+                        <button
+                          className="px-2 py-1 text-red-700 bg-red-100 rounded-lg text-xs"
+                          onClick={() =>
+                            setEnvelopes(envelopes.filter((x) => x.id !== e.id))
+                          }
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                  <div className="text-sm text-slate-500">
+                    Total reserved per check: <b>${perCheckEnvelopeSum().toFixed(2)}</b>
+                  </div>
+                </div>
+              ) : (
+                <p className="text-slate-400 text-sm">No envelopes yet. Envelopes reserve money from each paycheck for specific purposes.</p>
+              )}
+            </div>
+
+            {/* Category Budgets */}
+            <div className="bg-white rounded-2xl shadow-xl p-5 mt-6">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="font-bold text-slate-800">Category Budgets</h3>
+                <button
+                  className="px-3 py-1.5 rounded-xl bg-emerald-100 text-emerald-700 font-semibold text-sm"
+                  onClick={() => {
+                    const cat = prompt(
+                      'Category (utilities, subscription, insurance, loan, rent, other):'
+                    );
+                    if (!cat) return;
+                    const cap = parseAmt(prompt('Monthly cap:') || 0);
+                    setBudgets({ ...budgets, [cat]: cap });
+                  }}
+                >
+                  Set/Update
+                </button>
+              </div>
+              <div className="grid grid-cols-2 gap-2 text-sm">
+                {Object.entries(budgets).map(([k, v]) => (
+                  <div
+                    key={k}
+                    className="p-3 bg-slate-50 rounded-xl flex items-center justify-between"
+                  >
+                    <span className="font-semibold capitalize">{k}</span>
+                    <span>${parseAmt(v).toFixed(2)}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
           </>
         )}
 
@@ -1500,38 +1592,8 @@ const BillPayPlanner = () => {
         )}
         {view === 'settings' && (
           <Settings
-            paySchedule={paySchedule}
-            envelopes={envelopes}
-            budgets={budgets}
             backupFileInputRef={backupFileInputRef}
-            perCheckEnvelopeSum={perCheckEnvelopeSum()}
             billInstances={billInstances}
-            onEditPaySchedule={() => setShowPayForm(true)}
-            onAddEnvelope={() => {
-              const name = prompt('Envelope name:');
-              if (!name) return;
-              const amt = parseAmt(prompt('Amount per check:') || 0);
-              setEnvelopes([...envelopes, { id: Date.now(), name, perCheck: amt }]);
-            }}
-            onEditEnvelope={(e) => {
-              const v = parseAmt(
-                prompt(`New amount for "${e.name}":`, e.perCheck) || 0
-              );
-              setEnvelopes(
-                envelopes.map((x) => (x.id === e.id ? { ...x, perCheck: v } : x))
-              );
-            }}
-            onRemoveEnvelope={(id) =>
-              setEnvelopes(envelopes.filter((x) => x.id !== id))
-            }
-            onSetBudget={() => {
-              const cat = prompt(
-                'Category (utilities, subscription, insurance, loan, rent, other):'
-              );
-              if (!cat) return;
-              const cap = parseAmt(prompt('Monthly cap:') || 0);
-              setBudgets({ ...budgets, [cat]: cap });
-            }}
             onExportBackup={exportBackup}
             onImportBackup={importBackupFromFile}
             bills={bills}
