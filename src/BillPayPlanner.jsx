@@ -70,6 +70,7 @@ import { Propane } from './components/views/Propane';
 import { Analytics } from './components/views/Analytics';
 import { Settings } from './components/views/Settings';
 import { Retirement } from './components/views/Retirement';
+import { Income } from './components/views/Income';
 import { Investments } from './components/views/Investments';
 
 /**
@@ -1317,16 +1318,15 @@ const BillPayPlanner = () => {
 
         {/* ===== INCOME ===== */}
         {view === 'income' && (
-          <SubmitActuals
-            currentMonthInstances={currentMonthInstances}
-            onSubmitActual={submitActualPaid}
+          <Income
+            paySchedule={paySchedule}
+            onEditPaySchedule={() => setShowPayForm(true)}
             nextPayDates={nextPayDates}
             actualPayEntries={actualPayEntries}
             onAddActualPay={addActualPayEntry}
             onDeleteActualPay={deleteActualPayEntry}
-            scannedReceipts={scannedReceipts}
-            onAddReceipt={addScannedReceipt}
-            onDeleteReceipt={deleteScannedReceipt}
+            currentMonthInstances={currentMonthInstances}
+            onSubmitActual={submitActualPaid}
           />
         )}
 
@@ -1390,39 +1390,55 @@ const BillPayPlanner = () => {
 
         {/* ===== BILLS > DASHBOARD ===== */}
         {view === 'bills-dashboard' && (
-          <Checklist
-            currentMonthInstances={currentMonthInstances}
-            allBills={bills}
-            onToggleInstancePaid={toggleInstancePaid}
-            onReassignChecks={assignInstancesToChecks}
-            onUpdateInstance={(updatedInstance) => {
-              setBills((prev) =>
-                prev.map((bill) =>
-                  bill.id === updatedInstance.id
-                    ? {
-                        ...bill,
-                        assignedCheck: updatedInstance.assignedCheck,
-                        assignedPayDate: updatedInstance.assignedPayDate
-                          ? toMMDDYYYY(parseLocalDate(updatedInstance.assignedPayDate))
-                          : bill.assignedPayDate,
-                        paid: updatedInstance.paid,
-                        paidDate: updatedInstance.paidDate,
-                        actualPaid: updatedInstance.actualPaid,
-                        manuallyAssigned: true,
-                      }
-                    : bill
-                )
-              );
-              setBillInstances((prev) =>
-                prev.map((inst) =>
-                  inst.id === updatedInstance.id
-                    ? { ...updatedInstance, manuallyAssigned: true }
-                    : inst
-                )
-              );
-            }}
-            nextPayDates={nextPayDates}
-          />
+          <>
+            <SubmitActuals
+              currentMonthInstances={[]}
+              onSubmitActual={() => {}}
+              nextPayDates={nextPayDates}
+              actualPayEntries={[]}
+              onAddActualPay={() => {}}
+              onDeleteActualPay={() => {}}
+              scannedReceipts={scannedReceipts}
+              onAddReceipt={addScannedReceipt}
+              onDeleteReceipt={deleteScannedReceipt}
+              receiptOnly
+            />
+            <div className="mt-4">
+              <Checklist
+                currentMonthInstances={currentMonthInstances}
+                allBills={bills}
+                onToggleInstancePaid={toggleInstancePaid}
+                onReassignChecks={assignInstancesToChecks}
+                onUpdateInstance={(updatedInstance) => {
+                  setBills((prev) =>
+                    prev.map((bill) =>
+                      bill.id === updatedInstance.id
+                        ? {
+                            ...bill,
+                            assignedCheck: updatedInstance.assignedCheck,
+                            assignedPayDate: updatedInstance.assignedPayDate
+                              ? toMMDDYYYY(parseLocalDate(updatedInstance.assignedPayDate))
+                              : bill.assignedPayDate,
+                            paid: updatedInstance.paid,
+                            paidDate: updatedInstance.paidDate,
+                            actualPaid: updatedInstance.actualPaid,
+                            manuallyAssigned: true,
+                          }
+                        : bill
+                    )
+                  );
+                  setBillInstances((prev) =>
+                    prev.map((inst) =>
+                      inst.id === updatedInstance.id
+                        ? { ...updatedInstance, manuallyAssigned: true }
+                        : inst
+                    )
+                  );
+                }}
+                nextPayDates={nextPayDates}
+              />
+            </div>
+          </>
         )}
 
         {/* ===== BILLS > ANALYTICS ===== */}
