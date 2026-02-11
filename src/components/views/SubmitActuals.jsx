@@ -27,6 +27,7 @@ export const SubmitActuals = ({
   scannedReceipts,
   onAddReceipt,
   onDeleteReceipt,
+  receiptOnly = false,
 }) => {
   const thisMonthVars = currentMonthInstances.filter((i) => i.isVariable);
   const [values, setValues] = useState(() => {
@@ -488,6 +489,8 @@ export const SubmitActuals = ({
         )}
       </div>
 
+      {!receiptOnly && (
+      <>
       {/* Actual Pay Entry Section */}
       <div className="bg-white rounded-2xl shadow-xl p-6">
         <h3 className="text-xl font-bold mb-4 flex items-center gap-2">
@@ -624,6 +627,8 @@ export const SubmitActuals = ({
           </div>
         )}
       </div>
+      </>
+      )}
 
       {/* Permission Modal */}
       {showPermissionModal && (
