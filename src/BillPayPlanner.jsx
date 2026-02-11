@@ -73,6 +73,7 @@ import { Retirement } from './components/views/Retirement';
 import { Income } from './components/views/Income';
 import { Investments } from './components/views/Investments';
 import { DebtTracker } from './components/views/DebtTracker';
+import { GoalsDashboard } from './components/views/GoalsDashboard';
 
 /**
  * PayPlan Pro - Slim Orchestrator
@@ -1581,7 +1582,13 @@ const BillPayPlanner = () => {
 
         {/* ===== GOALS > DASHBOARD ===== */}
         {view === 'goals-dashboard' && (
-          <Retirement />
+          <GoalsDashboard
+            debtPayoff={debtPayoff}
+            assets={assets}
+            investments={investments}
+            onNavigateToSetup={() => setView('goals-setup')}
+            onNavigateToAnalytics={() => setView('goals-analytics')}
+          />
         )}
 
         {/* ===== GOALS > ANALYTICS ===== */}
