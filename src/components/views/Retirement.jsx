@@ -130,20 +130,6 @@ const calculateSocialSecurity = (baseBenefit, claimingAge, currentAge) => {
   return baseBenefit * adjustment;
 };
 
-// Derive long-term capital gains rate from marginal income tax rate
-const getLTCGRate = (taxRate) => {
-  if (taxRate <= 0.12) return 0;     // 10-12% bracket: 0% LTCG
-  if (taxRate <= 0.35) return 0.15;  // 22-35% bracket: 15% LTCG
-  return 0.20;                        // 37% bracket: 20% LTCG
-};
-
-// Calculate effective tax on taxable account withdrawal
-// Assumes ~50% of the balance is cost basis (not taxed), rest is gains
-const getTaxableEffectiveRate = (taxRate) => {
-  const ltcgRate = getLTCGRate(taxRate);
-  return 0.5 * ltcgRate; // 50% gains assumption * LTCG rate
-};
-
 // Run a single enhanced simulation
 const runEnhancedSimulation = (params) => {
   const {
@@ -215,31 +201,29 @@ const runEnhancedSimulation = (params) => {
       // Calculate RMD (must withdraw from traditional)
       const birthYear = new Date().getFullYear() - currentAge;
       const rmd = calculateRMD(age, traditional, birthYear);
-      const rmdAfterTax = rmd * (1 - taxRate);
 
       // Withdrawal strategy: RMD first, then taxable, then traditional, then Roth
+      // Spending represents total portfolio withdrawal (gross, before taxes) — matches PV methodology
       let remaining = requiredSpending;
 
       // Apply RMD (mandatory)
       if (rmd > 0) {
         traditional -= rmd;
-        remaining -= rmdAfterTax;
+        remaining -= rmd;
       }
 
       // Withdraw from taxable (most tax-efficient after RMD)
       if (remaining > 0 && taxable > 0) {
-        const taxableEffRate = getTaxableEffectiveRate(taxRate);
-        const taxableKeepRate = 1 - taxableEffRate;
-        const taxableWithdrawal = Math.min(taxable, remaining / taxableKeepRate);
+        const taxableWithdrawal = Math.min(taxable, remaining);
         taxable -= taxableWithdrawal;
-        remaining -= taxableWithdrawal * taxableKeepRate;
+        remaining -= taxableWithdrawal;
       }
 
       // Withdraw from traditional
       if (remaining > 0 && traditional > 0) {
-        const tradWithdrawal = Math.min(traditional, remaining / (1 - taxRate));
+        const tradWithdrawal = Math.min(traditional, remaining);
         traditional -= tradWithdrawal;
-        remaining -= tradWithdrawal * (1 - taxRate);
+        remaining -= tradWithdrawal;
       }
 
       // Withdraw from Roth (last resort, tax-free)
@@ -1000,7 +984,7 @@ const MonteCarloSimulator = () => {
               <input type="number" value={annualSpending} onChange={(e) => setAnnualSpending(e.target.value)}
                 placeholder="50,000" className="w-full pl-7 sm:pl-8 pr-3 py-2 border-2 rounded-xl text-sm sm:text-base" min={0} step={1000} />
             </div>
-            <p className="text-[10px] text-slate-400 mt-1">How much you plan to spend per year after retirement</p>
+            <p className="text-[10px] text-slate-400 mt-1">Total annual withdrawal from portfolio (in today's dollars, inflation-adjusted automatically)</p>
           </div>
         </div>
       </div>
@@ -1408,8 +1392,9 @@ const MonteCarloSimulator = () => {
               <div className="flex gap-3 p-3 bg-slate-50 rounded-xl">
                 <Info className="text-slate-500 flex-shrink-0" size={20} />
                 <p className="text-sm text-slate-600">
-                  This simulation uses real return assumptions (after inflation), correlated asset returns,
-                  tax-aware withdrawal strategies, and RMD requirements. For personalized advice, consult a financial advisor.
+                  This simulation uses nominal return assumptions with separate inflation adjustment,
+                  correlated asset returns, and RMD requirements. Spending represents total portfolio withdrawal
+                  (comparable to Portfolio Visualizer). For personalized advice, consult a financial advisor.
                 </p>
               </div>
             </div>
