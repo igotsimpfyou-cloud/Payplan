@@ -63,8 +63,26 @@ const RMD_FACTORS = {
 // Healthcare cost increases (above inflation)
 const HEALTHCARE_INCREASE = 0.02; // 2% above inflation per year
 
-// Generate correlated random returns using Cholesky decomposition
-const generateCorrelatedReturns = () => {
+// Historical annual returns (1972-2024): [stocks, bonds, cash] — nominal total returns
+const HISTORICAL_ANNUAL = [
+  [0.1898,0.0569,0.0384],[-.1466,-.0111,0.0693],[-.2647,-.0306,0.0800],[0.3720,0.0920,0.0580],
+  [0.2384,0.1675,0.0508],[-.0718,-.0069,0.0512],[0.0656,-.0118,0.0718],[0.1844,-.0123,0.1038],
+  [0.3242,-.0395,0.1124],[-.0491,0.0186,0.1471],[0.2141,0.3262,0.1054],[0.2251,0.0819,0.0880],
+  [0.0627,0.1515,0.0985],[0.3216,0.2210,0.0772],[0.1847,0.1526,0.0616],[0.0523,0.0276,0.0547],
+  [0.1681,0.0789,0.0635],[0.3149,0.1453,0.0837],[-.0317,0.0896,0.0781],[0.3055,0.1600,0.0560],
+  [0.0767,0.0740,0.0351],[0.0999,0.0975,0.0290],[0.0131,-.0292,0.0390],[0.3743,0.1847,0.0560],
+  [0.2307,0.0363,0.0521],[0.3336,0.0965,0.0526],[0.2858,0.0869,0.0486],[0.2104,-.0082,0.0468],
+  [-.0911,0.1163,0.0589],[-.1189,0.0844,0.0383],[-.2210,0.1026,0.0165],[0.2868,0.0410,0.0102],
+  [0.1088,0.0434,0.0120],[0.0491,0.0243,0.0298],[0.1579,0.0433,0.0480],[0.0549,0.0697,0.0466],
+  [-.3700,0.0524,0.0160],[0.2646,0.0593,0.0010],[0.1506,0.0654,0.0012],[0.0211,0.0784,0.0004],
+  [0.1600,0.0421,0.0006],[0.3239,-.0202,0.0002],[0.1369,0.0597,0.0002],[0.0138,0.0055,0.0002],
+  [0.1196,0.0265,0.0027],[0.2183,0.0354,0.0086],[-.0438,0.0001,0.0187],[0.3149,0.0872,0.0228],
+  [0.1840,0.0751,0.0058],[0.2871,-.0154,0.0005],[-.1811,-.1301,0.0146],[0.2629,0.0553,0.0526],
+  [0.2502,0.0125,0.0500],
+];
+
+// Generate correlated random returns using Cholesky decomposition (Statistical model)
+const generateCorrelatedReturns = (customReturns) => {
   // Generate independent standard normal variables
   const z1 = randomNormal(0, 1);
   const z2 = randomNormal(0, 1);
@@ -75,11 +93,19 @@ const generateCorrelatedReturns = () => {
   const bondZ = CORRELATION.stocksBonds * z1 + Math.sqrt(1 - CORRELATION.stocksBonds ** 2) * z2;
   const cashZ = z3; // Cash uncorrelated for simplicity
 
-  // Convert to actual returns
-  const stockReturn = HISTORICAL_RETURNS.stocks.mean + HISTORICAL_RETURNS.stocks.stdDev * stockZ;
-  const bondReturn = HISTORICAL_RETURNS.bonds.mean + HISTORICAL_RETURNS.bonds.stdDev * bondZ;
-  const cashReturn = HISTORICAL_RETURNS.cash.mean + HISTORICAL_RETURNS.cash.stdDev * cashZ;
+  // Convert to actual returns (use custom if provided, else defaults)
+  const sr = customReturns || HISTORICAL_RETURNS;
+  const stockReturn = sr.stocks.mean + sr.stocks.stdDev * stockZ;
+  const bondReturn = sr.bonds.mean + sr.bonds.stdDev * bondZ;
+  const cashReturn = sr.cash.mean + sr.cash.stdDev * cashZ;
 
+  return { stockReturn, bondReturn, cashReturn };
+};
+
+// Generate returns from historical bootstrap (randomly sample a calendar year)
+const generateHistoricalReturns = () => {
+  const idx = Math.floor(Math.random() * HISTORICAL_ANNUAL.length);
+  const [stockReturn, bondReturn, cashReturn] = HISTORICAL_ANNUAL[idx];
   return { stockReturn, bondReturn, cashReturn };
 };
 
@@ -130,20 +156,6 @@ const calculateSocialSecurity = (baseBenefit, claimingAge, currentAge) => {
   return baseBenefit * adjustment;
 };
 
-// Derive long-term capital gains rate from marginal income tax rate
-const getLTCGRate = (taxRate) => {
-  if (taxRate <= 0.12) return 0;     // 10-12% bracket: 0% LTCG
-  if (taxRate <= 0.35) return 0.15;  // 22-35% bracket: 15% LTCG
-  return 0.20;                        // 37% bracket: 20% LTCG
-};
-
-// Calculate effective tax on taxable account withdrawal
-// Assumes ~50% of the balance is cost basis (not taxed), rest is gains
-const getTaxableEffectiveRate = (taxRate) => {
-  const ltcgRate = getLTCGRate(taxRate);
-  return 0.5 * ltcgRate; // 50% gains assumption * LTCG rate
-};
-
 // Run a single enhanced simulation
 const runEnhancedSimulation = (params) => {
   const {
@@ -154,6 +166,8 @@ const runEnhancedSimulation = (params) => {
     stocksPercent, bondsPercent, useGlidePath,
     inflationRate, taxRate, includeHealthcare,
     healthcareCostBase,
+    simulationModel, customReturns,
+    withdrawalModel, withdrawalPercent,
   } = params;
 
   const totalYears = lifeExpectancy - currentAge;
@@ -185,8 +199,10 @@ const runEnhancedSimulation = (params) => {
       ? getGlidePath(age, retirementAge, true)
       : { stocksPercent, bondsPercent, cashPercent: 100 - stocksPercent - bondsPercent };
 
-    // Generate correlated returns
-    const { stockReturn, bondReturn, cashReturn } = generateCorrelatedReturns();
+    // Generate returns based on simulation model
+    const { stockReturn, bondReturn, cashReturn } = simulationModel === 'historical'
+      ? generateHistoricalReturns()
+      : generateCorrelatedReturns(simulationModel === 'parameterized' ? customReturns : null);
 
     // Calculate blended portfolio return
     const portfolioReturn =
@@ -200,8 +216,19 @@ const runEnhancedSimulation = (params) => {
     taxable *= (1 + portfolioReturn);
 
     if (isRetired) {
-      // Calculate required spending (inflation-adjusted)
-      let requiredSpending = annualSpending * cumulativeInflation;
+      // Calculate required spending based on withdrawal model
+      const totalPortfolio = traditional + roth + taxable;
+      const remainingYears = lifeExpectancy - age;
+      let requiredSpending;
+
+      if (withdrawalModel === 'percentage') {
+        requiredSpending = totalPortfolio * ((withdrawalPercent || 4) / 100);
+      } else if (withdrawalModel === 'lifeExpectancy') {
+        requiredSpending = remainingYears > 0 ? totalPortfolio / remainingYears : totalPortfolio;
+      } else {
+        // Fixed dollar (default) — inflation-adjusted
+        requiredSpending = annualSpending * cumulativeInflation;
+      }
 
       // Add healthcare costs if enabled (already inflation-adjusted above)
       if (includeHealthcare) {
@@ -215,31 +242,29 @@ const runEnhancedSimulation = (params) => {
       // Calculate RMD (must withdraw from traditional)
       const birthYear = new Date().getFullYear() - currentAge;
       const rmd = calculateRMD(age, traditional, birthYear);
-      const rmdAfterTax = rmd * (1 - taxRate);
 
       // Withdrawal strategy: RMD first, then taxable, then traditional, then Roth
+      // Spending represents total portfolio withdrawal (gross, before taxes) — matches PV methodology
       let remaining = requiredSpending;
 
       // Apply RMD (mandatory)
       if (rmd > 0) {
         traditional -= rmd;
-        remaining -= rmdAfterTax;
+        remaining -= rmd;
       }
 
       // Withdraw from taxable (most tax-efficient after RMD)
       if (remaining > 0 && taxable > 0) {
-        const taxableEffRate = getTaxableEffectiveRate(taxRate);
-        const taxableKeepRate = 1 - taxableEffRate;
-        const taxableWithdrawal = Math.min(taxable, remaining / taxableKeepRate);
+        const taxableWithdrawal = Math.min(taxable, remaining);
         taxable -= taxableWithdrawal;
-        remaining -= taxableWithdrawal * taxableKeepRate;
+        remaining -= taxableWithdrawal;
       }
 
       // Withdraw from traditional
       if (remaining > 0 && traditional > 0) {
-        const tradWithdrawal = Math.min(traditional, remaining / (1 - taxRate));
+        const tradWithdrawal = Math.min(traditional, remaining);
         traditional -= tradWithdrawal;
-        remaining -= tradWithdrawal * (1 - taxRate);
+        remaining -= tradWithdrawal;
       }
 
       // Withdraw from Roth (last resort, tax-free)
@@ -722,6 +747,19 @@ const MonteCarloSimulator = () => {
   const [bondsPercent, setBondsPercent] = useState(25);
   const [useGlidePath, setUseGlidePath] = useState(true);
 
+  // Simulation model
+  const [simulationModel, setSimulationModel] = useState('statistical');
+  const [customStocksMean, setCustomStocksMean] = useState(10);
+  const [customStocksStdDev, setCustomStocksStdDev] = useState(17);
+  const [customBondsMean, setCustomBondsMean] = useState(5);
+  const [customBondsStdDev, setCustomBondsStdDev] = useState(5);
+  const [customCashMean, setCustomCashMean] = useState(3);
+  const [customCashStdDev, setCustomCashStdDev] = useState(1);
+
+  // Withdrawal model
+  const [withdrawalModel, setWithdrawalModel] = useState('fixed');
+  const [withdrawalPercent, setWithdrawalPercent] = useState(4);
+
   // Advanced settings
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [inflationRate, setInflationRate] = useState(0.025);
@@ -774,6 +812,13 @@ const MonteCarloSimulator = () => {
         annualSpending: annSpend, ssBaseBenefit: ssBenefit, ssClaimingAge: ssAge,
         stocksPercent, bondsPercent, useGlidePath,
         inflationRate, taxRate, includeHealthcare, healthcareCostBase: healthCost,
+        simulationModel,
+        customReturns: simulationModel === 'parameterized' ? {
+          stocks: { mean: customStocksMean / 100, stdDev: customStocksStdDev / 100 },
+          bonds: { mean: customBondsMean / 100, stdDev: customBondsStdDev / 100 },
+          cash: { mean: customCashMean / 100, stdDev: customCashStdDev / 100 },
+        } : null,
+        withdrawalModel, withdrawalPercent,
       };
 
       const simulationResults = runEnhancedMonteCarloSimulation(params, setProgress);
@@ -904,6 +949,44 @@ const MonteCarloSimulator = () => {
         ))}
       </div>
 
+      {/* Simulation Model */}
+      <div className="bg-white rounded-2xl shadow-xl p-4 sm:p-6">
+        <h3 className="font-bold text-slate-800 mb-4 flex items-center gap-2">
+          <Settings size={20} className="text-purple-600" /> Simulation Model
+        </h3>
+        <select value={simulationModel} onChange={(e) => setSimulationModel(e.target.value)}
+          className="w-full px-3 py-2 border-2 rounded-xl text-sm sm:text-base mb-2">
+          <option value="statistical">Statistical (correlated normal returns)</option>
+          <option value="historical">Historical Bootstrap (1972-2024)</option>
+          <option value="parameterized">Parameterized (custom mean/stddev)</option>
+        </select>
+        <p className="text-[10px] text-slate-400">
+          {simulationModel === 'statistical' && 'Generates correlated returns using long-run mean & volatility with Cholesky decomposition.'}
+          {simulationModel === 'historical' && 'Randomly samples full calendar years from 1972-2024 historical data, preserving cross-asset correlation.'}
+          {simulationModel === 'parameterized' && 'Uses your custom return assumptions below.'}
+        </p>
+        {simulationModel === 'parameterized' && (
+          <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
+            <div className="font-medium text-slate-600 col-span-3 grid grid-cols-3 gap-2">
+              <span></span><span className="text-center">Mean %</span><span className="text-center">StdDev %</span>
+            </div>
+            {[
+              ['Stocks', customStocksMean, setCustomStocksMean, customStocksStdDev, setCustomStocksStdDev],
+              ['Bonds', customBondsMean, setCustomBondsMean, customBondsStdDev, setCustomBondsStdDev],
+              ['Cash', customCashMean, setCustomCashMean, customCashStdDev, setCustomCashStdDev],
+            ].map(([label, mean, setMean, std, setStd]) => (
+              <div key={label} className="col-span-3 grid grid-cols-3 gap-2 items-center">
+                <span className="text-slate-600 font-medium">{label}</span>
+                <input type="number" value={mean} onChange={(e) => setMean(Number(e.target.value))}
+                  className="px-2 py-1.5 border-2 rounded-lg text-center" step={0.5} />
+                <input type="number" value={std} onChange={(e) => setStd(Number(e.target.value))}
+                  className="px-2 py-1.5 border-2 rounded-lg text-center" step={0.5} min={0} />
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
       {/* Basic Info */}
       <div className="bg-white rounded-2xl shadow-xl p-4 sm:p-6">
         <h3 className="font-bold text-slate-800 mb-4 flex items-center gap-2">
@@ -994,14 +1077,43 @@ const MonteCarloSimulator = () => {
             </select>
           </div>
           <div className="sm:col-span-2">
-            <label className="block text-xs sm:text-sm text-slate-600 mb-1">Annual Spending in Retirement</label>
-            <div className="relative">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">$</span>
-              <input type="number" value={annualSpending} onChange={(e) => setAnnualSpending(e.target.value)}
-                placeholder="50,000" className="w-full pl-7 sm:pl-8 pr-3 py-2 border-2 rounded-xl text-sm sm:text-base" min={0} step={1000} />
-            </div>
-            <p className="text-[10px] text-slate-400 mt-1">How much you plan to spend per year after retirement</p>
+            <label className="block text-xs sm:text-sm text-slate-600 mb-1">Withdrawal Model</label>
+            <select value={withdrawalModel} onChange={(e) => setWithdrawalModel(e.target.value)}
+              className="w-full px-3 py-2 border-2 rounded-xl text-sm sm:text-base">
+              <option value="fixed">Fixed Dollar (inflation-adjusted)</option>
+              <option value="percentage">Fixed Percentage of Portfolio</option>
+              <option value="lifeExpectancy">Life Expectancy (1/remaining years)</option>
+            </select>
           </div>
+          {withdrawalModel === 'fixed' && (
+            <div className="sm:col-span-2">
+              <label className="block text-xs sm:text-sm text-slate-600 mb-1">Annual Spending in Retirement</label>
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">$</span>
+                <input type="number" value={annualSpending} onChange={(e) => setAnnualSpending(e.target.value)}
+                  placeholder="50,000" className="w-full pl-7 sm:pl-8 pr-3 py-2 border-2 rounded-xl text-sm sm:text-base" min={0} step={1000} />
+              </div>
+              <p className="text-[10px] text-slate-400 mt-1">Total annual withdrawal from portfolio (in today's dollars, inflation-adjusted automatically)</p>
+            </div>
+          )}
+          {withdrawalModel === 'percentage' && (
+            <div className="sm:col-span-2">
+              <label className="block text-xs sm:text-sm text-slate-600 mb-1">Withdrawal Rate: {withdrawalPercent}%</label>
+              <input type="range" value={withdrawalPercent} onChange={(e) => setWithdrawalPercent(Number(e.target.value))}
+                className="w-full h-2 rounded-lg appearance-none cursor-pointer accent-blue-600" min={1} max={10} step={0.5} />
+              <div className="flex justify-between text-[10px] text-slate-400 mt-1">
+                <span>1% (conservative)</span><span>4% (standard)</span><span>10%</span>
+              </div>
+            </div>
+          )}
+          {withdrawalModel === 'lifeExpectancy' && (
+            <div className="sm:col-span-2">
+              <p className="text-xs text-slate-500 bg-slate-50 rounded-xl p-3">
+                Withdraws 1/(remaining years) of portfolio each year. Adapts spending to portfolio size —
+                portfolio never fully depletes but spending varies. Similar to RMD methodology.
+              </p>
+            </div>
+          )}
         </div>
       </div>
 
@@ -1408,8 +1520,9 @@ const MonteCarloSimulator = () => {
               <div className="flex gap-3 p-3 bg-slate-50 rounded-xl">
                 <Info className="text-slate-500 flex-shrink-0" size={20} />
                 <p className="text-sm text-slate-600">
-                  This simulation uses real return assumptions (after inflation), correlated asset returns,
-                  tax-aware withdrawal strategies, and RMD requirements. For personalized advice, consult a financial advisor.
+                  This simulation uses nominal return assumptions with separate inflation adjustment,
+                  correlated asset returns, and RMD requirements. Spending represents total portfolio withdrawal
+                  (comparable to Portfolio Visualizer). For personalized advice, consult a financial advisor.
                 </p>
               </div>
             </div>
