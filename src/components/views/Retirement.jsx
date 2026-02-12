@@ -857,8 +857,11 @@ const MonteCarloSimulator = () => {
     const baseRate = 4.0;
     const successAdjustment = (results.successRate - 80) * 0.05; // +/- 0.05% per % above/below 80%
     const suggestedSWR = Math.max(2.5, Math.min(5.5, baseRate + successAdjustment));
-    const sustainableSpending = totalBalance * (suggestedSWR / 100);
-    return { rate: suggestedSWR, spending: sustainableSpending, yearsInRetirement };
+    // Use median projected balance at retirement, not current balance
+    const retirementYearIdx = retAge - curAge;
+    const projectedBalance = results.p50Balances[retirementYearIdx] || totalBalance;
+    const sustainableSpending = projectedBalance * (suggestedSWR / 100);
+    return { rate: suggestedSWR, spending: sustainableSpending, yearsInRetirement, projectedBalance };
   };
 
   // Save current scenario
