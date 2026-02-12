@@ -851,17 +851,18 @@ const MonteCarloSimulator = () => {
 
   // Calculate safe withdrawal rate
   const calculateSWR = () => {
-    if (!results || totalBalance <= 0) return null;
-    const yearsInRetirement = lifeExp - retAge;
+    if (!results) return null;
+    // SWR is only meaningful for fixed-dollar withdrawal model
+    if (withdrawalModel !== 'fixed') return null;
+    // Use peak median balance (typically at or near retirement)
+    const peakBalance = Math.max(...results.p50Balances);
+    if (peakBalance <= 0) return null;
     // Use the 4% rule as baseline, adjust based on success rate
     const baseRate = 4.0;
-    const successAdjustment = (results.successRate - 80) * 0.05; // +/- 0.05% per % above/below 80%
+    const successAdjustment = (results.successRate - 80) * 0.05;
     const suggestedSWR = Math.max(2.5, Math.min(5.5, baseRate + successAdjustment));
-    // Use median projected balance at retirement, not current balance
-    const retirementYearIdx = retAge - curAge;
-    const projectedBalance = results.p50Balances[retirementYearIdx] || totalBalance;
-    const sustainableSpending = projectedBalance * (suggestedSWR / 100);
-    return { rate: suggestedSWR, spending: sustainableSpending, yearsInRetirement, projectedBalance };
+    const sustainableSpending = peakBalance * (suggestedSWR / 100);
+    return { rate: suggestedSWR, spending: sustainableSpending, projectedBalance: peakBalance };
   };
 
   // Save current scenario
