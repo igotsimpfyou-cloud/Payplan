@@ -165,6 +165,7 @@ const runEnhancedSimulation = (params) => {
     annualSpending, ssBaseBenefit, ssClaimingAge,
     stocksPercent, bondsPercent, useGlidePath,
     inflationRate, taxRate, includeHealthcare,
+    taxableEffectiveTaxRate,
     healthcareCostBase,
     simulationModel, customReturns,
     withdrawalModel, withdrawalPercent,
@@ -180,6 +181,34 @@ const runEnhancedSimulation = (params) => {
   const yearlyBalances = [traditional + roth + taxable];
   let cumulativeInflation = 1;
   let healthcareCost = healthcareCostBase;
+  let cumulativeGrossWithdrawals = 0;
+  let cumulativeTaxesPaid = 0;
+
+  const clampTaxRate = (rate) => Math.max(0, Math.min(0.95, rate || 0));
+  const accountTaxRates = {
+    traditional: clampTaxRate(taxRate),
+    taxable: clampTaxRate(taxableEffectiveTaxRate ?? taxRate),
+    roth: 0,
+  };
+
+  const withdrawForNetSpending = (accountType, balance, netNeeded) => {
+    if (netNeeded <= 0 || balance <= 0) {
+      return { remainingBalance: balance, grossWithdrawal: 0, taxesPaid: 0, netProvided: 0 };
+    }
+
+    const accountTaxRate = accountTaxRates[accountType] ?? 0;
+    const grossNeeded = accountTaxRate >= 0.999 ? Number.POSITIVE_INFINITY : netNeeded / (1 - accountTaxRate);
+    const grossWithdrawal = Math.min(balance, grossNeeded);
+    const taxesPaid = grossWithdrawal * accountTaxRate;
+    const netProvided = grossWithdrawal - taxesPaid;
+
+    return {
+      remainingBalance: balance - grossWithdrawal,
+      grossWithdrawal,
+      taxesPaid,
+      netProvided,
+    };
+  };
 
   for (let year = 1; year <= totalYears; year++) {
     const age = currentAge + year;
@@ -244,38 +273,49 @@ const runEnhancedSimulation = (params) => {
       const rmd = calculateRMD(age, traditional, birthYear);
 
       // Withdrawal strategy: RMD first, then taxable, then traditional, then Roth
-      // Spending represents total portfolio withdrawal (gross, before taxes) — matches PV methodology
-      let remaining = requiredSpending;
+      // Spending is evaluated in net cash terms (after taxes)
+      let remainingNetSpending = requiredSpending;
 
       // Apply RMD (mandatory)
       if (rmd > 0) {
-        traditional -= rmd;
-        remaining -= rmd;
+        const rmdWithdrawal = Math.min(traditional, rmd);
+        const rmdTaxes = rmdWithdrawal * accountTaxRates.traditional;
+        const rmdNet = rmdWithdrawal - rmdTaxes;
+        traditional -= rmdWithdrawal;
+        cumulativeGrossWithdrawals += rmdWithdrawal;
+        cumulativeTaxesPaid += rmdTaxes;
+        remainingNetSpending = Math.max(0, remainingNetSpending - rmdNet);
       }
 
       // Withdraw from taxable (most tax-efficient after RMD)
-      if (remaining > 0 && taxable > 0) {
-        const taxableWithdrawal = Math.min(taxable, remaining);
-        taxable -= taxableWithdrawal;
-        remaining -= taxableWithdrawal;
+      if (remainingNetSpending > 0 && taxable > 0) {
+        const withdrawal = withdrawForNetSpending('taxable', taxable, remainingNetSpending);
+        taxable = withdrawal.remainingBalance;
+        cumulativeGrossWithdrawals += withdrawal.grossWithdrawal;
+        cumulativeTaxesPaid += withdrawal.taxesPaid;
+        remainingNetSpending -= withdrawal.netProvided;
       }
 
       // Withdraw from traditional
-      if (remaining > 0 && traditional > 0) {
-        const tradWithdrawal = Math.min(traditional, remaining);
-        traditional -= tradWithdrawal;
-        remaining -= tradWithdrawal;
+      if (remainingNetSpending > 0 && traditional > 0) {
+        const withdrawal = withdrawForNetSpending('traditional', traditional, remainingNetSpending);
+        traditional = withdrawal.remainingBalance;
+        cumulativeGrossWithdrawals += withdrawal.grossWithdrawal;
+        cumulativeTaxesPaid += withdrawal.taxesPaid;
+        remainingNetSpending -= withdrawal.netProvided;
       }
 
       // Withdraw from Roth (last resort, tax-free)
-      if (remaining > 0 && roth > 0) {
-        const rothWithdrawal = Math.min(roth, remaining);
-        roth -= rothWithdrawal;
-        remaining -= rothWithdrawal;
+      if (remainingNetSpending > 0 && roth > 0) {
+        const withdrawal = withdrawForNetSpending('roth', roth, remainingNetSpending);
+        roth = withdrawal.remainingBalance;
+        cumulativeGrossWithdrawals += withdrawal.grossWithdrawal;
+        cumulativeTaxesPaid += withdrawal.taxesPaid;
+        remainingNetSpending -= withdrawal.netProvided;
       }
 
-      // Check if we couldn't meet spending needs
-      if (remaining > 0) {
+      // Check if we couldn't meet net spending needs
+      if (remainingNetSpending > 0.01) {
         // Depleted
         for (let i = year; i <= totalYears; i++) {
           yearlyBalances.push(0);
@@ -288,6 +328,8 @@ const runEnhancedSimulation = (params) => {
           finalTraditional: 0,
           finalRoth: 0,
           finalTaxable: 0,
+          cumulativeGrossWithdrawals,
+          cumulativeTaxesPaid,
         };
       }
     } else {
@@ -316,6 +358,8 @@ const runEnhancedSimulation = (params) => {
     finalTraditional: traditional,
     finalRoth: roth,
     finalTaxable: taxable,
+    cumulativeGrossWithdrawals,
+    cumulativeTaxesPaid,
   };
 };
 
@@ -337,7 +381,10 @@ const runEnhancedMonteCarloSimulation = (params, progressCallback) => {
   const successRate = (successCount / SIMULATIONS) * 100;
 
   const finalBalances = results.map(r => r.finalBalance).sort((a, b) => a - b);
+  const grossWithdrawals = results.map(r => r.cumulativeGrossWithdrawals).sort((a, b) => a - b);
+  const taxesPaid = results.map(r => r.cumulativeTaxesPaid).sort((a, b) => a - b);
   const percentile = (p) => finalBalances[Math.floor(p * SIMULATIONS / 100)] || 0;
+  const percentileFrom = (arr, p) => arr[Math.floor(p * SIMULATIONS / 100)] || 0;
 
   // Calculate yearly percentiles
   const totalYears = params.lifeExpectancy - params.currentAge;
@@ -381,6 +428,10 @@ const runEnhancedMonteCarloSimulation = (params, progressCallback) => {
     p90Balances,
     avgDepletionAge,
     depletionCount: depletionAges.length,
+    avgCumulativeGrossWithdrawals: grossWithdrawals.reduce((a, b) => a + b, 0) / SIMULATIONS,
+    medianCumulativeGrossWithdrawals: percentileFrom(grossWithdrawals, 50),
+    avgCumulativeTaxesPaid: taxesPaid.reduce((a, b) => a + b, 0) / SIMULATIONS,
+    medianCumulativeTaxesPaid: percentileFrom(taxesPaid, 50),
   };
 };
 
@@ -764,6 +815,7 @@ const MonteCarloSimulator = () => {
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [inflationRate, setInflationRate] = useState(0.025);
   const [taxRate, setTaxRate] = useState(0.22);
+  const [taxableEffectiveTaxRate, setTaxableEffectiveTaxRate] = useState(0.15);
   const [includeHealthcare, setIncludeHealthcare] = useState(true);
   const [healthcareCostBase, setHealthcareCostBase] = useState('');
 
@@ -811,7 +863,7 @@ const MonteCarloSimulator = () => {
         annualContribution: annContrib, contributionType,
         annualSpending: annSpend, ssBaseBenefit: ssBenefit, ssClaimingAge: ssAge,
         stocksPercent, bondsPercent, useGlidePath,
-        inflationRate, taxRate, includeHealthcare, healthcareCostBase: healthCost,
+        inflationRate, taxRate, taxableEffectiveTaxRate, includeHealthcare, healthcareCostBase: healthCost,
         simulationModel,
         customReturns: simulationModel === 'parameterized' ? {
           stocks: { mean: customStocksMean / 100, stdDev: customStocksStdDev / 100 },
@@ -1225,9 +1277,15 @@ const MonteCarloSimulator = () => {
                 className="w-full" min={1} max={5} step={0.5} />
             </div>
             <div>
-              <label className="block text-sm text-slate-600 mb-1">Tax Rate (marginal): {(taxRate * 100).toFixed(0)}%</label>
+              <label className="block text-sm text-slate-600 mb-1">Tax Rate (marginal, traditional withdrawals): {(taxRate * 100).toFixed(0)}%</label>
               <input type="range" value={taxRate * 100} onChange={(e) => setTaxRate(Number(e.target.value) / 100)}
                 className="w-full" min={10} max={37} step={1} />
+              <p className="text-xs text-slate-500 mt-1">Simulation tax model: Traditional and RMD withdrawals are taxed at this rate, taxable withdrawals use an effective taxable-account rate, and Roth withdrawals are tax-free. Spending success is measured in net (after-tax) dollars.</p>
+            </div>
+            <div>
+              <label className="block text-sm text-slate-600 mb-1">Taxable Withdrawal Effective Tax Rate: {(taxableEffectiveTaxRate * 100).toFixed(0)}%</label>
+              <input type="range" value={taxableEffectiveTaxRate * 100} onChange={(e) => setTaxableEffectiveTaxRate(Number(e.target.value) / 100)}
+                className="w-full" min={0} max={30} step={1} />
             </div>
             <div>
               <label className="flex items-center gap-2 cursor-pointer">
@@ -1326,6 +1384,18 @@ const MonteCarloSimulator = () => {
                   Average depletion age when failed: {Math.round(results.avgDepletionAge)}
                 </p>
               )}
+              <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3 text-left">
+                <div className="bg-white/70 rounded-xl p-3 border border-slate-200">
+                  <p className="text-xs text-slate-600">Median Lifetime Gross Withdrawals</p>
+                  <p className="text-lg font-bold text-slate-800">{formatCurrency(results.medianCumulativeGrossWithdrawals)}</p>
+                  <p className="text-xs text-slate-500">Average: {formatCurrency(results.avgCumulativeGrossWithdrawals)}</p>
+                </div>
+                <div className="bg-white/70 rounded-xl p-3 border border-slate-200">
+                  <p className="text-xs text-slate-600">Median Lifetime Taxes Paid on Withdrawals</p>
+                  <p className="text-lg font-bold text-slate-800">{formatCurrency(results.medianCumulativeTaxesPaid)}</p>
+                  <p className="text-xs text-slate-500">Average: {formatCurrency(results.avgCumulativeTaxesPaid)}</p>
+                </div>
+              </div>
             </div>
           </div>
 
