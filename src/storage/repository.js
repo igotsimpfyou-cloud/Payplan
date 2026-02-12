@@ -17,7 +17,7 @@ import {
   LS_HISTORICAL_BILLS,
   LS_PAYCHECKS,
   LS_LAST_ROLLOVER,
-} from '../constants/storageKeys';
+} from '../constants/storageKeys.js';
 
 const DB_NAME = 'payplan-pro';
 const DB_VERSION = 1;
@@ -82,6 +82,12 @@ const MIGRATIONS = {
 };
 
 const isIndexedDBAvailable = () => typeof indexedDB !== 'undefined';
+
+export function shouldSeedFromLegacy(fromPrimary, hasSeededFlag) {
+  if (hasSeededFlag) return false;
+  if (fromPrimary == null) return true;
+  return Array.isArray(fromPrimary) && fromPrimary.length === 0;
+}
 
 function openDb() {
   return new Promise((resolve, reject) => {
@@ -246,14 +252,16 @@ export async function createStorageRepository() {
       const data = {};
       const invalid = [];
       for (const name of Object.keys(Collections)) {
+        const seededFlag = await adapter.getMeta(`seeded:${name}`);
         const fromPrimary = await adapter.loadCollection(name);
-        const seeded = fromPrimary == null || (Array.isArray(fromPrimary) && fromPrimary.length === 0)
+        const seeded = shouldSeedFromLegacy(fromPrimary, !!seededFlag)
           ? parseLegacyCollection(name)
           : fromPrimary;
         const { valid, invalid: bad } = validateRecords(name, seeded);
         data[name] = valid;
         invalid.push(...bad);
         if (bad.length && Collections[name].type === 'array') await adapter.saveCollection(name, valid);
+        if (!seededFlag) await adapter.setMeta(`seeded:${name}`, true);
       }
       if (invalid.length) await adapter.quarantine(invalid);
       return { data, quarantineCount: invalid.length };
