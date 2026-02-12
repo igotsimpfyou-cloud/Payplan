@@ -52,12 +52,38 @@ const SS_ADJUSTMENT = {
   70: 1.24,  // Maximum benefit
 };
 
-// RMD factors (IRS Uniform Lifetime Table - simplified)
+// RMD factors (IRS Uniform Lifetime Table, effective 2022+)
 const RMD_FACTORS = {
   72: 27.4, 73: 26.5, 74: 25.5, 75: 24.6, 76: 23.7, 77: 22.9,
   78: 22.0, 79: 21.1, 80: 20.2, 81: 19.4, 82: 18.5, 83: 17.7,
   84: 16.8, 85: 16.0, 86: 15.2, 87: 14.4, 88: 13.7, 89: 12.9,
   90: 12.2, 91: 11.5, 92: 10.8, 93: 10.1, 94: 9.5, 95: 8.9,
+  96: 8.4, 97: 7.8, 98: 7.3, 99: 6.8, 100: 6.4, 101: 6.0,
+  102: 5.6, 103: 5.2, 104: 4.9, 105: 4.6, 106: 4.3, 107: 4.1,
+  108: 3.9, 109: 3.7, 110: 3.5, 111: 3.4, 112: 3.3, 113: 3.1,
+  114: 3.0, 115: 2.9, 116: 2.8, 117: 2.7, 118: 2.5, 119: 2.3,
+  120: 2.0,
+};
+
+const RMD_FACTOR_AGES = Object.keys(RMD_FACTORS).map(Number).sort((a, b) => a - b);
+const RMD_MAX_FACTOR_AGE = RMD_FACTOR_AGES[RMD_FACTOR_AGES.length - 1];
+
+const getRMDStartAge = (birthYear) => ((birthYear && (birthYear + 73) >= 2033) ? 75 : 73);
+
+// Returns the exact age factor if available; otherwise nearest valid fallback.
+const getRMDFactor = (age) => {
+  if (RMD_FACTORS[age]) return RMD_FACTORS[age];
+
+  if (age > RMD_MAX_FACTOR_AGE) {
+    return RMD_FACTORS[RMD_MAX_FACTOR_AGE];
+  }
+
+  const nearestAge = RMD_FACTOR_AGES.reduce((nearest, candidate) => {
+    if (candidate <= age) return candidate;
+    return nearest;
+  }, RMD_FACTOR_AGES[0]);
+
+  return RMD_FACTORS[nearestAge];
 };
 
 // Healthcare cost increases (above inflation)
@@ -144,9 +170,26 @@ const getGlidePath = (age, retirementAge, useGlidePath) => {
 // SECURE 2.0 Act: RMD age is 73 (2023-2032) and 75 (2033+)
 // birthYear determines which threshold applies
 const calculateRMD = (age, traditionalBalance, birthYear) => {
-  const rmdStartAge = (birthYear && (birthYear + 73) >= 2033) ? 75 : 73;
-  if (age < rmdStartAge || !RMD_FACTORS[age]) return 0;
-  return traditionalBalance / RMD_FACTORS[age];
+  const rmdStartAge = getRMDStartAge(birthYear);
+  if (age < rmdStartAge) return 0;
+
+  const factor = getRMDFactor(age);
+  return factor ? traditionalBalance / factor : 0;
+};
+
+// Unit-style pure validation helpers for RMD edge cases.
+const validateRMDBelowThresholdIsZero = (birthYear, balance = 100000) => {
+  const threshold = getRMDStartAge(birthYear);
+  return calculateRMD(threshold - 1, balance, birthYear) === 0;
+};
+
+const validateRMDAtThresholdIsPositive = (birthYear, balance = 100000) => {
+  const threshold = getRMDStartAge(birthYear);
+  return calculateRMD(threshold, balance, birthYear) > 0;
+};
+
+const validateRMDBeyondMaxAgeUsesPositiveFallback = (birthYear, balance = 100000) => {
+  return calculateRMD(RMD_MAX_FACTOR_AGE + 5, balance, birthYear) > 0;
 };
 
 // Calculate Social Security benefit
