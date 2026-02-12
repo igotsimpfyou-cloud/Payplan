@@ -8,7 +8,6 @@ import {
   Target,
   Wrench,
   LayoutDashboard,
-  X,
 } from 'lucide-react';
 
 // Utils
@@ -59,6 +58,7 @@ import { PayScheduleForm } from './components/forms/PayScheduleForm';
 import { AssetForm } from './components/forms/AssetForm';
 import { OneTimeForm } from './components/forms/OneTimeForm';
 import { PropaneForm } from './components/forms/PropaneForm';
+import Modal from './components/ui/Modal';
 
 // Views
 import { Dashboard } from './components/views/Dashboard';
@@ -1223,6 +1223,7 @@ const BillPayPlanner = () => {
               onClick={() => setShowSettings(true)}
               className="p-2 rounded-xl transition-all bg-white/20 text-white hover:bg-white/30"
               title="Settings"
+              aria-label="Open settings"
             >
               <SettingsIcon size={20} />
             </button>
@@ -1682,29 +1683,25 @@ const BillPayPlanner = () => {
 
         {/* Settings Slide-Out Panel */}
         {showSettings && (
-          <div className="fixed inset-0 z-50">
-            <div className="absolute inset-0 bg-black/40" onClick={() => setShowSettings(false)} />
-            <div className="absolute right-0 top-0 bottom-0 w-full max-w-md bg-slate-50 shadow-2xl overflow-y-auto animate-slide-in">
-              <div className="sticky top-0 z-10 bg-white border-b px-5 py-4 flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <SettingsIcon size={20} className="text-slate-600" />
-                  <h2 className="text-lg font-bold text-slate-800">Settings</h2>
-                </div>
-                <button
-                  onClick={() => setShowSettings(false)}
-                  className="p-2 hover:bg-slate-100 rounded-xl transition-colors"
-                >
-                  <X size={20} className="text-slate-500" />
-                </button>
-              </div>
-              <div className="p-4">
-                <Settings
-                  backupFileInputRef={backupFileInputRef}
-                  billInstances={billInstances}
-                  onExportBackup={exportBackup}
-                  onImportBackup={importBackupFromFile}
-                  bills={bills}
-                  onDeduplicateBills={() => {
+          <Modal
+            isOpen={showSettings}
+            onClose={() => setShowSettings(false)}
+            title="Settings"
+            titleClassName="text-lg font-bold text-slate-800"
+            closeButtonLabel="Close settings"
+            maxWidth="max-w-md"
+            overlayClassName="bg-black/40"
+            contentClassName="p-0"
+            panelClassName="h-[calc(100vh-2rem)] max-h-[calc(100vh-2rem)] ml-auto bg-slate-50 overflow-y-auto animate-slide-in"
+          >
+            <div className="p-4">
+              <Settings
+                backupFileInputRef={backupFileInputRef}
+                billInstances={billInstances}
+                onExportBackup={exportBackup}
+                onImportBackup={importBackupFromFile}
+                bills={bills}
+                onDeduplicateBills={() => {
                     const billsByNameMonth = {};
                     let removed = 0;
 
@@ -1791,9 +1788,8 @@ const BillPayPlanner = () => {
                     return marked;
                   }}
                 />
-              </div>
             </div>
-          </div>
+          </Modal>
         )}
       </div>
     </div>
