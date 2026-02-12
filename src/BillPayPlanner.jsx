@@ -1325,6 +1325,13 @@ const BillPayPlanner = () => {
             onDeleteActualPay={deleteActualPayEntry}
             currentMonthInstances={currentMonthInstances}
             onSubmitActual={submitActualPaid}
+            onEditTemplate={(templateId) => {
+              const tmpl = billTemplates.find(t => t.id === templateId);
+              if (tmpl) {
+                setEditingTemplate(tmpl);
+                setShowTemplateForm(true);
+              }
+            }}
           />
         )}
 
@@ -1484,6 +1491,13 @@ const BillPayPlanner = () => {
             <SubmitActuals
               currentMonthInstances={[]}
               onSubmitActual={() => {}}
+              onEditTemplate={(templateId) => {
+                const tmpl = billTemplates.find(t => t.id === templateId);
+                if (tmpl) {
+                  setEditingTemplate(tmpl);
+                  setShowTemplateForm(true);
+                }
+              }}
               nextPayDates={nextPayDates}
               actualPayEntries={[]}
               onAddActualPay={() => {}}

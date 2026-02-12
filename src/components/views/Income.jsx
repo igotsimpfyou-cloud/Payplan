@@ -12,6 +12,7 @@ export const Income = ({
   onDeleteActualPay,
   currentMonthInstances = [],
   onSubmitActual,
+  onEditTemplate,
 }) => {
   // Pay entry form state
   const [payDate, setPayDate] = useState('');
@@ -20,13 +21,6 @@ export const Income = ({
 
   // Variable bill actuals
   const thisMonthVars = currentMonthInstances.filter((i) => i.isVariable);
-  const [varValues, setVarValues] = useState(() => {
-    const obj = {};
-    thisMonthVars.forEach((i) => {
-      obj[i.id] = i.actualPaid != null ? i.actualPaid : '';
-    });
-    return obj;
-  });
 
   const handleAddPay = () => {
     if (!payDate || !payAmount) return;
@@ -216,24 +210,12 @@ export const Income = ({
                     {' · '}Est. ${parseAmt(i.amountEstimate).toFixed(2)}
                   </p>
                 </div>
-                <div className="flex items-center gap-2 flex-shrink-0">
-                  <input
-                    type="number"
-                    step="0.01"
-                    placeholder="Actual"
-                    className="px-2 py-1.5 border-2 rounded-lg w-24 text-sm"
-                    value={varValues[i.id] ?? ''}
-                    onChange={(e) =>
-                      setVarValues({ ...varValues, [i.id]: e.target.value })
-                    }
-                  />
-                  <button
-                    className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold"
-                    onClick={() => onSubmitActual(i.id, varValues[i.id])}
-                  >
-                    Save
-                  </button>
-                </div>
+                <button
+                  className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold flex items-center gap-1.5 flex-shrink-0"
+                  onClick={() => onEditTemplate(i.templateId)}
+                >
+                  <Edit2 size={14} /> Update
+                </button>
               </div>
             ))}
           </div>
