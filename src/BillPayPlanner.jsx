@@ -1159,6 +1159,66 @@ const BillPayPlanner = () => {
     };
   }, [currentMonthInstances, oneTimeBills, paySchedule, nextPayDates, actualPayEntries]);
 
+  const formatCurrency = (value) => {
+    const safeValue = Number.isFinite(value) ? value : 0;
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: 'USD',
+      maximumFractionDigits: 0,
+    }).format(safeValue);
+  };
+
+  const VIEW_METADATA = {
+    dashboard: {
+      label: 'Dashboard',
+      parentSection: 'Home',
+      description: `This month leftover: ${formatCurrency(overview.leftover)}`,
+      icon: LayoutDashboard,
+    },
+    income: {
+      label: 'Income',
+      parentSection: 'Income',
+      description: `${overview.paychecksThisMonth} paycheck${overview.paychecksThisMonth === 1 ? '' : 's'} this month`,
+      icon: DollarSign,
+    },
+    'bills-setup': {
+      label: 'Setup',
+      parentSection: 'Bills',
+      description: `${billTemplates.length} template${billTemplates.length === 1 ? '' : 's'} configured`,
+      icon: Wrench,
+    },
+    'bills-dashboard': {
+      label: 'Dashboard',
+      parentSection: 'Bills',
+      description: `Monthly bills total: ${formatCurrency(overview.totalMonthly)}`,
+      icon: LayoutDashboard,
+    },
+    'bills-analytics': {
+      label: 'Analytics',
+      parentSection: 'Bills',
+      description: 'Review trends and spending patterns',
+      icon: BarChart3,
+    },
+    'goals-setup': {
+      label: 'Setup',
+      parentSection: 'Goals',
+      description: `${debtPayoff.length + envelopes.length + investments.length} tracked goal items`,
+      icon: Wrench,
+    },
+    'goals-dashboard': {
+      label: 'Dashboard',
+      parentSection: 'Goals',
+      description: 'Track progress across savings, debt, and investing',
+      icon: LayoutDashboard,
+    },
+    'goals-analytics': {
+      label: 'Analytics',
+      parentSection: 'Goals',
+      description: 'Compare goal performance over time',
+      icon: BarChart3,
+    },
+  };
+
   // ---------- Navigation Configuration ----------
   // Map of which views belong to which tab and sub-tab
   const NAV_TABS = [
@@ -1200,6 +1260,24 @@ const BillPayPlanner = () => {
 
   const activeTabId = viewToTab[view] || 'home';
   const activeTab = NAV_TABS.find((t) => t.id === activeTabId);
+  const viewContext = VIEW_METADATA[view] || {
+    label: 'Dashboard',
+    parentSection: 'Home',
+    description: 'Overview',
+    icon: LayoutDashboard,
+  };
+
+  const siblingViews = Object.entries(VIEW_METADATA)
+    .filter(([viewId, metadata]) => {
+      if (metadata.parentSection !== viewContext.parentSection) return false;
+      if (!viewId.includes('-')) return false;
+      return viewId.startsWith(`${activeTabId}-`);
+    })
+    .map(([viewId, metadata]) => ({
+      viewId,
+      label: metadata.label,
+      icon: metadata.icon,
+    }));
 
   const handleTabClick = (tab) => {
     setView(tab.defaultView);
@@ -1278,6 +1356,50 @@ const BillPayPlanner = () => {
               </div>
             </div>
           )}
+
+          <div className="mt-3 bg-white/15 border border-white/25 rounded-xl px-3 py-2.5 text-white">
+            <div className="flex flex-wrap items-center gap-2 text-[11px] sm:text-xs font-semibold uppercase tracking-wide text-white/85">
+              <span>{viewContext.parentSection}</span>
+              <span aria-hidden="true">/</span>
+              <span className="normal-case text-sm sm:text-base text-white font-bold tracking-normal">
+                {viewContext.parentSection} <span className="text-white/80">›</span> {viewContext.label}
+              </span>
+            </div>
+
+            {(viewContext.description || siblingViews.length > 1) && (
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                {viewContext.icon && (
+                  <viewContext.icon size={14} className="text-white/85" />
+                )}
+                {viewContext.description && (
+                  <p className="text-xs text-white/90 mr-1">{viewContext.description}</p>
+                )}
+                {siblingViews.length > 1 && (
+                  <div className="flex flex-wrap items-center gap-1">
+                    {siblingViews.map((sibling) => {
+                      const SiblingIcon = sibling.icon;
+                      const isActiveSibling = sibling.viewId === view;
+
+                      return (
+                        <button
+                          key={sibling.viewId}
+                          onClick={() => setView(sibling.viewId)}
+                          className={`px-2 py-1 rounded-lg text-[11px] sm:text-xs font-semibold flex items-center gap-1 transition-colors ${
+                            isActiveSibling
+                              ? 'bg-white text-emerald-700'
+                              : 'bg-white/20 text-white hover:bg-white/30'
+                          }`}
+                        >
+                          {SiblingIcon && <SiblingIcon size={11} />}
+                          {sibling.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
         </div>
       </div>
     );
