@@ -20,6 +20,7 @@ const CATEGORIES = [
 export const SubmitActuals = ({
   currentMonthInstances,
   onSubmitActual,
+  onEditTemplate,
   nextPayDates,
   actualPayEntries,
   onAddActualPay,
@@ -30,13 +31,6 @@ export const SubmitActuals = ({
   receiptOnly = false,
 }) => {
   const thisMonthVars = currentMonthInstances.filter((i) => i.isVariable);
-  const [values, setValues] = useState(() => {
-    const obj = {};
-    thisMonthVars.forEach((i) => {
-      obj[i.id] = i.actualPaid != null ? i.actualPaid : '';
-    });
-    return obj;
-  });
 
   // Pay entry form state
   const [payDate, setPayDate] = useState('');
@@ -600,24 +594,12 @@ export const SubmitActuals = ({
                     {parseAmt(i.amountEstimate).toFixed(2)}
                   </div>
                 </div>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="number"
-                    step="0.01"
-                    placeholder="Actual Paid"
-                    className="px-3 py-2 border-2 rounded-xl w-32"
-                    value={values[i.id] ?? ''}
-                    onChange={(e) =>
-                      setValues({ ...values, [i.id]: e.target.value })
-                    }
-                  />
-                  <button
-                    className="px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold"
-                    onClick={() => onSubmitActual(i.id, values[i.id])}
-                  >
-                    Save
-                  </button>
-                </div>
+                <button
+                  className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold flex items-center gap-2"
+                  onClick={() => onEditTemplate(i.templateId)}
+                >
+                  <Edit2 size={16} /> Update
+                </button>
               </div>
             ))}
           </div>
