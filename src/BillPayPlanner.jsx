@@ -9,6 +9,8 @@ import {
   Wrench,
   LayoutDashboard,
   X,
+  Search,
+  Clock3,
 } from 'lucide-react';
 
 // Utils
@@ -81,6 +83,7 @@ import { GoalsDashboard } from './components/views/GoalsDashboard';
  * Manages state and coordinates between extracted components
  */
 const BillPayPlanner = () => {
+  const LS_QUICK_SWITCH_RECENTS = 'quick-switch-recents';
   const [view, setView] = useState('dashboard');
 
   // Core (new database model)
@@ -124,10 +127,14 @@ const BillPayPlanner = () => {
   const [editingOneTime, setEditingOneTime] = useState(null);
   const [showPropaneForm, setShowPropaneForm] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [showQuickSwitch, setShowQuickSwitch] = useState(false);
+  const [quickSwitchQuery, setQuickSwitchQuery] = useState('');
+  const [recentQuickActions, setRecentQuickActions] = useState([]);
   const [loading, setLoading] = useState(true);
 
   // Backup / Restore
   const backupFileInputRef = useRef(null);
+  const quickSwitchInputRef = useRef(null);
 
   // ---------- Load & migrate ----------
   useEffect(() => {
@@ -1209,6 +1216,190 @@ const BillPayPlanner = () => {
     setView(subView);
   };
 
+  const quickActions = useMemo(() => {
+    const navActions = [];
+
+    NAV_TABS.forEach((tab) => {
+      navActions.push({
+        id: `tab:${tab.defaultView}`,
+        label: tab.label,
+        keywords: [tab.id, tab.label, 'screen', 'view', 'navigate'],
+        group: 'Navigate',
+        run: () => setView(tab.defaultView),
+      });
+
+      if (tab.subTabs) {
+        tab.subTabs.forEach((sub) => {
+          navActions.push({
+            id: `sub:${sub.view}`,
+            label: `${tab.label} / ${sub.label}`,
+            keywords: [tab.id, sub.id, tab.label, sub.label, sub.view, 'screen', 'view', 'navigate'],
+            group: tab.label,
+            run: () => setView(sub.view),
+          });
+        });
+      }
+    });
+
+    const modalActions = [
+      {
+        id: 'modal:settings',
+        label: 'Open Settings',
+        keywords: ['settings', 'panel', 'preferences'],
+        group: 'Actions',
+        run: () => setShowSettings(true),
+      },
+      {
+        id: 'modal:add-template',
+        label: 'Add Bill Template',
+        keywords: ['bill', 'template', 'setup', 'new'],
+        group: 'Actions',
+        run: () => {
+          setEditingTemplate(null);
+          setShowTemplateForm(true);
+          setView('bills-setup');
+        },
+      },
+      {
+        id: 'modal:add-one-time',
+        label: 'Add One-Time Bill',
+        keywords: ['bill', 'one-time', 'expense', 'new'],
+        group: 'Actions',
+        run: () => {
+          setShowOneTimeForm(true);
+          setView('bills-setup');
+        },
+      },
+      {
+        id: 'modal:add-propane',
+        label: 'Add Propane Fill',
+        keywords: ['propane', 'fuel', 'fill', 'new'],
+        group: 'Actions',
+        run: () => {
+          setShowPropaneForm(true);
+          setView('bills-setup');
+        },
+      },
+      {
+        id: 'modal:add-asset',
+        label: 'Add Asset',
+        keywords: ['asset', 'net worth', 'new'],
+        group: 'Actions',
+        run: () => {
+          setEditingAsset(null);
+          setShowAssetForm(true);
+          setView('goals-setup');
+        },
+      },
+      {
+        id: 'modal:edit-pay-schedule',
+        label: 'Edit Pay Schedule',
+        keywords: ['income', 'pay', 'paycheck', 'schedule'],
+        group: 'Actions',
+        run: () => {
+          setShowPayForm(true);
+          setView('income');
+        },
+      },
+    ];
+
+    return [...navActions, ...modalActions];
+  }, [NAV_TABS]);
+
+  useEffect(() => {
+    try {
+      const stored = JSON.parse(localStorage.getItem(LS_QUICK_SWITCH_RECENTS) || '[]');
+      if (Array.isArray(stored)) {
+        setRecentQuickActions(stored.slice(0, 6));
+      }
+    } catch {
+      setRecentQuickActions([]);
+    }
+  }, []);
+
+  const scoreActionMatch = (query, action) => {
+    if (!query) return 1;
+
+    const normalizedQuery = query.trim().toLowerCase();
+    if (!normalizedQuery) return 1;
+
+    const haystack = [action.label, ...(action.keywords || [])].join(' ').toLowerCase();
+    if (haystack.includes(normalizedQuery)) return 120 - normalizedQuery.length;
+
+    let qi = 0;
+    let streak = 0;
+    let score = 0;
+    for (let i = 0; i < haystack.length && qi < normalizedQuery.length; i += 1) {
+      if (haystack[i] === normalizedQuery[qi]) {
+        qi += 1;
+        streak += 1;
+        score += 2 + streak;
+      } else {
+        streak = 0;
+      }
+    }
+
+    return qi === normalizedQuery.length ? score : -1;
+  };
+
+  const matchingQuickActions = useMemo(() => {
+    const scored = quickActions
+      .map((action) => ({ action, score: scoreActionMatch(quickSwitchQuery, action) }))
+      .filter(({ score }) => score >= 0)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 12)
+      .map(({ action }) => action);
+
+    if (quickSwitchQuery.trim()) return scored;
+
+    const recent = recentQuickActions
+      .map((id) => quickActions.find((a) => a.id === id))
+      .filter(Boolean);
+    const seen = new Set(recent.map((a) => a.id));
+    const remaining = scored.filter((action) => !seen.has(action.id));
+    return [...recent, ...remaining].slice(0, 12);
+  }, [quickActions, quickSwitchQuery, recentQuickActions]);
+
+  const triggerQuickAction = (action) => {
+    action.run();
+    setShowQuickSwitch(false);
+    setQuickSwitchQuery('');
+    setRecentQuickActions((prev) => {
+      const next = [action.id, ...prev.filter((id) => id !== action.id)].slice(0, 6);
+      localStorage.setItem(LS_QUICK_SWITCH_RECENTS, JSON.stringify(next));
+      return next;
+    });
+  };
+
+  useEffect(() => {
+    const onKeyDown = (event) => {
+      const target = event.target;
+      const typingField = target instanceof HTMLElement
+        && (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName));
+
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault();
+        setShowQuickSwitch((open) => !open);
+      }
+
+      if (typingField) return;
+
+      if (!showQuickSwitch && event.key === '/') {
+        event.preventDefault();
+        setShowQuickSwitch(true);
+      }
+    };
+
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [showQuickSwitch]);
+
+  useEffect(() => {
+    if (showQuickSwitch) {
+      setTimeout(() => quickSwitchInputRef.current?.focus(), 0);
+    }
+  }, [showQuickSwitch]);
+
   // ---------- Header ----------
   const Header = () => {
     return (
@@ -1219,13 +1410,22 @@ const BillPayPlanner = () => {
             <h1 className="text-xl md:text-2xl font-black text-white">
               PayPlan Pro
             </h1>
-            <button
-              onClick={() => setShowSettings(true)}
-              className="p-2 rounded-xl transition-all bg-white/20 text-white hover:bg-white/30"
-              title="Settings"
-            >
-              <SettingsIcon size={20} />
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setShowQuickSwitch(true)}
+                className="md:hidden p-2 rounded-xl transition-all bg-white/20 text-white hover:bg-white/30"
+                title="Quick switch"
+              >
+                <Search size={18} />
+              </button>
+              <button
+                onClick={() => setShowSettings(true)}
+                className="p-2 rounded-xl transition-all bg-white/20 text-white hover:bg-white/30"
+                title="Settings"
+              >
+                <SettingsIcon size={20} />
+              </button>
+            </div>
           </div>
 
           {/* Main Navigation - 4 Tabs */}
@@ -1296,6 +1496,60 @@ const BillPayPlanner = () => {
     <div className="min-h-screen bg-gradient-to-br from-emerald-500 via-teal-500 to-cyan-600 p-2 sm:p-4 md:p-8">
       <div className="max-w-7xl mx-auto">
         <Header />
+
+        {showQuickSwitch && (
+          <div className="fixed inset-0 z-50">
+            <div className="absolute inset-0 bg-black/50" onClick={() => setShowQuickSwitch(false)} />
+            <div className="relative px-3 sm:px-6 pt-16 sm:pt-24">
+              <div className="mx-auto max-w-2xl rounded-2xl border border-white/30 bg-slate-900/95 shadow-2xl overflow-hidden">
+                <div className="flex items-center gap-2 px-3 py-3 border-b border-white/10">
+                  <Search size={18} className="text-slate-400" />
+                  <input
+                    ref={quickSwitchInputRef}
+                    value={quickSwitchQuery}
+                    onChange={(e) => setQuickSwitchQuery(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Escape') {
+                        setShowQuickSwitch(false);
+                        return;
+                      }
+                      if (e.key === 'Enter' && matchingQuickActions[0]) {
+                        e.preventDefault();
+                        triggerQuickAction(matchingQuickActions[0]);
+                      }
+                    }}
+                    className="w-full bg-transparent text-white placeholder:text-slate-500 outline-none"
+                    placeholder="Jump to a screen or action..."
+                  />
+                  <span className="hidden sm:inline text-xs text-slate-400">Ctrl/⌘ K</span>
+                </div>
+
+                {!quickSwitchQuery.trim() && recentQuickActions.length > 0 && (
+                  <div className="px-3 pt-2 text-xs text-slate-400 flex items-center gap-1">
+                    <Clock3 size={13} /> Recent
+                  </div>
+                )}
+
+                <div className="max-h-[60vh] overflow-y-auto py-2">
+                  {matchingQuickActions.length === 0 ? (
+                    <div className="px-4 py-8 text-center text-sm text-slate-400">No matches found.</div>
+                  ) : (
+                    matchingQuickActions.map((action) => (
+                      <button
+                        key={action.id}
+                        onClick={() => triggerQuickAction(action)}
+                        className="w-full text-left px-4 py-2.5 hover:bg-white/10 transition-colors"
+                      >
+                        <div className="text-white text-sm font-medium">{action.label}</div>
+                        <div className="text-slate-400 text-xs">{action.group}</div>
+                      </button>
+                    ))
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* ===== HOME ===== */}
         {view === 'dashboard' && (
