@@ -15,28 +15,7 @@ import {
 import { toYMD, startOfMonth, addMonths, sameMonth, idForInstance, parseLocalDate, toLocalMidnight } from './utils/dateHelpers';
 import { parseAmt } from './utils/formatters';
 import { calculateNextPayDates, monthlyTotal } from './utils/calculations';
-
-// Constants
-import {
-  LS_TEMPLATES,
-  LS_INSTANCES,
-  LS_ASSETS,
-  LS_ONETIME,
-  LS_PAY,
-  LS_CAL,
-  LS_PROPANE,
-  LS_EMERGENCY,
-  LS_DEBTS,
-  LS_ENVELOPES,
-  LS_BUDGETS,
-  LS_ACTUAL_PAY,
-  LS_SCANNED_RECEIPTS,
-  LS_INVESTMENTS,
-  LS_BILLS,
-  LS_HISTORICAL_BILLS,
-  LS_PAYCHECKS,
-  LS_LAST_ROLLOVER,
-} from './constants/storageKeys';
+import { createStorageRepository } from './storage/repository';
 
 // Bill Database utilities
 import {
@@ -130,221 +109,141 @@ const BillPayPlanner = () => {
   // Backup / Restore
   const backupFileInputRef = useRef(null);
 
+  const storageRef = useRef(null);
+
+  const persistCollection = async (name, value) => {
+    if (!storageRef.current) return;
+    try {
+      await storageRef.current.saveCollection(name, value);
+    } catch (err) {
+      console.warn(`Persist error (${name})`, err);
+    }
+  };
+
+  const queueRecordPatch = (collection, operation) => {
+    if (!storageRef.current?.queuePatch) return;
+    storageRef.current.queuePatch(collection, operation);
+  };
+
+  const flushQueuedWrites = async () => {
+    if (!storageRef.current?.flush) return;
+    await storageRef.current.flush();
+  };
+
   // ---------- Load & migrate ----------
   useEffect(() => {
-    try {
-      const t = localStorage.getItem(LS_TEMPLATES);
-      const i = localStorage.getItem(LS_INSTANCES);
-      const a = localStorage.getItem(LS_ASSETS);
-      const o = localStorage.getItem(LS_ONETIME);
-      const p = localStorage.getItem(LS_PAY);
-      const c = localStorage.getItem(LS_CAL);
-      const pr = localStorage.getItem(LS_PROPANE);
-      const e = localStorage.getItem(LS_EMERGENCY);
-      const d = localStorage.getItem(LS_DEBTS);
-      const env = localStorage.getItem(LS_ENVELOPES);
-      const bud = localStorage.getItem(LS_BUDGETS);
-      const ap = localStorage.getItem(LS_ACTUAL_PAY);
-      const sr = localStorage.getItem(LS_SCANNED_RECEIPTS);
-      const inv = localStorage.getItem(LS_INVESTMENTS);
+    (async () => {
+      try {
+        const repository = await createStorageRepository();
+        storageRef.current = repository;
+        const { data, quarantineCount } = await repository.loadAll();
 
-      // New database storage
-      const billsData = localStorage.getItem(LS_BILLS);
-      const historicalBillsData = localStorage.getItem(LS_HISTORICAL_BILLS);
-      const paychecksData = localStorage.getItem(LS_PAYCHECKS);
-      const lastRollover = localStorage.getItem(LS_LAST_ROLLOVER);
+        if (quarantineCount > 0) {
+          console.warn(`Quarantined ${quarantineCount} invalid record(s) during hydration`);
+        }
 
-      // MIGRATION: if old 'bills' exists, migrate to templates
-      const legacyBills = localStorage.getItem('bills');
-      if (!t && legacyBills) {
-        const legacy = JSON.parse(legacyBills);
-        const asTemplates = legacy.map((b) => ({
-          id: b.id || Date.now() + Math.random(),
-          name: b.name,
-          amount: parseAmt(b.amount),
-          isVariable: !!b.isVariable,
-          category: b.category || 'utilities',
-          autopay: !!b.autopay,
-          frequency: b.frequency || 'monthly',
-          dueDay: parseInt(b.dueDate, 10),
-          firstDueDate: b.nextDueDate || new Date().toISOString().split('T')[0],
-          historicalPayments: b.historicalPayments || [],
-        }));
-        localStorage.setItem(LS_TEMPLATES, JSON.stringify(asTemplates));
-        localStorage.removeItem('bills');
-      }
+        const loadedTemplates = Array.isArray(data.templates) ? data.templates : [];
+        const loadedInstances = Array.isArray(data.billInstances) ? data.billInstances : [];
+        const loadedBills = Array.isArray(data.bills) ? data.bills : [];
+        const loadedHistoricalBills = Array.isArray(data.historicalBills) ? data.historicalBills : [];
+        const loadedPaychecks = Array.isArray(data.paychecks) ? data.paychecks : [];
 
-      // Load templates
-      let loadedTemplates = [];
-      if (localStorage.getItem(LS_TEMPLATES)) {
-        loadedTemplates = JSON.parse(localStorage.getItem(LS_TEMPLATES));
         setBillTemplates(loadedTemplates);
+        setPaySchedule(data.paySchedule ?? null);
+
+        if (loadedBills.length > 0) {
+          setBills(loadedBills);
+          setHistoricalBills(loadedHistoricalBills);
+          setPaychecks(loadedPaychecks);
+          if (data.lastRolloverMonth) setLastRolloverMonth(data.lastRolloverMonth);
+        } else if (loadedInstances.length > 0) {
+          const migratedBills = migrateFromInstances(loadedInstances, loadedTemplates);
+          const { active, historical } = separateActiveAndHistorical(migratedBills);
+          setBills(active);
+          setHistoricalBills(historical);
+
+          const now = new Date();
+          const generatedBills = loadedTemplates.flatMap((template) =>
+            generateBillsFromTemplate(template, 6, now, active)
+          );
+          if (generatedBills.length > 0) {
+            setBills((prev) => [...prev, ...generatedBills]);
+          }
+
+          if (data.paySchedule) {
+            const generatedPaychecks = generatePaychecksFromSchedule(data.paySchedule, 6, []);
+            setPaychecks(generatedPaychecks);
+          }
+
+          setLastRolloverMonth(getCurrentMonth());
+        } else {
+          const now = new Date();
+          const generatedBills = loadedTemplates.flatMap((template) =>
+            generateBillsFromTemplate(template, 6, now, [])
+          );
+          setBills(generatedBills);
+
+          if (data.paySchedule) {
+            const generatedPaychecks = generatePaychecksFromSchedule(data.paySchedule, 6, []);
+            setPaychecks(generatedPaychecks);
+          }
+
+          setLastRolloverMonth(getCurrentMonth());
+        }
+
+        setBillInstances(loadedInstances);
+        setAssets(Array.isArray(data.assets) ? data.assets : []);
+        setOneTimeBills(Array.isArray(data.oneTimeBills) ? data.oneTimeBills : []);
+        setCalendarConnected(!!data.calendarConnected);
+        setPropaneFills(Array.isArray(data.propaneFills) ? data.propaneFills : []);
+        setEmergencyFund(data.emergencyFund || { target: 0, current: 0 });
+        setDebtPayoff(Array.isArray(data.debtPayoff) ? data.debtPayoff : []);
+        setEnvelopes(Array.isArray(data.envelopes) ? data.envelopes : []);
+        setBudgets(
+          data.budgets || {
+            utilities: 0,
+            subscription: 0,
+            insurance: 0,
+            loan: 0,
+            rent: 0,
+            other: 0,
+          }
+        );
+        setActualPayEntries(Array.isArray(data.actualPayEntries) ? data.actualPayEntries : []);
+        setScannedReceipts(Array.isArray(data.scannedReceipts) ? data.scannedReceipts : []);
+        setInvestments(Array.isArray(data.investments) ? data.investments : []);
+      } catch (err) {
+        console.warn('Load error', err);
+      } finally {
+        setLoading(false);
       }
-
-      // Load pay schedule
-      let loadedPaySchedule = null;
-      if (p) {
-        loadedPaySchedule = JSON.parse(p);
-        setPaySchedule(loadedPaySchedule);
-      }
-
-      // Load or migrate bills
-      if (billsData) {
-        // New format exists - load it
-        setBills(JSON.parse(billsData));
-        if (historicalBillsData) setHistoricalBills(JSON.parse(historicalBillsData));
-        if (paychecksData) setPaychecks(JSON.parse(paychecksData));
-        if (lastRollover) setLastRolloverMonth(lastRollover);
-      } else if (i) {
-        // Migrate from old instances
-        const oldInstances = JSON.parse(i);
-        const migratedBills = migrateFromInstances(oldInstances, loadedTemplates);
-
-        // Separate into active and historical
-        const { active, historical } = separateActiveAndHistorical(migratedBills);
-        setBills(active);
-        setHistoricalBills(historical);
-
-        // Generate 6 months of bills from templates
-        const now = new Date();
-        const newBills = [];
-        for (const template of loadedTemplates) {
-          const generated = generateBillsFromTemplate(template, 6, now, active);
-          newBills.push(...generated);
-        }
-        if (newBills.length > 0) {
-          setBills(prev => [...prev, ...newBills]);
-        }
-
-        // Generate paychecks if pay schedule exists
-        if (loadedPaySchedule) {
-          const generatedPaychecks = generatePaychecksFromSchedule(loadedPaySchedule, 6, []);
-          setPaychecks(generatedPaychecks);
-        }
-
-        setLastRolloverMonth(getCurrentMonth());
-
-        // Clear old instances storage after migration
-        // localStorage.removeItem(LS_INSTANCES); // Keep for now as backup
-      } else {
-        // Fresh start - generate bills from templates
-        const now = new Date();
-        const newBills = [];
-        for (const template of loadedTemplates) {
-          const generated = generateBillsFromTemplate(template, 6, now, []);
-          newBills.push(...generated);
-        }
-        setBills(newBills);
-
-        if (loadedPaySchedule) {
-          const generatedPaychecks = generatePaychecksFromSchedule(loadedPaySchedule, 6, []);
-          setPaychecks(generatedPaychecks);
-        }
-
-        setLastRolloverMonth(getCurrentMonth());
-      }
-
-      // Load legacy instances for backward compatibility during transition
-      if (i) setBillInstances(JSON.parse(i));
-
-      if (a) setAssets(JSON.parse(a));
-      if (o) setOneTimeBills(JSON.parse(o));
-      if (c) setCalendarConnected(JSON.parse(c));
-      if (pr) setPropaneFills(JSON.parse(pr));
-      if (e) setEmergencyFund(JSON.parse(e));
-      if (d) setDebtPayoff(JSON.parse(d));
-      if (env) setEnvelopes(JSON.parse(env));
-      if (bud) setBudgets(JSON.parse(bud));
-      if (ap) setActualPayEntries(JSON.parse(ap));
-      if (sr) setScannedReceipts(JSON.parse(sr));
-      if (inv) setInvestments(JSON.parse(inv));
-    } catch (err) {
-      console.warn('Load error', err);
-    } finally {
-      setLoading(false);
-    }
+    })();
   }, []);
 
   // ---------- Persist ----------
-  useEffect(
-    () => localStorage.setItem(LS_TEMPLATES, JSON.stringify(billTemplates)),
-    [billTemplates]
-  );
-  useEffect(
-    () => localStorage.setItem(LS_INSTANCES, JSON.stringify(billInstances)),
-    [billInstances]
-  );
-  useEffect(
-    () => localStorage.setItem(LS_ASSETS, JSON.stringify(assets)),
-    [assets]
-  );
-  useEffect(
-    () => localStorage.setItem(LS_ONETIME, JSON.stringify(oneTimeBills)),
-    [oneTimeBills]
-  );
-  useEffect(
-    () => localStorage.setItem(LS_PAY, JSON.stringify(paySchedule)),
-    [paySchedule]
-  );
-  useEffect(
-    () => localStorage.setItem(LS_CAL, JSON.stringify(calendarConnected)),
-    [calendarConnected]
-  );
-  useEffect(
-    () => localStorage.setItem(LS_PROPANE, JSON.stringify(propaneFills)),
-    [propaneFills]
-  );
-  useEffect(
-    () => localStorage.setItem(LS_EMERGENCY, JSON.stringify(emergencyFund)),
-    [emergencyFund]
-  );
-  useEffect(
-    () => localStorage.setItem(LS_DEBTS, JSON.stringify(debtPayoff)),
-    [debtPayoff]
-  );
-  useEffect(
-    () => localStorage.setItem(LS_ENVELOPES, JSON.stringify(envelopes)),
-    [envelopes]
-  );
-  useEffect(
-    () => localStorage.setItem(LS_BUDGETS, JSON.stringify(budgets)),
-    [budgets]
-  );
-  useEffect(
-    () => localStorage.setItem(LS_ACTUAL_PAY, JSON.stringify(actualPayEntries)),
-    [actualPayEntries]
-  );
-  useEffect(
-    () => localStorage.setItem(LS_SCANNED_RECEIPTS, JSON.stringify(scannedReceipts)),
-    [scannedReceipts]
-  );
-  useEffect(
-    () => localStorage.setItem(LS_INVESTMENTS, JSON.stringify(investments)),
-    [investments]
-  );
+  useEffect(() => { persistCollection('templates', billTemplates); }, [billTemplates]);
+  useEffect(() => { persistCollection('billInstances', billInstances); }, [billInstances]);
+  useEffect(() => { persistCollection('assets', assets); }, [assets]);
+  useEffect(() => { persistCollection('oneTimeBills', oneTimeBills); }, [oneTimeBills]);
+  useEffect(() => { persistCollection('paySchedule', paySchedule); }, [paySchedule]);
+  useEffect(() => { persistCollection('calendarConnected', calendarConnected); }, [calendarConnected]);
+  useEffect(() => { persistCollection('propaneFills', propaneFills); }, [propaneFills]);
+  useEffect(() => { persistCollection('emergencyFund', emergencyFund); }, [emergencyFund]);
+  useEffect(() => { persistCollection('debtPayoff', debtPayoff); }, [debtPayoff]);
+  useEffect(() => { persistCollection('envelopes', envelopes); }, [envelopes]);
+  useEffect(() => { persistCollection('budgets', budgets); }, [budgets]);
+  useEffect(() => { persistCollection('actualPayEntries', actualPayEntries); }, [actualPayEntries]);
+  useEffect(() => { persistCollection('scannedReceipts', scannedReceipts); }, [scannedReceipts]);
+  useEffect(() => { persistCollection('investments', investments); }, [investments]);
+  useEffect(() => { persistCollection('bills', bills); }, [bills]);
+  useEffect(() => { persistCollection('historicalBills', historicalBills); }, [historicalBills]);
+  useEffect(() => { persistCollection('paychecks', paychecks); }, [paychecks]);
+  useEffect(() => { if (lastRolloverMonth) persistCollection('lastRolloverMonth', lastRolloverMonth); }, [lastRolloverMonth]);
 
-  // New database persistence
-  useEffect(
-    () => localStorage.setItem(LS_BILLS, JSON.stringify(bills)),
-    [bills]
-  );
-  useEffect(
-    () => localStorage.setItem(LS_HISTORICAL_BILLS, JSON.stringify(historicalBills)),
-    [historicalBills]
-  );
-  useEffect(
-    () => localStorage.setItem(LS_PAYCHECKS, JSON.stringify(paychecks)),
-    [paychecks]
-  );
-  useEffect(
-    () => {
-      if (lastRolloverMonth) {
-        localStorage.setItem(LS_LAST_ROLLOVER, lastRolloverMonth);
-      }
-    },
-    [lastRolloverMonth]
-  );
 
+  useEffect(() => () => {
+    flushQueuedWrites();
+  }, []);
   // ---------- Monthly rollover - generate new month's bills on first load ----------
   useEffect(() => {
     if (!billTemplates.length || loading) return;
@@ -763,6 +662,8 @@ const BillPayPlanner = () => {
             : b
         )
       );
+      queueRecordPatch('bills', { type: 'patch', id: instanceId, patch: { paid: nowPaid, paidDate } });
+      flushQueuedWrites();
       return;
     }
 
@@ -1057,10 +958,13 @@ const BillPayPlanner = () => {
       createdAt: new Date().toISOString(),
     };
     setScannedReceipts((prev) => [...prev, entry]);
+    queueRecordPatch('scannedReceipts', { type: 'upsert', record: entry });
   };
 
-  const deleteScannedReceipt = (id) =>
+  const deleteScannedReceipt = (id) => {
     setScannedReceipts((prev) => prev.filter((r) => r.id !== id));
+    queueRecordPatch('scannedReceipts', { type: 'delete', id });
+  };
 
   // ---------- Investments ----------
   const addInvestment = (holding) => {
@@ -1658,6 +1562,20 @@ const BillPayPlanner = () => {
                         : bill
                     )
                   );
+                  queueRecordPatch('bills', {
+                    type: 'patch',
+                    id: updatedInstance.id,
+                    patch: {
+                      assignedCheck: updatedInstance.assignedCheck,
+                      assignedPayDate: updatedInstance.assignedPayDate
+                        ? toMMDDYYYY(parseLocalDate(updatedInstance.assignedPayDate))
+                        : null,
+                      paid: updatedInstance.paid,
+                      paidDate: updatedInstance.paidDate,
+                      actualPaid: updatedInstance.actualPaid,
+                      manuallyAssigned: true,
+                    },
+                  });
                   setBillInstances((prev) =>
                     prev.map((inst) =>
                       inst.id === updatedInstance.id
