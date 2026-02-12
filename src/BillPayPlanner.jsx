@@ -75,6 +75,7 @@ import { Income } from './components/views/Income';
 import { Investments } from './components/views/Investments';
 import { DebtTracker } from './components/views/DebtTracker';
 import { GoalsDashboard } from './components/views/GoalsDashboard';
+import { Button } from './components/ui/Button';
 
 /**
  * PayPlan Pro - Slim Orchestrator
@@ -1219,13 +1220,14 @@ const BillPayPlanner = () => {
             <h1 className="text-xl md:text-2xl font-black text-white">
               PayPlan Pro
             </h1>
-            <button
+            <Button
               onClick={() => setShowSettings(true)}
-              className="p-2 rounded-xl transition-all bg-white/20 text-white hover:bg-white/30"
+              variant="nav"
+              size="icon"
               title="Settings"
-            >
-              <SettingsIcon size={20} />
-            </button>
+              icon={SettingsIcon}
+              iconSize={20}
+            />
           </div>
 
           {/* Main Navigation - 4 Tabs */}
@@ -1235,19 +1237,17 @@ const BillPayPlanner = () => {
               const isActive = activeTabId === tab.id;
 
               return (
-                <button
+                <Button
                   key={tab.id}
                   onClick={() => handleTabClick(tab)}
                   title={tab.label}
-                  className={`px-1.5 sm:px-2 py-2 sm:py-2.5 rounded-xl font-semibold flex flex-col sm:flex-row items-center justify-center gap-0.5 sm:gap-2 transition-all border-2 active:scale-95 ${
-                    isActive
-                      ? 'bg-white text-emerald-600 shadow-lg border-white'
-                      : 'bg-white/25 text-white border-transparent hover:bg-white/35 hover:border-white/30'
-                  }`}
+                  variant={isActive ? 'navActive' : 'nav'}
+                  size="nav"
+                  className="flex flex-col sm:flex-row gap-0.5 sm:gap-2 border-2 border-transparent active:scale-95 hover:border-white/30"
                 >
                   <Icon size={16} className="sm:w-[18px] sm:h-[18px]" />
                   <span className="text-[10px] sm:text-xs font-bold leading-tight">{tab.label}</span>
-                </button>
+                </Button>
               );
             })}
           </div>
@@ -1261,18 +1261,15 @@ const BillPayPlanner = () => {
                   const isSubActive = view === sub.view;
 
                   return (
-                    <button
+                    <Button
                       key={sub.view}
                       onClick={() => handleSubTabClick(sub.view)}
-                      className={`flex-1 px-2 py-2 rounded-xl font-semibold flex items-center justify-center gap-1.5 transition-all ${
-                        isSubActive
-                          ? 'bg-emerald-600 text-white shadow-md'
-                          : 'text-slate-600 hover:bg-emerald-50 hover:text-emerald-700'
-                      }`}
+                      variant={isSubActive ? 'primary' : 'ghost'}
+                      className={`flex-1 px-2 py-2 ${isSubActive ? 'shadow-md' : 'text-slate-600 hover:bg-emerald-50 hover:text-emerald-700'}`}
                     >
                       <SubIcon size={14} />
                       <span className="text-xs sm:text-sm">{sub.label}</span>
-                    </button>
+                    </Button>
                   );
                 })}
               </div>
@@ -1395,8 +1392,10 @@ const BillPayPlanner = () => {
             <div className="bg-white rounded-2xl shadow-xl p-5 mt-6">
               <div className="flex items-center justify-between mb-3">
                 <h3 className="font-bold text-slate-800">Envelopes</h3>
-                <button
-                  className="px-3 py-1.5 rounded-xl bg-emerald-100 text-emerald-700 font-semibold text-sm"
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  className="bg-emerald-100 text-emerald-700"
                   onClick={() => {
                     const name = prompt('Envelope name:');
                     if (!name) return;
@@ -1405,7 +1404,7 @@ const BillPayPlanner = () => {
                   }}
                 >
                   Add
-                </button>
+                </Button>
               </div>
               {envelopes.length ? (
                 <div className="space-y-2">
@@ -1419,8 +1418,10 @@ const BillPayPlanner = () => {
                         <div className="text-slate-600 text-sm">
                           ${parseAmt(e.perCheck).toFixed(2)} / check
                         </div>
-                        <button
-                          className="px-2 py-1 text-blue-700 bg-blue-100 rounded-lg text-xs"
+                        <Button
+                          variant="secondary"
+                          size="xs"
+                          className="bg-blue-100 text-blue-700"
                           onClick={() => {
                             const v = parseAmt(
                               prompt(`New amount for "${e.name}":`, e.perCheck) || 0
@@ -1431,15 +1432,17 @@ const BillPayPlanner = () => {
                           }}
                         >
                           Edit
-                        </button>
-                        <button
-                          className="px-2 py-1 text-red-700 bg-red-100 rounded-lg text-xs"
+                        </Button>
+                        <Button
+                          variant="destructiveOutline"
+                          size="xs"
+                          className="bg-red-100 border-red-100 text-red-700 hover:bg-red-200"
                           onClick={() =>
                             setEnvelopes(envelopes.filter((x) => x.id !== e.id))
                           }
                         >
                           Remove
-                        </button>
+                        </Button>
                       </div>
                     </div>
                   ))}
@@ -1456,8 +1459,10 @@ const BillPayPlanner = () => {
             <div className="bg-white rounded-2xl shadow-xl p-5 mt-6">
               <div className="flex items-center justify-between mb-3">
                 <h3 className="font-bold text-slate-800">Category Budgets</h3>
-                <button
-                  className="px-3 py-1.5 rounded-xl bg-emerald-100 text-emerald-700 font-semibold text-sm"
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  className="bg-emerald-100 text-emerald-700"
                   onClick={() => {
                     const cat = prompt(
                       'Category (utilities, subscription, insurance, loan, rent, other):'
@@ -1468,7 +1473,7 @@ const BillPayPlanner = () => {
                   }}
                 >
                   Set/Update
-                </button>
+                </Button>
               </div>
               <div className="grid grid-cols-2 gap-2 text-sm">
                 {Object.entries(budgets).map(([k, v]) => (
@@ -1690,12 +1695,15 @@ const BillPayPlanner = () => {
                   <SettingsIcon size={20} className="text-slate-600" />
                   <h2 className="text-lg font-bold text-slate-800">Settings</h2>
                 </div>
-                <button
+                <Button
                   onClick={() => setShowSettings(false)}
-                  className="p-2 hover:bg-slate-100 rounded-xl transition-colors"
-                >
-                  <X size={20} className="text-slate-500" />
-                </button>
+                  variant="toolbar"
+                  size="iconSm"
+                  className="rounded-xl"
+                  icon={X}
+                  iconSize={20}
+                  aria-label="Close settings"
+                />
               </div>
               <div className="p-4">
                 <Settings

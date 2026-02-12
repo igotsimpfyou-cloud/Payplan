@@ -1,7 +1,10 @@
 import React, { useState } from 'react';
-import { Plus, DollarSign, Calendar, Edit2, Trash2, History, X, TrendingUp } from 'lucide-react';
+import { Plus, DollarSign, Calendar, Edit2, Trash2, History, TrendingUp } from 'lucide-react';
 import { parseAmt } from '../../utils/formatters';
 import { startOfMonth, parseLocalDate } from '../../utils/dateHelpers';
+import { Button } from '../ui/Button';
+import { Input } from '../ui/Input';
+import { Modal } from '../ui/Modal';
 
 // Modal for entering historical payments
 const HistoricalDataModal = ({ template, onClose, onSave }) => {
@@ -61,16 +64,11 @@ const HistoricalDataModal = ({ template, onClose, onSave }) => {
   const average = filledCount > 0 ? total / filledCount : 0;
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full max-h-[90vh] overflow-hidden">
-        <div className="p-4 border-b flex items-center justify-between bg-gradient-to-r from-emerald-600 to-teal-600 text-white">
-          <div>
-            <h3 className="text-xl font-bold">{template.name}</h3>
-            <p className="text-emerald-100 text-sm">Enter historical payment amounts</p>
-          </div>
-          <button onClick={onClose} className="p-2 hover:bg-white/20 rounded-lg">
-            <X size={20} />
-          </button>
+    <Modal isOpen onClose={onClose} title={null} maxWidth="max-w-lg">
+      <div className="-m-6 max-h-[90vh] overflow-hidden">
+        <div className="p-4 border-b bg-gradient-to-r from-emerald-600 to-teal-600 text-white">
+          <h3 className="text-xl font-bold">{template.name}</h3>
+          <p className="text-emerald-100 text-sm">Enter historical payment amounts</p>
         </div>
 
         <div className="p-4 overflow-y-auto max-h-[50vh]">
@@ -82,14 +80,14 @@ const HistoricalDataModal = ({ template, onClose, onSave }) => {
                 </label>
                 <div className="flex-1 relative">
                   <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">$</span>
-                  <input
+                  <Input
                     type="number"
                     step="0.01"
                     min="0"
                     placeholder="0.00"
                     value={payments[month.key]}
                     onChange={(e) => setPayments(prev => ({ ...prev, [month.key]: e.target.value }))}
-                    className="w-full pl-7 pr-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+                    inputClassName="pl-7"
                   />
                 </div>
               </div>
@@ -110,22 +108,24 @@ const HistoricalDataModal = ({ template, onClose, onSave }) => {
             </div>
           </div>
           <div className="flex gap-3">
-            <button
+            <Button
               onClick={onClose}
-              className="flex-1 py-3 px-4 border border-slate-300 rounded-xl font-semibold text-slate-600 hover:bg-slate-100"
+              variant="outline"
+              className="flex-1 border-slate-300 text-slate-600 hover:bg-slate-100"
             >
               Cancel
-            </button>
-            <button
+            </Button>
+            <Button
               onClick={handleSave}
-              className="flex-1 py-3 px-4 bg-emerald-600 text-white rounded-xl font-semibold hover:bg-emerald-700"
+              variant="primary"
+              className="flex-1"
             >
               Save History
-            </button>
+            </Button>
           </div>
         </div>
       </div>
-    </div>
+    </Modal>
   );
 };
 
@@ -143,13 +143,14 @@ export const BillsTemplates = ({
     <div>
       <div className="flex items-center justify-between mb-4">
         <h2 className="text-2xl font-bold text-white">Bill Templates</h2>
-        <button
+        <Button
           onClick={onAddTemplate}
-          className="px-4 py-3 bg-white text-emerald-600 rounded-xl font-semibold flex items-center gap-2"
+          variant="secondary"
+          className="bg-white text-emerald-600"
+          icon={Plus}
         >
-          <Plus size={18} />
           Add Template
-        </button>
+        </Button>
       </div>
       <div className="grid grid-cols-1 gap-3">
         {billTemplates.length ? (
@@ -195,28 +196,31 @@ export const BillsTemplates = ({
                 <div className="flex gap-2">
                   {/* History button for variable bills */}
                   {t.isVariable && (
-                    <button
-                      className="p-2 text-emerald-600 hover:bg-emerald-50 rounded-lg"
+                    <Button
+                      variant="toolbar"
+                      size="iconSm"
+                      className="text-emerald-600 hover:bg-emerald-50 rounded-lg"
                       onClick={() => setHistoryModal(t)}
                       title="Historical Data"
-                    >
-                      <History size={18} />
-                    </button>
+                      icon={History}
+                    />
                   )}
-                  <button
-                    className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg"
+                  <Button
+                    variant="toolbar"
+                    size="iconSm"
+                    className="text-blue-600 hover:bg-blue-50 rounded-lg"
                     onClick={() => onEditTemplate(t)}
                     title="Edit"
-                  >
-                    <Edit2 size={18} />
-                  </button>
-                  <button
-                    className="p-2 text-red-600 hover:bg-red-50 rounded-lg"
+                    icon={Edit2}
+                  />
+                  <Button
+                    variant="toolbar"
+                    size="iconSm"
+                    className="text-red-600 hover:bg-red-50 rounded-lg"
                     onClick={() => onRetireTemplate(t.id)}
                     title="Retire"
-                  >
-                    <Trash2 size={18} />
-                  </button>
+                    icon={Trash2}
+                  />
                 </div>
               </div>
               <div className="mt-3 text-sm text-slate-600">

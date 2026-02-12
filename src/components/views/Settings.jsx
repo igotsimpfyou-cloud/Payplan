@@ -1,7 +1,9 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Download, Upload, RefreshCw, Camera, Eye, EyeOff, ExternalLink, Calendar, CheckCircle2, Trash2, AlertTriangle } from 'lucide-react';
+import { Download, Upload, Camera, Eye, EyeOff, ExternalLink, Calendar, CheckCircle2, Trash2 } from 'lucide-react';
 import { downloadICSFile, generateFilename } from '../../utils/calendarExport';
 import { parseMMDDYYYY } from '../../utils/billDatabase';
+import { Button } from '../ui/Button';
+import { Input } from '../ui/Input';
 
 const OCR_API_KEY_STORAGE = 'ppp.ocrApiKey';
 
@@ -84,17 +86,14 @@ const DataCleanup = ({ bills, onDeduplicateBills, onMarkPastBillsPaid }) => {
                   : 'No duplicates found'}
               </div>
             </div>
-            <button
+            <Button
               onClick={handleDeduplicate}
               disabled={stats.duplicateCount === 0}
-              className={`px-4 py-2 rounded-xl font-semibold transition-colors ${
-                stats.duplicateCount > 0
-                  ? 'bg-amber-600 hover:bg-amber-700 text-white'
-                  : 'bg-slate-200 text-slate-400 cursor-not-allowed'
-              }`}
+              variant="secondary"
+              className={`${stats.duplicateCount > 0 ? 'bg-amber-600 hover:bg-amber-700 text-white' : ''}`}
             >
               Remove Duplicates
-            </button>
+            </Button>
           </div>
         </div>
 
@@ -109,17 +108,14 @@ const DataCleanup = ({ bills, onDeduplicateBills, onMarkPastBillsPaid }) => {
                   : 'All past bills are marked as paid'}
               </div>
             </div>
-            <button
+            <Button
               onClick={handleMarkPastPaid}
               disabled={stats.pastUnpaidCount === 0}
-              className={`px-4 py-2 rounded-xl font-semibold transition-colors ${
-                stats.pastUnpaidCount > 0
-                  ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
-                  : 'bg-slate-200 text-slate-400 cursor-not-allowed'
-              }`}
+              variant="success"
+              className={`${stats.pastUnpaidCount > 0 ? '' : 'bg-slate-200 text-slate-400'}`}
             >
               Mark All Paid
-            </button>
+            </Button>
           </div>
           {stats.pastUnpaidCount > 0 && (
             <div className="mt-3 text-xs text-slate-500">
@@ -225,33 +221,41 @@ export const Settings = ({
             </label>
             <div className="flex gap-2">
               <div className="relative flex-1">
-                <input
+                <Input
                   type={showApiKey ? 'text' : 'password'}
                   value={ocrApiKey}
                   onChange={(e) => setOcrApiKey(e.target.value)}
                   placeholder="Enter your API key..."
-                  className="w-full px-4 py-2 pr-10 border-2 rounded-xl"
+                  size="md"
+                  inputClassName="pr-10"
+                  rightElement={(
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="iconSm"
+                      onClick={() => setShowApiKey(!showApiKey)}
+                      className="text-slate-400 hover:text-slate-600"
+                    >
+                      {showApiKey ? <EyeOff size={18} /> : <Eye size={18} />}
+                    </Button>
+                  )}
                 />
-                <button
-                  onClick={() => setShowApiKey(!showApiKey)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
-                >
-                  {showApiKey ? <EyeOff size={18} /> : <Eye size={18} />}
-                </button>
               </div>
-              <button
+              <Button
                 onClick={handleSaveApiKey}
-                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-semibold"
+                loading={apiKeySaved}
+                loadingText="Saved"
+                variant="primary"
               >
-                {apiKeySaved ? '✓ Saved' : 'Save'}
-              </button>
+                Save
+              </Button>
               {ocrApiKey && (
-                <button
+                <Button
                   onClick={handleClearApiKey}
-                  className="px-4 py-2 bg-red-100 hover:bg-red-200 text-red-700 rounded-xl font-semibold"
+                  variant="destructiveOutline"
                 >
                   Clear
-                </button>
+                </Button>
               )}
             </div>
           </div>
@@ -312,13 +316,13 @@ export const Settings = ({
         </div>
 
         <div className="space-y-4">
-          <button
+          <Button
             onClick={handleExportCalendar}
-            className="w-full px-4 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-semibold flex items-center justify-center gap-2 transition-colors"
+            className="w-full"
+            icon={Download}
           >
-            <Download size={18} />
             Download Calendar File
-          </button>
+          </Button>
 
           {exportSuccess && (
             <div className={`rounded-xl p-4 flex items-start gap-3 ${
@@ -385,20 +389,22 @@ export const Settings = ({
           </p>
         </div>
         <div className="flex gap-3">
-          <button
+          <Button
             onClick={onExportBackup}
-            className="flex-1 px-4 py-3 bg-blue-100 hover:bg-blue-200 text-blue-700 rounded-xl font-semibold transition-colors flex items-center justify-center gap-2"
+            variant="secondary"
+            className="flex-1 bg-blue-100 hover:bg-blue-200 text-blue-700"
+            icon={Download}
           >
-            <Download size={18} />
             Export Backup
-          </button>
-          <button
+          </Button>
+          <Button
             onClick={() => backupFileInputRef.current?.click()}
-            className="flex-1 px-4 py-3 bg-emerald-100 hover:bg-emerald-200 text-emerald-700 rounded-xl font-semibold transition-colors flex items-center justify-center gap-2"
+            variant="secondary"
+            className="flex-1 bg-emerald-100 hover:bg-emerald-200 text-emerald-700"
+            icon={Upload}
           >
-            <Upload size={18} />
             Restore Backup
-          </button>
+          </Button>
           <input
             ref={backupFileInputRef}
             type="file"
