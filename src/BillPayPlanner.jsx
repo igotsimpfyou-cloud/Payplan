@@ -75,6 +75,7 @@ import { Income } from './components/views/Income';
 import { Investments } from './components/views/Investments';
 import { DebtTracker } from './components/views/DebtTracker';
 import { GoalsDashboard } from './components/views/GoalsDashboard';
+import { uiTap, uiType } from './constants/uiPresets';
 
 /**
  * PayPlan Pro - Slim Orchestrator
@@ -1221,7 +1222,7 @@ const BillPayPlanner = () => {
             </h1>
             <button
               onClick={() => setShowSettings(true)}
-              className="p-2 rounded-xl transition-all bg-white/20 text-white hover:bg-white/30"
+              className={`p-2 rounded-xl transition-all bg-white/20 text-white hover:bg-white/30 ${uiTap.iconControl}`}
               title="Settings"
             >
               <SettingsIcon size={20} />
@@ -1239,14 +1240,14 @@ const BillPayPlanner = () => {
                   key={tab.id}
                   onClick={() => handleTabClick(tab)}
                   title={tab.label}
-                  className={`px-1.5 sm:px-2 py-2 sm:py-2.5 rounded-xl font-semibold flex flex-col sm:flex-row items-center justify-center gap-0.5 sm:gap-2 transition-all border-2 active:scale-95 ${
+                  className={`px-1.5 sm:px-2 py-2 sm:py-2.5 rounded-xl font-semibold flex flex-col sm:flex-row items-center justify-center gap-0.5 sm:gap-2 transition-all border-2 active:scale-95 ${uiTap.control} ${
                     isActive
                       ? 'bg-white text-emerald-600 shadow-lg border-white'
                       : 'bg-white/25 text-white border-transparent hover:bg-white/35 hover:border-white/30'
                   }`}
                 >
                   <Icon size={16} className="sm:w-[18px] sm:h-[18px]" />
-                  <span className="text-[10px] sm:text-xs font-bold leading-tight">{tab.label}</span>
+                  <span className={uiType.navLabel}>{tab.label}</span>
                 </button>
               );
             })}
@@ -1264,14 +1265,14 @@ const BillPayPlanner = () => {
                     <button
                       key={sub.view}
                       onClick={() => handleSubTabClick(sub.view)}
-                      className={`flex-1 px-2 py-2 rounded-xl font-semibold flex items-center justify-center gap-1.5 transition-all ${
+                      className={`flex-1 px-2 py-2 rounded-xl font-semibold flex items-center justify-center gap-1.5 transition-all ${uiTap.control} ${
                         isSubActive
                           ? 'bg-emerald-600 text-white shadow-md'
                           : 'text-slate-600 hover:bg-emerald-50 hover:text-emerald-700'
                       }`}
                     >
                       <SubIcon size={14} />
-                      <span className="text-xs sm:text-sm">{sub.label}</span>
+                      <span className="text-sm sm:text-base">{sub.label}</span>
                     </button>
                   );
                 })}
