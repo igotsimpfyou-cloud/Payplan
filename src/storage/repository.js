@@ -56,7 +56,12 @@ const MIGRATIONS = {
       const templates = localStorage.getItem(LS_TEMPLATES);
       const legacyBills = localStorage.getItem('bills');
       if (templates || !legacyBills) return;
-      const parsed = JSON.parse(legacyBills);
+      let parsed;
+      try {
+        parsed = JSON.parse(legacyBills);
+      } catch {
+        return;
+      }
       if (!Array.isArray(parsed)) return;
       const mapped = parsed.map((b) => ({
         id: b.id || Date.now() + Math.random(),
@@ -127,7 +132,11 @@ class LocalStorageAdapter {
   async loadCollection(name) { return parseLegacyCollection(name); }
   async saveCollection(name, value) {
     const key = Collections[name].legacyKey;
-    if (name === 'lastRolloverMonth') { if (value) localStorage.setItem(key, value); return; }
+    if (name === 'lastRolloverMonth') {
+      if (value) localStorage.setItem(key, value);
+      else localStorage.removeItem(key);
+      return;
+    }
     localStorage.setItem(key, JSON.stringify(value));
   }
   queuePatch(name, operation) {
