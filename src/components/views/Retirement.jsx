@@ -32,12 +32,18 @@ const HISTORICAL_RETURNS = {
   cash: { mean: 0.03, stdDev: 0.01 },    // ~3% nominal (T-bills / money market)
 };
 
-// Correlation matrix (stocks and bonds can correlate in crashes)
-const CORRELATION = {
-  stocksBonds: 0.2,  // Slight positive correlation historically
-  stocksCash: 0.0,
-  bondsCash: 0.3,
-};
+// Correlation matrix for [stocks, bonds, cash]
+const CORRELATION_MATRIX = [
+  [1.0, 0.2, 0.0],
+  [0.2, 1.0, 0.3],
+  [0.0, 0.3, 1.0],
+];
+
+const IDENTITY_CORRELATION_CHOLESKY = [
+  [1, 0, 0],
+  [0, 1, 0],
+  [0, 0, 1],
+];
 
 // Social Security benefit by claiming age (relative to Full Retirement Age)
 const SS_ADJUSTMENT = {
@@ -81,23 +87,84 @@ const HISTORICAL_ANNUAL = [
   [0.2502,0.0125,0.0500],
 ];
 
+const cholesky3x3 = (matrix) => {
+  const n = 3;
+  const lower = Array.from({ length: n }, () => Array(n).fill(0));
+
+  for (let i = 0; i < n; i++) {
+    for (let j = 0; j <= i; j++) {
+      let sum = 0;
+      for (let k = 0; k < j; k++) {
+        sum += lower[i][k] * lower[j][k];
+      }
+
+      if (i === j) {
+        const diag = matrix[i][i] - sum;
+        if (!Number.isFinite(diag) || diag <= 0) {
+          return null;
+        }
+        lower[i][j] = Math.sqrt(diag);
+      } else {
+        if (lower[j][j] === 0) {
+          return null;
+        }
+        lower[i][j] = (matrix[i][j] - sum) / lower[j][j];
+      }
+    }
+  }
+
+  return lower;
+};
+
+const validateCorrelationMatrix = (matrix) => {
+  if (!Array.isArray(matrix) || matrix.length !== 3 || matrix.some((row) => !Array.isArray(row) || row.length !== 3)) {
+    return { valid: false, message: 'Correlation matrix must be 3x3.' };
+  }
+
+  for (let i = 0; i < 3; i++) {
+    for (let j = 0; j < 3; j++) {
+      const value = matrix[i][j];
+      if (!Number.isFinite(value) || value < -1 || value > 1) {
+        return { valid: false, message: 'Correlation values must be between -1 and 1.' };
+      }
+      if (i === j && Math.abs(value - 1) > 1e-10) {
+        return { valid: false, message: 'Correlation matrix diagonal entries must equal 1.' };
+      }
+      if (Math.abs(matrix[i][j] - matrix[j][i]) > 1e-10) {
+        return { valid: false, message: 'Correlation matrix must be symmetric.' };
+      }
+    }
+  }
+
+  const cholesky = cholesky3x3(matrix);
+  if (!cholesky) {
+    return {
+      valid: false,
+      message: 'Correlation assumptions are inconsistent. Please use a positive-definite matrix.',
+    };
+  }
+
+  return { valid: true, cholesky };
+};
+
 // Generate correlated random returns using Cholesky decomposition (Statistical model)
-const generateCorrelatedReturns = (customReturns) => {
+const generateCorrelatedReturns = (customReturns, choleskyLower) => {
   // Generate independent standard normal variables
   const z1 = randomNormal(0, 1);
   const z2 = randomNormal(0, 1);
   const z3 = randomNormal(0, 1);
 
-  // Apply correlation using Cholesky decomposition
-  const stockZ = z1;
-  const bondZ = CORRELATION.stocksBonds * z1 + Math.sqrt(1 - CORRELATION.stocksBonds ** 2) * z2;
-  const cashZ = z3; // Cash uncorrelated for simplicity
+  const correlatedZ = [
+    choleskyLower[0][0] * z1,
+    choleskyLower[1][0] * z1 + choleskyLower[1][1] * z2,
+    choleskyLower[2][0] * z1 + choleskyLower[2][1] * z2 + choleskyLower[2][2] * z3,
+  ];
 
   // Convert to actual returns (use custom if provided, else defaults)
   const sr = customReturns || HISTORICAL_RETURNS;
-  const stockReturn = sr.stocks.mean + sr.stocks.stdDev * stockZ;
-  const bondReturn = sr.bonds.mean + sr.bonds.stdDev * bondZ;
-  const cashReturn = sr.cash.mean + sr.cash.stdDev * cashZ;
+  const stockReturn = sr.stocks.mean + sr.stocks.stdDev * correlatedZ[0];
+  const bondReturn = sr.bonds.mean + sr.bonds.stdDev * correlatedZ[1];
+  const cashReturn = sr.cash.mean + sr.cash.stdDev * correlatedZ[2];
 
   return { stockReturn, bondReturn, cashReturn };
 };
@@ -167,6 +234,7 @@ const runEnhancedSimulation = (params) => {
     inflationRate, taxRate, includeHealthcare,
     healthcareCostBase,
     simulationModel, customReturns,
+    choleskyLower,
     withdrawalModel, withdrawalPercent,
   } = params;
 
@@ -202,7 +270,10 @@ const runEnhancedSimulation = (params) => {
     // Generate returns based on simulation model
     const { stockReturn, bondReturn, cashReturn } = simulationModel === 'historical'
       ? generateHistoricalReturns()
-      : generateCorrelatedReturns(simulationModel === 'parameterized' ? customReturns : null);
+      : generateCorrelatedReturns(
+        simulationModel === 'parameterized' ? customReturns : null,
+        choleskyLower,
+      );
 
     // Calculate blended portfolio return
     const portfolioReturn =
@@ -771,6 +842,7 @@ const MonteCarloSimulator = () => {
   const [results, setResults] = useState(null);
   const [isRunning, setIsRunning] = useState(false);
   const [progress, setProgress] = useState(0);
+  const [simulationWarning, setSimulationWarning] = useState('');
 
   // Scenario comparison
   const [savedScenarios, setSavedScenarios] = useState([]);
@@ -801,6 +873,17 @@ const MonteCarloSimulator = () => {
       alert('Please enter your current age, retirement age, and life expectancy');
       return;
     }
+    const correlationValidation = validateCorrelationMatrix(CORRELATION_MATRIX);
+    const choleskyLower = correlationValidation.valid
+      ? correlationValidation.cholesky
+      : IDENTITY_CORRELATION_CHOLESKY;
+
+    if (correlationValidation.valid) {
+      setSimulationWarning('');
+    } else {
+      setSimulationWarning(`Using uncorrelated fallback returns because correlation settings are invalid: ${correlationValidation.message}`);
+    }
+
     setIsRunning(true);
     setProgress(0);
 
@@ -813,6 +896,7 @@ const MonteCarloSimulator = () => {
         stocksPercent, bondsPercent, useGlidePath,
         inflationRate, taxRate, includeHealthcare, healthcareCostBase: healthCost,
         simulationModel,
+        choleskyLower,
         customReturns: simulationModel === 'parameterized' ? {
           stocks: { mean: customStocksMean / 100, stdDev: customStocksStdDev / 100 },
           bonds: { mean: customBondsMean / 100, stdDev: customBondsStdDev / 100 },
@@ -1270,6 +1354,13 @@ const MonteCarloSimulator = () => {
       {isRunning && (
         <div className="h-2 bg-slate-200 rounded-full overflow-hidden">
           <div className="h-full bg-gradient-to-r from-indigo-500 to-purple-500 transition-all" style={{ width: `${progress}%` }} />
+        </div>
+      )}
+
+      {simulationWarning && (
+        <div className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800 flex items-start gap-2">
+          <AlertCircle size={16} className="mt-0.5 flex-shrink-0" />
+          <span>{simulationWarning}</span>
         </div>
       )}
 
