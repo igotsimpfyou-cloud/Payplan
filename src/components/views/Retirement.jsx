@@ -117,6 +117,22 @@ const randomNormal = (mean, stdDev) => {
   return mean + stdDev * z;
 };
 
+// Calculate quantiles from a sorted array using linear interpolation
+const quantile = (sortedArray, q) => {
+  if (!sortedArray || sortedArray.length === 0) return 0;
+  if (q <= 0) return sortedArray[0];
+  if (q >= 1) return sortedArray[sortedArray.length - 1];
+
+  const position = (sortedArray.length - 1) * q;
+  const lowerIndex = Math.floor(position);
+  const upperIndex = Math.ceil(position);
+
+  if (lowerIndex === upperIndex) return sortedArray[lowerIndex];
+
+  const weight = position - lowerIndex;
+  return sortedArray[lowerIndex] + (sortedArray[upperIndex] - sortedArray[lowerIndex]) * weight;
+};
+
 // Calculate glide path allocation based on age
 const getGlidePath = (age, retirementAge, useGlidePath) => {
   if (!useGlidePath) return null;
@@ -320,7 +336,7 @@ const runEnhancedSimulation = (params) => {
 };
 
 // Run all simulations
-const runEnhancedMonteCarloSimulation = (params, progressCallback) => {
+const calculateEnhancedMonteCarloSimulation = (params, progressCallback) => {
   const results = [];
   const batchSize = 1000;
 
@@ -337,7 +353,6 @@ const runEnhancedMonteCarloSimulation = (params, progressCallback) => {
   const successRate = (successCount / SIMULATIONS) * 100;
 
   const finalBalances = results.map(r => r.finalBalance).sort((a, b) => a - b);
-  const percentile = (p) => finalBalances[Math.floor(p * SIMULATIONS / 100)] || 0;
 
   // Calculate yearly percentiles
   const totalYears = params.lifeExpectancy - params.currentAge;
@@ -350,12 +365,13 @@ const runEnhancedMonteCarloSimulation = (params, progressCallback) => {
 
   for (let year = 0; year <= totalYears; year++) {
     const yearBalances = results.map(r => r.yearlyBalances[year] || 0).sort((a, b) => a - b);
-    avgBalances.push(yearBalances.reduce((a, b) => a + b, 0) / SIMULATIONS);
-    p10Balances.push(yearBalances[Math.floor(0.10 * SIMULATIONS)] || 0);
-    p25Balances.push(yearBalances[Math.floor(0.25 * SIMULATIONS)] || 0);
-    p50Balances.push(yearBalances[Math.floor(0.50 * SIMULATIONS)] || 0);
-    p75Balances.push(yearBalances[Math.floor(0.75 * SIMULATIONS)] || 0);
-    p90Balances.push(yearBalances[Math.floor(0.90 * SIMULATIONS)] || 0);
+    const sampleSize = yearBalances.length;
+    avgBalances.push(sampleSize > 0 ? yearBalances.reduce((a, b) => a + b, 0) / sampleSize : 0);
+    p10Balances.push(quantile(yearBalances, 0.10));
+    p25Balances.push(quantile(yearBalances, 0.25));
+    p50Balances.push(quantile(yearBalances, 0.50));
+    p75Balances.push(quantile(yearBalances, 0.75));
+    p90Balances.push(quantile(yearBalances, 0.90));
   }
 
   // Calculate depletion age distribution
@@ -368,11 +384,11 @@ const runEnhancedMonteCarloSimulation = (params, progressCallback) => {
     successRate,
     successCount,
     totalSimulations: SIMULATIONS,
-    medianFinalBalance: percentile(50),
-    p10FinalBalance: percentile(10),
-    p25FinalBalance: percentile(25),
-    p75FinalBalance: percentile(75),
-    p90FinalBalance: percentile(90),
+    medianFinalBalance: quantile(finalBalances, 0.50),
+    p10FinalBalance: quantile(finalBalances, 0.10),
+    p25FinalBalance: quantile(finalBalances, 0.25),
+    p75FinalBalance: quantile(finalBalances, 0.75),
+    p90FinalBalance: quantile(finalBalances, 0.90),
     avgBalances,
     p10Balances,
     p25Balances,
@@ -383,6 +399,10 @@ const runEnhancedMonteCarloSimulation = (params, progressCallback) => {
     depletionCount: depletionAges.length,
   };
 };
+import {
+  DEFAULT_SIMULATION_COUNT,
+  runEnhancedMonteCarloSimulation,
+} from '../../utils/retirementSimulation';
 
 // ============================================
 // HELPER FUNCTIONS
@@ -764,6 +784,7 @@ const MonteCarloSimulator = () => {
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [inflationRate, setInflationRate] = useState(0.025);
   const [taxRate, setTaxRate] = useState(0.22);
+  const [taxableEffectiveTaxRate, setTaxableEffectiveTaxRate] = useState(0.15);
   const [includeHealthcare, setIncludeHealthcare] = useState(true);
   const [healthcareCostBase, setHealthcareCostBase] = useState('');
 
@@ -811,7 +832,7 @@ const MonteCarloSimulator = () => {
         annualContribution: annContrib, contributionType,
         annualSpending: annSpend, ssBaseBenefit: ssBenefit, ssClaimingAge: ssAge,
         stocksPercent, bondsPercent, useGlidePath,
-        inflationRate, taxRate, includeHealthcare, healthcareCostBase: healthCost,
+        inflationRate, taxRate, taxableEffectiveTaxRate, includeHealthcare, healthcareCostBase: healthCost,
         simulationModel,
         customReturns: simulationModel === 'parameterized' ? {
           stocks: { mean: customStocksMean / 100, stdDev: customStocksStdDev / 100 },
@@ -821,7 +842,7 @@ const MonteCarloSimulator = () => {
         withdrawalModel, withdrawalPercent,
       };
 
-      const simulationResults = runEnhancedMonteCarloSimulation(params, setProgress);
+      const simulationResults = calculateEnhancedMonteCarloSimulation(params, setProgress);
       setResults(simulationResults);
       setIsRunning(false);
       setProgress(100);
@@ -932,7 +953,7 @@ const MonteCarloSimulator = () => {
           <h2 className="text-xl sm:text-2xl font-bold">Monte Carlo Simulator</h2>
         </div>
         <p className="text-indigo-100 text-sm sm:text-base">
-          Professional-grade simulation with {SIMULATIONS.toLocaleString()} scenarios, tax optimization,
+          Professional-grade simulation with {DEFAULT_SIMULATION_COUNT.toLocaleString()} scenarios, tax optimization,
           and automatic rebalancing.
         </p>
       </div>
@@ -1225,9 +1246,15 @@ const MonteCarloSimulator = () => {
                 className="w-full" min={1} max={5} step={0.5} />
             </div>
             <div>
-              <label className="block text-sm text-slate-600 mb-1">Tax Rate (marginal): {(taxRate * 100).toFixed(0)}%</label>
+              <label className="block text-sm text-slate-600 mb-1">Tax Rate (marginal, traditional withdrawals): {(taxRate * 100).toFixed(0)}%</label>
               <input type="range" value={taxRate * 100} onChange={(e) => setTaxRate(Number(e.target.value) / 100)}
                 className="w-full" min={10} max={37} step={1} />
+              <p className="text-xs text-slate-500 mt-1">Simulation tax model: Traditional and RMD withdrawals are taxed at this rate, taxable withdrawals use an effective taxable-account rate, and Roth withdrawals are tax-free. Spending success is measured in net (after-tax) dollars.</p>
+            </div>
+            <div>
+              <label className="block text-sm text-slate-600 mb-1">Taxable Withdrawal Effective Tax Rate: {(taxableEffectiveTaxRate * 100).toFixed(0)}%</label>
+              <input type="range" value={taxableEffectiveTaxRate * 100} onChange={(e) => setTaxableEffectiveTaxRate(Number(e.target.value) / 100)}
+                className="w-full" min={0} max={30} step={1} />
             </div>
             <div>
               <label className="flex items-center gap-2 cursor-pointer">
@@ -1261,7 +1288,7 @@ const MonteCarloSimulator = () => {
         ) : (
           <>
             <Play size={20} className="sm:w-6 sm:h-6" />
-            <span>Run {SIMULATIONS.toLocaleString()} Simulations</span>
+            <span>Run {DEFAULT_SIMULATION_COUNT.toLocaleString()} Simulations</span>
           </>
         )}
       </button>
@@ -1326,6 +1353,18 @@ const MonteCarloSimulator = () => {
                   Average depletion age when failed: {Math.round(results.avgDepletionAge)}
                 </p>
               )}
+              <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3 text-left">
+                <div className="bg-white/70 rounded-xl p-3 border border-slate-200">
+                  <p className="text-xs text-slate-600">Median Lifetime Gross Withdrawals</p>
+                  <p className="text-lg font-bold text-slate-800">{formatCurrency(results.medianCumulativeGrossWithdrawals)}</p>
+                  <p className="text-xs text-slate-500">Average: {formatCurrency(results.avgCumulativeGrossWithdrawals)}</p>
+                </div>
+                <div className="bg-white/70 rounded-xl p-3 border border-slate-200">
+                  <p className="text-xs text-slate-600">Median Lifetime Taxes Paid on Withdrawals</p>
+                  <p className="text-lg font-bold text-slate-800">{formatCurrency(results.medianCumulativeTaxesPaid)}</p>
+                  <p className="text-xs text-slate-500">Average: {formatCurrency(results.avgCumulativeTaxesPaid)}</p>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -1402,7 +1441,7 @@ const MonteCarloSimulator = () => {
           {/* Projection Chart - Enhanced Fan Chart */}
           <div className="bg-white rounded-2xl shadow-xl p-4 sm:p-6">
             <h3 className="font-bold text-slate-800 mb-2">Portfolio Projection Over Time</h3>
-            <p className="text-xs text-slate-500 mb-4">The shaded areas show the range of possible outcomes based on {SIMULATIONS.toLocaleString()} simulations</p>
+            <p className="text-xs text-slate-500 mb-4">The shaded areas show the range of possible outcomes based on {DEFAULT_SIMULATION_COUNT.toLocaleString()} simulations</p>
             <div className="h-48 sm:h-64 relative">
               <svg viewBox="0 0 100 55" className="w-full h-full" preserveAspectRatio="none">
                 {/* Y-axis grid lines with labels */}
