@@ -52,12 +52,38 @@ const SS_ADJUSTMENT = {
   70: 1.24,  // Maximum benefit
 };
 
-// RMD factors (IRS Uniform Lifetime Table - simplified)
+// RMD factors (IRS Uniform Lifetime Table, effective 2022+)
 const RMD_FACTORS = {
   72: 27.4, 73: 26.5, 74: 25.5, 75: 24.6, 76: 23.7, 77: 22.9,
   78: 22.0, 79: 21.1, 80: 20.2, 81: 19.4, 82: 18.5, 83: 17.7,
   84: 16.8, 85: 16.0, 86: 15.2, 87: 14.4, 88: 13.7, 89: 12.9,
   90: 12.2, 91: 11.5, 92: 10.8, 93: 10.1, 94: 9.5, 95: 8.9,
+  96: 8.4, 97: 7.8, 98: 7.3, 99: 6.8, 100: 6.4, 101: 6.0,
+  102: 5.6, 103: 5.2, 104: 4.9, 105: 4.6, 106: 4.3, 107: 4.1,
+  108: 3.9, 109: 3.7, 110: 3.5, 111: 3.4, 112: 3.3, 113: 3.1,
+  114: 3.0, 115: 2.9, 116: 2.8, 117: 2.7, 118: 2.5, 119: 2.3,
+  120: 2.0,
+};
+
+const RMD_FACTOR_AGES = Object.keys(RMD_FACTORS).map(Number).sort((a, b) => a - b);
+const RMD_MAX_FACTOR_AGE = RMD_FACTOR_AGES[RMD_FACTOR_AGES.length - 1];
+
+const getRMDStartAge = (birthYear) => ((birthYear && (birthYear + 73) >= 2033) ? 75 : 73);
+
+// Returns the exact age factor if available; otherwise nearest valid fallback.
+const getRMDFactor = (age) => {
+  if (RMD_FACTORS[age]) return RMD_FACTORS[age];
+
+  if (age > RMD_MAX_FACTOR_AGE) {
+    return RMD_FACTORS[RMD_MAX_FACTOR_AGE];
+  }
+
+  const nearestAge = RMD_FACTOR_AGES.reduce((nearest, candidate) => {
+    if (candidate <= age) return candidate;
+    return nearest;
+  }, RMD_FACTOR_AGES[0]);
+
+  return RMD_FACTORS[nearestAge];
 };
 
 // Healthcare cost increases (above inflation)
@@ -102,11 +128,26 @@ const generateCorrelatedReturns = (customReturns) => {
   return { stockReturn, bondReturn, cashReturn };
 };
 
-// Generate returns from historical bootstrap (randomly sample a calendar year)
-const generateHistoricalReturns = () => {
-  const idx = Math.floor(Math.random() * HISTORICAL_ANNUAL.length);
-  const [stockReturn, bondReturn, cashReturn] = HISTORICAL_ANNUAL[idx];
-  return { stockReturn, bondReturn, cashReturn };
+// Generate a historical path using block bootstrap (contiguous return blocks)
+const generateHistoricalPath = (totalYears, targetBlockLength = 5) => {
+  const path = [];
+  const dataLength = HISTORICAL_ANNUAL.length;
+  const baseBlockLength = Math.max(1, Math.round(targetBlockLength));
+  const minBlockLength = Math.max(1, baseBlockLength - 2);
+  const maxBlockLength = Math.max(minBlockLength, baseBlockLength + 2);
+
+  while (path.length < totalYears) {
+    const sampledBlockLength = Math.floor(Math.random() * (maxBlockLength - minBlockLength + 1)) + minBlockLength;
+    const blockLength = Math.min(sampledBlockLength, totalYears - path.length);
+    const maxStartIndex = Math.max(0, dataLength - blockLength);
+    const startIndex = Math.floor(Math.random() * (maxStartIndex + 1));
+
+    for (let i = 0; i < blockLength; i++) {
+      path.push(HISTORICAL_ANNUAL[startIndex + i]);
+    }
+  }
+
+  return path;
 };
 
 // Generate random normal using Box-Muller transform
@@ -115,6 +156,22 @@ const randomNormal = (mean, stdDev) => {
   const u2 = Math.random();
   const z = Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
   return mean + stdDev * z;
+};
+
+// Calculate quantiles from a sorted array using linear interpolation
+const quantile = (sortedArray, q) => {
+  if (!sortedArray || sortedArray.length === 0) return 0;
+  if (q <= 0) return sortedArray[0];
+  if (q >= 1) return sortedArray[sortedArray.length - 1];
+
+  const position = (sortedArray.length - 1) * q;
+  const lowerIndex = Math.floor(position);
+  const upperIndex = Math.ceil(position);
+
+  if (lowerIndex === upperIndex) return sortedArray[lowerIndex];
+
+  const weight = position - lowerIndex;
+  return sortedArray[lowerIndex] + (sortedArray[upperIndex] - sortedArray[lowerIndex]) * weight;
 };
 
 // Calculate glide path allocation based on age
@@ -144,9 +201,26 @@ const getGlidePath = (age, retirementAge, useGlidePath) => {
 // SECURE 2.0 Act: RMD age is 73 (2023-2032) and 75 (2033+)
 // birthYear determines which threshold applies
 const calculateRMD = (age, traditionalBalance, birthYear) => {
-  const rmdStartAge = (birthYear && (birthYear + 73) >= 2033) ? 75 : 73;
-  if (age < rmdStartAge || !RMD_FACTORS[age]) return 0;
-  return traditionalBalance / RMD_FACTORS[age];
+  const rmdStartAge = getRMDStartAge(birthYear);
+  if (age < rmdStartAge) return 0;
+
+  const factor = getRMDFactor(age);
+  return factor ? traditionalBalance / factor : 0;
+};
+
+// Unit-style pure validation helpers for RMD edge cases.
+const validateRMDBelowThresholdIsZero = (birthYear, balance = 100000) => {
+  const threshold = getRMDStartAge(birthYear);
+  return calculateRMD(threshold - 1, balance, birthYear) === 0;
+};
+
+const validateRMDAtThresholdIsPositive = (birthYear, balance = 100000) => {
+  const threshold = getRMDStartAge(birthYear);
+  return calculateRMD(threshold, balance, birthYear) > 0;
+};
+
+const validateRMDBeyondMaxAgeUsesPositiveFallback = (birthYear, balance = 100000) => {
+  return calculateRMD(RMD_MAX_FACTOR_AGE + 5, balance, birthYear) > 0;
 };
 
 // Calculate Social Security benefit
@@ -167,6 +241,7 @@ const runEnhancedSimulation = (params) => {
     inflationRate, taxRate, includeHealthcare,
     healthcareCostBase,
     simulationModel, customReturns,
+    historicalBlockLength,
     withdrawalModel, withdrawalPercent,
   } = params;
 
@@ -180,6 +255,10 @@ const runEnhancedSimulation = (params) => {
   const yearlyBalances = [traditional + roth + taxable];
   let cumulativeInflation = 1;
   let healthcareCost = healthcareCostBase;
+
+  const historicalPath = simulationModel === 'historical'
+    ? generateHistoricalPath(totalYears, historicalBlockLength)
+    : null;
 
   for (let year = 1; year <= totalYears; year++) {
     const age = currentAge + year;
@@ -201,7 +280,10 @@ const runEnhancedSimulation = (params) => {
 
     // Generate returns based on simulation model
     const { stockReturn, bondReturn, cashReturn } = simulationModel === 'historical'
-      ? generateHistoricalReturns()
+      ? (() => {
+        const [stock, bond, cash] = historicalPath[year - 1];
+        return { stockReturn: stock, bondReturn: bond, cashReturn: cash };
+      })()
       : generateCorrelatedReturns(simulationModel === 'parameterized' ? customReturns : null);
 
     // Calculate blended portfolio return
@@ -320,7 +402,7 @@ const runEnhancedSimulation = (params) => {
 };
 
 // Run all simulations
-const runEnhancedMonteCarloSimulation = (params, progressCallback) => {
+const calculateEnhancedMonteCarloSimulation = (params, progressCallback) => {
   const results = [];
   const batchSize = 1000;
 
@@ -337,7 +419,6 @@ const runEnhancedMonteCarloSimulation = (params, progressCallback) => {
   const successRate = (successCount / SIMULATIONS) * 100;
 
   const finalBalances = results.map(r => r.finalBalance).sort((a, b) => a - b);
-  const percentile = (p) => finalBalances[Math.floor(p * SIMULATIONS / 100)] || 0;
 
   // Calculate yearly percentiles
   const totalYears = params.lifeExpectancy - params.currentAge;
@@ -350,12 +431,13 @@ const runEnhancedMonteCarloSimulation = (params, progressCallback) => {
 
   for (let year = 0; year <= totalYears; year++) {
     const yearBalances = results.map(r => r.yearlyBalances[year] || 0).sort((a, b) => a - b);
-    avgBalances.push(yearBalances.reduce((a, b) => a + b, 0) / SIMULATIONS);
-    p10Balances.push(yearBalances[Math.floor(0.10 * SIMULATIONS)] || 0);
-    p25Balances.push(yearBalances[Math.floor(0.25 * SIMULATIONS)] || 0);
-    p50Balances.push(yearBalances[Math.floor(0.50 * SIMULATIONS)] || 0);
-    p75Balances.push(yearBalances[Math.floor(0.75 * SIMULATIONS)] || 0);
-    p90Balances.push(yearBalances[Math.floor(0.90 * SIMULATIONS)] || 0);
+    const sampleSize = yearBalances.length;
+    avgBalances.push(sampleSize > 0 ? yearBalances.reduce((a, b) => a + b, 0) / sampleSize : 0);
+    p10Balances.push(quantile(yearBalances, 0.10));
+    p25Balances.push(quantile(yearBalances, 0.25));
+    p50Balances.push(quantile(yearBalances, 0.50));
+    p75Balances.push(quantile(yearBalances, 0.75));
+    p90Balances.push(quantile(yearBalances, 0.90));
   }
 
   // Calculate depletion age distribution
@@ -368,11 +450,11 @@ const runEnhancedMonteCarloSimulation = (params, progressCallback) => {
     successRate,
     successCount,
     totalSimulations: SIMULATIONS,
-    medianFinalBalance: percentile(50),
-    p10FinalBalance: percentile(10),
-    p25FinalBalance: percentile(25),
-    p75FinalBalance: percentile(75),
-    p90FinalBalance: percentile(90),
+    medianFinalBalance: quantile(finalBalances, 0.50),
+    p10FinalBalance: quantile(finalBalances, 0.10),
+    p25FinalBalance: quantile(finalBalances, 0.25),
+    p75FinalBalance: quantile(finalBalances, 0.75),
+    p90FinalBalance: quantile(finalBalances, 0.90),
     avgBalances,
     p10Balances,
     p25Balances,
@@ -383,6 +465,10 @@ const runEnhancedMonteCarloSimulation = (params, progressCallback) => {
     depletionCount: depletionAges.length,
   };
 };
+import {
+  DEFAULT_SIMULATION_COUNT,
+  runEnhancedMonteCarloSimulation,
+} from '../../utils/retirementSimulation';
 
 // ============================================
 // HELPER FUNCTIONS
@@ -755,6 +841,7 @@ const MonteCarloSimulator = () => {
   const [customBondsStdDev, setCustomBondsStdDev] = useState(5);
   const [customCashMean, setCustomCashMean] = useState(3);
   const [customCashStdDev, setCustomCashStdDev] = useState(1);
+  const [historicalBlockLength, setHistoricalBlockLength] = useState(5);
 
   // Withdrawal model
   const [withdrawalModel, setWithdrawalModel] = useState('fixed');
@@ -764,6 +851,7 @@ const MonteCarloSimulator = () => {
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [inflationRate, setInflationRate] = useState(0.025);
   const [taxRate, setTaxRate] = useState(0.22);
+  const [taxableEffectiveTaxRate, setTaxableEffectiveTaxRate] = useState(0.15);
   const [includeHealthcare, setIncludeHealthcare] = useState(true);
   const [healthcareCostBase, setHealthcareCostBase] = useState('');
 
@@ -811,8 +899,9 @@ const MonteCarloSimulator = () => {
         annualContribution: annContrib, contributionType,
         annualSpending: annSpend, ssBaseBenefit: ssBenefit, ssClaimingAge: ssAge,
         stocksPercent, bondsPercent, useGlidePath,
-        inflationRate, taxRate, includeHealthcare, healthcareCostBase: healthCost,
+        inflationRate, taxRate, taxableEffectiveTaxRate, includeHealthcare, healthcareCostBase: healthCost,
         simulationModel,
+        historicalBlockLength,
         customReturns: simulationModel === 'parameterized' ? {
           stocks: { mean: customStocksMean / 100, stdDev: customStocksStdDev / 100 },
           bonds: { mean: customBondsMean / 100, stdDev: customBondsStdDev / 100 },
@@ -821,7 +910,7 @@ const MonteCarloSimulator = () => {
         withdrawalModel, withdrawalPercent,
       };
 
-      const simulationResults = runEnhancedMonteCarloSimulation(params, setProgress);
+      const simulationResults = calculateEnhancedMonteCarloSimulation(params, setProgress);
       setResults(simulationResults);
       setIsRunning(false);
       setProgress(100);
@@ -932,7 +1021,7 @@ const MonteCarloSimulator = () => {
           <h2 className="text-xl sm:text-2xl font-bold">Monte Carlo Simulator</h2>
         </div>
         <p className="text-indigo-100 text-sm sm:text-base">
-          Professional-grade simulation with {SIMULATIONS.toLocaleString()} scenarios, tax optimization,
+          Professional-grade simulation with {DEFAULT_SIMULATION_COUNT.toLocaleString()} scenarios, tax optimization,
           and automatic rebalancing.
         </p>
       </div>
@@ -966,9 +1055,14 @@ const MonteCarloSimulator = () => {
         </select>
         <p className="text-[10px] text-slate-400">
           {simulationModel === 'statistical' && 'Generates correlated returns using long-run mean & volatility with Cholesky decomposition.'}
-          {simulationModel === 'historical' && 'Randomly samples full calendar years from 1972-2024 historical data, preserving cross-asset correlation.'}
+          {simulationModel === 'historical' && `Uses block bootstrap from 1972-2024 annual returns (random contiguous blocks around ${historicalBlockLength} years, preserving within-block sequence and cross-asset correlation).`}
           {simulationModel === 'parameterized' && 'Uses your custom return assumptions below.'}
         </p>
+        {simulationModel === 'historical' && (
+          <div className="mt-3 rounded-xl border border-indigo-100 bg-indigo-50 p-3 text-xs text-indigo-800">
+            Sampling method: Historical block bootstrap using ~{historicalBlockLength}-year contiguous blocks.
+          </div>
+        )}
         {simulationModel === 'parameterized' && (
           <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
             <div className="font-medium text-slate-600 col-span-3 grid grid-cols-3 gap-2">
@@ -1225,9 +1319,15 @@ const MonteCarloSimulator = () => {
                 className="w-full" min={1} max={5} step={0.5} />
             </div>
             <div>
-              <label className="block text-sm text-slate-600 mb-1">Tax Rate (marginal): {(taxRate * 100).toFixed(0)}%</label>
+              <label className="block text-sm text-slate-600 mb-1">Tax Rate (marginal, traditional withdrawals): {(taxRate * 100).toFixed(0)}%</label>
               <input type="range" value={taxRate * 100} onChange={(e) => setTaxRate(Number(e.target.value) / 100)}
                 className="w-full" min={10} max={37} step={1} />
+              <p className="text-xs text-slate-500 mt-1">Simulation tax model: Traditional and RMD withdrawals are taxed at this rate, taxable withdrawals use an effective taxable-account rate, and Roth withdrawals are tax-free. Spending success is measured in net (after-tax) dollars.</p>
+            </div>
+            <div>
+              <label className="block text-sm text-slate-600 mb-1">Taxable Withdrawal Effective Tax Rate: {(taxableEffectiveTaxRate * 100).toFixed(0)}%</label>
+              <input type="range" value={taxableEffectiveTaxRate * 100} onChange={(e) => setTaxableEffectiveTaxRate(Number(e.target.value) / 100)}
+                className="w-full" min={0} max={30} step={1} />
             </div>
             <div>
               <label className="flex items-center gap-2 cursor-pointer">
@@ -1246,6 +1346,23 @@ const MonteCarloSimulator = () => {
                 </div>
               </div>
             )}
+            {simulationModel === 'historical' && (
+              <div>
+                <label className="block text-sm text-slate-600 mb-1">Historical Block Length: {historicalBlockLength} years</label>
+                <input
+                  type="range"
+                  value={historicalBlockLength}
+                  onChange={(e) => setHistoricalBlockLength(Number(e.target.value))}
+                  className="w-full"
+                  min={3}
+                  max={10}
+                  step={1}
+                />
+                <p className="text-xs text-slate-500 mt-1">
+                  Simulations sample contiguous blocks from ~{Math.max(1, historicalBlockLength - 2)} to {historicalBlockLength + 2} years.
+                </p>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -1261,7 +1378,7 @@ const MonteCarloSimulator = () => {
         ) : (
           <>
             <Play size={20} className="sm:w-6 sm:h-6" />
-            <span>Run {SIMULATIONS.toLocaleString()} Simulations</span>
+            <span>Run {DEFAULT_SIMULATION_COUNT.toLocaleString()} Simulations</span>
           </>
         )}
       </button>
@@ -1326,6 +1443,18 @@ const MonteCarloSimulator = () => {
                   Average depletion age when failed: {Math.round(results.avgDepletionAge)}
                 </p>
               )}
+              <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3 text-left">
+                <div className="bg-white/70 rounded-xl p-3 border border-slate-200">
+                  <p className="text-xs text-slate-600">Median Lifetime Gross Withdrawals</p>
+                  <p className="text-lg font-bold text-slate-800">{formatCurrency(results.medianCumulativeGrossWithdrawals)}</p>
+                  <p className="text-xs text-slate-500">Average: {formatCurrency(results.avgCumulativeGrossWithdrawals)}</p>
+                </div>
+                <div className="bg-white/70 rounded-xl p-3 border border-slate-200">
+                  <p className="text-xs text-slate-600">Median Lifetime Taxes Paid on Withdrawals</p>
+                  <p className="text-lg font-bold text-slate-800">{formatCurrency(results.medianCumulativeTaxesPaid)}</p>
+                  <p className="text-xs text-slate-500">Average: {formatCurrency(results.avgCumulativeTaxesPaid)}</p>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -1402,7 +1531,7 @@ const MonteCarloSimulator = () => {
           {/* Projection Chart - Enhanced Fan Chart */}
           <div className="bg-white rounded-2xl shadow-xl p-4 sm:p-6">
             <h3 className="font-bold text-slate-800 mb-2">Portfolio Projection Over Time</h3>
-            <p className="text-xs text-slate-500 mb-4">The shaded areas show the range of possible outcomes based on {SIMULATIONS.toLocaleString()} simulations</p>
+            <p className="text-xs text-slate-500 mb-4">The shaded areas show the range of possible outcomes based on {DEFAULT_SIMULATION_COUNT.toLocaleString()} simulations</p>
             <div className="h-48 sm:h-64 relative">
               <svg viewBox="0 0 100 55" className="w-full h-full" preserveAspectRatio="none">
                 {/* Y-axis grid lines with labels */}

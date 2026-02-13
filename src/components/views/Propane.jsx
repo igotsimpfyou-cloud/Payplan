@@ -1,6 +1,7 @@
 import React from 'react';
 import { Plus, Flame, Trash2 } from 'lucide-react';
 import { parseAmt } from '../../utils/formatters';
+import { parseLocalDate } from '../../utils/dateHelpers';
 
 export const Propane = ({
   propaneFills,
@@ -8,7 +9,7 @@ export const Propane = ({
   onDeletePropaneFill,
 }) => {
   const sorted = [...propaneFills].sort(
-    (a, b) => new Date(b.date) - new Date(a.date)
+    (a, b) => parseLocalDate(b.date) - parseLocalDate(a.date)
   );
   const latest = sorted[0];
   const totalGallons = propaneFills.reduce(
@@ -28,7 +29,8 @@ export const Propane = ({
     const days = Math.max(
       1,
       Math.floor(
-        (new Date(fill.date) - new Date(nextFill.date)) / (1000 * 60 * 60 * 24)
+        (parseLocalDate(fill.date) - parseLocalDate(nextFill.date)) /
+          (1000 * 60 * 60 * 24)
       )
     );
     const dailyUsage = parseAmt(fill.gallons) / days;
@@ -58,7 +60,7 @@ export const Propane = ({
               <div>
                 <p className="text-sm text-slate-500">Date</p>
                 <p className="text-lg font-bold">
-                  {latest ? new Date(latest.date).toLocaleDateString() : '-'}
+                  {latest ? parseLocalDate(latest.date).toLocaleDateString() : '-'}
                 </p>
               </div>
               <div>
@@ -129,7 +131,7 @@ export const Propane = ({
                 >
                   <div className="flex-1">
                     <p className="font-semibold">
-                      {new Date(fill.date).toLocaleDateString('en-US', {
+                      {parseLocalDate(fill.date).toLocaleDateString('en-US', {
                         month: 'long',
                         day: 'numeric',
                         year: 'numeric',
