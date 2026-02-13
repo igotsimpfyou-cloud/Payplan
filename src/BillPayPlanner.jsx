@@ -8,7 +8,6 @@ import {
   Target,
   Wrench,
   LayoutDashboard,
-  X,
 } from 'lucide-react';
 
 // Utils
@@ -38,6 +37,7 @@ import { PayScheduleForm } from './components/forms/PayScheduleForm';
 import { AssetForm } from './components/forms/AssetForm';
 import { OneTimeForm } from './components/forms/OneTimeForm';
 import { PropaneForm } from './components/forms/PropaneForm';
+import Modal from './components/ui/Modal';
 
 // Views
 import { Dashboard } from './components/views/Dashboard';
@@ -1839,9 +1839,8 @@ const BillPayPlanner = () => {
                     return marked;
                   }}
                 />
-              </div>
             </div>
-          </div>
+          </Modal>
         )}
       </div>
     </div>
