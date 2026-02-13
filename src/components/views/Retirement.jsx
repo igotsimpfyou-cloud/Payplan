@@ -148,7 +148,7 @@ const validateCorrelationMatrix = (matrix) => {
 };
 
 // Generate correlated random returns using Cholesky decomposition (Statistical model)
-const generateCorrelatedReturns = (customReturns, choleskyLower) => {
+const generateCorrelatedReturns = (customReturns, choleskyLower = IDENTITY_CORRELATION_CHOLESKY) => {
   // Generate independent standard normal variables
   const z1 = randomNormal(0, 1);
   const z2 = randomNormal(0, 1);
@@ -873,15 +873,20 @@ const MonteCarloSimulator = () => {
       alert('Please enter your current age, retirement age, and life expectancy');
       return;
     }
-    const correlationValidation = validateCorrelationMatrix(CORRELATION_MATRIX);
-    const choleskyLower = correlationValidation.valid
-      ? correlationValidation.cholesky
-      : IDENTITY_CORRELATION_CHOLESKY;
-
-    if (correlationValidation.valid) {
+    let choleskyLower = IDENTITY_CORRELATION_CHOLESKY;
+    if (simulationModel === 'historical') {
       setSimulationWarning('');
     } else {
-      setSimulationWarning(`Using uncorrelated fallback returns because correlation settings are invalid: ${correlationValidation.message}`);
+      const correlationValidation = validateCorrelationMatrix(CORRELATION_MATRIX);
+      choleskyLower = correlationValidation.valid
+        ? correlationValidation.cholesky
+        : IDENTITY_CORRELATION_CHOLESKY;
+
+      if (correlationValidation.valid) {
+        setSimulationWarning('');
+      } else {
+        setSimulationWarning(`Using uncorrelated fallback returns because correlation settings are invalid: ${correlationValidation.message}`);
+      }
     }
 
     setIsRunning(true);
