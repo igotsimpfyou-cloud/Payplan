@@ -2,6 +2,7 @@ import React, { useMemo } from 'react';
 import { DollarSign, AlertTriangle, Check, Clock, ArrowRight } from 'lucide-react';
 import { parseAmt } from '../../utils/formatters';
 import { parseLocalDate, toYMD } from '../../utils/dateHelpers';
+import { Button } from '../ui/Button';
 
 export const Dashboard = ({
   overview,
@@ -163,12 +164,16 @@ export const Dashboard = ({
       <div className="bg-white rounded-2xl shadow-lg p-4">
         <div className="flex items-center justify-between mb-3">
           <h3 className="font-bold text-slate-800">Upcoming Bills</h3>
-          <button
+          <Button
             onClick={onNavigateToChecklist}
-            className="text-xs text-emerald-600 font-semibold flex items-center gap-1 hover:text-emerald-700"
+            variant="ghost"
+            size="xs"
+            className="text-emerald-600 hover:text-emerald-700"
+            icon={ArrowRight}
+            iconSize={12}
           >
-            View All <ArrowRight size={12} />
-          </button>
+            View All
+          </Button>
         </div>
 
         {upcomingBills.length === 0 ? (
@@ -185,10 +190,11 @@ export const Dashboard = ({
               const isUrgent = daysUntil <= 3;
 
               return (
-                <button
+                <Button
                   key={bill.id}
                   onClick={() => onToggleInstancePaid(bill.id)}
-                  className="w-full flex items-center justify-between p-2.5 rounded-xl hover:bg-slate-50 transition-colors"
+                  variant="ghost"
+                  className="w-full !justify-between p-2.5 rounded-xl hover:bg-slate-50"
                   title="Click to mark paid"
                 >
                   <div className="flex items-center gap-2.5 min-w-0">
@@ -212,7 +218,7 @@ export const Dashboard = ({
                   <span className="font-semibold text-slate-800 text-sm ml-2 flex-shrink-0">
                     ${parseAmt(bill.amountEstimate ?? bill.amount).toFixed(2)}
                   </span>
-                </button>
+                </Button>
               );
             })}
           </div>
