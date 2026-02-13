@@ -1,5 +1,44 @@
 import React, { useEffect, useId, useRef } from 'react';
 import { X } from 'lucide-react';
+import { Button } from './Button';
+
+const FOCUSABLE_SELECTORS = [
+  'a[href]',
+  'area[href]',
+  'button:not([disabled])',
+  'input:not([disabled])',
+  'select:not([disabled])',
+  'textarea:not([disabled])',
+  'iframe',
+  '[tabindex]:not([tabindex="-1"])',
+  '[contenteditable="true"]',
+].join(',');
+
+const getFocusableElements = (container) => {
+  if (!container) return [];
+  return [...container.querySelectorAll(FOCUSABLE_SELECTORS)].filter(
+    (el) => !el.hasAttribute('disabled') && el.getAttribute('aria-hidden') !== 'true'
+  );
+};
+
+const FOCUSABLE_SELECTORS = [
+  'a[href]',
+  'area[href]',
+  'button:not([disabled])',
+  'input:not([disabled])',
+  'select:not([disabled])',
+  'textarea:not([disabled])',
+  'iframe',
+  '[tabindex]:not([tabindex="-1"])',
+  '[contenteditable="true"]',
+].join(',');
+
+const getFocusableElements = (container) => {
+  if (!container) return [];
+  return [...container.querySelectorAll(FOCUSABLE_SELECTORS)].filter(
+    (el) => !el.hasAttribute('disabled') && el.getAttribute('aria-hidden') !== 'true'
+  );
+};
 
 const FOCUSABLE_SELECTORS = [
   'a[href]',
@@ -110,50 +149,20 @@ export const Modal = ({
   };
 
   return (
-    <div className={`fixed inset-0 z-50 p-4 ${overlayClassName}`}>
-      <div
-        className="absolute inset-0"
-        onClick={closeOnOverlayClick ? onClose : undefined}
-        aria-hidden="true"
-      />
-      <div className="relative flex min-h-full items-center justify-center" onKeyDown={handleKeyDown}>
-        <div
-          ref={dialogRef}
-          className={`bg-white rounded-2xl shadow-2xl w-full ${maxWidth} ${panelClassName}`}
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby={titleId}
-          aria-label={dialogAriaLabel}
-          tabIndex={-1}
-        >
-          <div className={contentClassName}>
-            {!title && needsInternalLabel && !hasExternalLabelId && (
-              <span id={generatedTitleId} className="sr-only">
-                Dialog
-              </span>
-            )}
-            {(title || showCloseButton) && (
-              <div className="flex items-center justify-between mb-4">
-                {title ? (
-                  <h2 id={titleId} className={titleClassName}>
-                    {title}
-                  </h2>
-                ) : (
-                  <span className="sr-only">Dialog controls</span>
-                )}
-                {showCloseButton && (
-                  <button
-                    type="button"
-                    className="p-2 rounded-lg hover:bg-slate-100 transition-colors"
-                    onClick={onClose}
-                    aria-label={closeButtonLabel}
-                  >
-                    <X size={20} />
-                  </button>
-                )}
-              </div>
-            )}
-            {children}
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className={`bg-white rounded-2xl shadow-modal w-full ${maxWidth}`}>
+        <div className="p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-2xl font-bold">{title}</h2>
+            <Button
+              variant="toolbar"
+              size="iconSm"
+              className="rounded-lg"
+              onClick={onClose}
+              aria-label="Close modal"
+              icon={X}
+              iconSize={20}
+            />
           </div>
         </div>
       </div>

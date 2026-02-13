@@ -14,28 +14,7 @@ import {
 import { toYMD, startOfMonth, addMonths, sameMonth, idForInstance, parseLocalDate, toLocalMidnight } from './utils/dateHelpers';
 import { parseAmt } from './utils/formatters';
 import { calculateNextPayDates, monthlyTotal } from './utils/calculations';
-
-// Constants
-import {
-  LS_TEMPLATES,
-  LS_INSTANCES,
-  LS_ASSETS,
-  LS_ONETIME,
-  LS_PAY,
-  LS_CAL,
-  LS_PROPANE,
-  LS_EMERGENCY,
-  LS_DEBTS,
-  LS_ENVELOPES,
-  LS_BUDGETS,
-  LS_ACTUAL_PAY,
-  LS_SCANNED_RECEIPTS,
-  LS_INVESTMENTS,
-  LS_BILLS,
-  LS_HISTORICAL_BILLS,
-  LS_PAYCHECKS,
-  LS_LAST_ROLLOVER,
-} from './constants/storageKeys';
+import { createStorageRepository } from './storage/repository';
 
 // Bill Database utilities
 import {
@@ -75,6 +54,7 @@ import { Income } from './components/views/Income';
 import { Investments } from './components/views/Investments';
 import { DebtTracker } from './components/views/DebtTracker';
 import { GoalsDashboard } from './components/views/GoalsDashboard';
+import { Button } from './components/ui/Button';
 
 /**
  * PayPlan Pro - Slim Orchestrator
@@ -129,221 +109,141 @@ const BillPayPlanner = () => {
   // Backup / Restore
   const backupFileInputRef = useRef(null);
 
+  const storageRef = useRef(null);
+
+  const persistCollection = async (name, value) => {
+    if (!storageRef.current) return;
+    try {
+      await storageRef.current.saveCollection(name, value);
+    } catch (err) {
+      console.warn(`Persist error (${name})`, err);
+    }
+  };
+
+  const queueRecordPatch = (collection, operation) => {
+    if (!storageRef.current?.queuePatch) return;
+    storageRef.current.queuePatch(collection, operation);
+  };
+
+  const flushQueuedWrites = async () => {
+    if (!storageRef.current?.flush) return;
+    await storageRef.current.flush();
+  };
+
   // ---------- Load & migrate ----------
   useEffect(() => {
-    try {
-      const t = localStorage.getItem(LS_TEMPLATES);
-      const i = localStorage.getItem(LS_INSTANCES);
-      const a = localStorage.getItem(LS_ASSETS);
-      const o = localStorage.getItem(LS_ONETIME);
-      const p = localStorage.getItem(LS_PAY);
-      const c = localStorage.getItem(LS_CAL);
-      const pr = localStorage.getItem(LS_PROPANE);
-      const e = localStorage.getItem(LS_EMERGENCY);
-      const d = localStorage.getItem(LS_DEBTS);
-      const env = localStorage.getItem(LS_ENVELOPES);
-      const bud = localStorage.getItem(LS_BUDGETS);
-      const ap = localStorage.getItem(LS_ACTUAL_PAY);
-      const sr = localStorage.getItem(LS_SCANNED_RECEIPTS);
-      const inv = localStorage.getItem(LS_INVESTMENTS);
+    (async () => {
+      try {
+        const repository = await createStorageRepository();
+        storageRef.current = repository;
+        const { data, quarantineCount } = await repository.loadAll();
 
-      // New database storage
-      const billsData = localStorage.getItem(LS_BILLS);
-      const historicalBillsData = localStorage.getItem(LS_HISTORICAL_BILLS);
-      const paychecksData = localStorage.getItem(LS_PAYCHECKS);
-      const lastRollover = localStorage.getItem(LS_LAST_ROLLOVER);
+        if (quarantineCount > 0) {
+          console.warn(`Quarantined ${quarantineCount} invalid record(s) during hydration`);
+        }
 
-      // MIGRATION: if old 'bills' exists, migrate to templates
-      const legacyBills = localStorage.getItem('bills');
-      if (!t && legacyBills) {
-        const legacy = JSON.parse(legacyBills);
-        const asTemplates = legacy.map((b) => ({
-          id: b.id || Date.now() + Math.random(),
-          name: b.name,
-          amount: parseAmt(b.amount),
-          isVariable: !!b.isVariable,
-          category: b.category || 'utilities',
-          autopay: !!b.autopay,
-          frequency: b.frequency || 'monthly',
-          dueDay: parseInt(b.dueDate, 10),
-          firstDueDate: b.nextDueDate || new Date().toISOString().split('T')[0],
-          historicalPayments: b.historicalPayments || [],
-        }));
-        localStorage.setItem(LS_TEMPLATES, JSON.stringify(asTemplates));
-        localStorage.removeItem('bills');
-      }
+        const loadedTemplates = Array.isArray(data.templates) ? data.templates : [];
+        const loadedInstances = Array.isArray(data.billInstances) ? data.billInstances : [];
+        const loadedBills = Array.isArray(data.bills) ? data.bills : [];
+        const loadedHistoricalBills = Array.isArray(data.historicalBills) ? data.historicalBills : [];
+        const loadedPaychecks = Array.isArray(data.paychecks) ? data.paychecks : [];
 
-      // Load templates
-      let loadedTemplates = [];
-      if (localStorage.getItem(LS_TEMPLATES)) {
-        loadedTemplates = JSON.parse(localStorage.getItem(LS_TEMPLATES));
         setBillTemplates(loadedTemplates);
+        setPaySchedule(data.paySchedule ?? null);
+
+        if (loadedBills.length > 0) {
+          setBills(loadedBills);
+          setHistoricalBills(loadedHistoricalBills);
+          setPaychecks(loadedPaychecks);
+          if (data.lastRolloverMonth) setLastRolloverMonth(data.lastRolloverMonth);
+        } else if (loadedInstances.length > 0) {
+          const migratedBills = migrateFromInstances(loadedInstances, loadedTemplates);
+          const { active, historical } = separateActiveAndHistorical(migratedBills);
+          setBills(active);
+          setHistoricalBills(historical);
+
+          const now = new Date();
+          const generatedBills = loadedTemplates.flatMap((template) =>
+            generateBillsFromTemplate(template, 6, now, active)
+          );
+          if (generatedBills.length > 0) {
+            setBills((prev) => [...prev, ...generatedBills]);
+          }
+
+          if (data.paySchedule) {
+            const generatedPaychecks = generatePaychecksFromSchedule(data.paySchedule, 6, []);
+            setPaychecks(generatedPaychecks);
+          }
+
+          setLastRolloverMonth(getCurrentMonth());
+        } else {
+          const now = new Date();
+          const generatedBills = loadedTemplates.flatMap((template) =>
+            generateBillsFromTemplate(template, 6, now, [])
+          );
+          setBills(generatedBills);
+
+          if (data.paySchedule) {
+            const generatedPaychecks = generatePaychecksFromSchedule(data.paySchedule, 6, []);
+            setPaychecks(generatedPaychecks);
+          }
+
+          setLastRolloverMonth(getCurrentMonth());
+        }
+
+        setBillInstances(loadedInstances);
+        setAssets(Array.isArray(data.assets) ? data.assets : []);
+        setOneTimeBills(Array.isArray(data.oneTimeBills) ? data.oneTimeBills : []);
+        setCalendarConnected(!!data.calendarConnected);
+        setPropaneFills(Array.isArray(data.propaneFills) ? data.propaneFills : []);
+        setEmergencyFund(data.emergencyFund || { target: 0, current: 0 });
+        setDebtPayoff(Array.isArray(data.debtPayoff) ? data.debtPayoff : []);
+        setEnvelopes(Array.isArray(data.envelopes) ? data.envelopes : []);
+        setBudgets(
+          data.budgets || {
+            utilities: 0,
+            subscription: 0,
+            insurance: 0,
+            loan: 0,
+            rent: 0,
+            other: 0,
+          }
+        );
+        setActualPayEntries(Array.isArray(data.actualPayEntries) ? data.actualPayEntries : []);
+        setScannedReceipts(Array.isArray(data.scannedReceipts) ? data.scannedReceipts : []);
+        setInvestments(Array.isArray(data.investments) ? data.investments : []);
+      } catch (err) {
+        console.warn('Load error', err);
+      } finally {
+        setLoading(false);
       }
-
-      // Load pay schedule
-      let loadedPaySchedule = null;
-      if (p) {
-        loadedPaySchedule = JSON.parse(p);
-        setPaySchedule(loadedPaySchedule);
-      }
-
-      // Load or migrate bills
-      if (billsData) {
-        // New format exists - load it
-        setBills(JSON.parse(billsData));
-        if (historicalBillsData) setHistoricalBills(JSON.parse(historicalBillsData));
-        if (paychecksData) setPaychecks(JSON.parse(paychecksData));
-        if (lastRollover) setLastRolloverMonth(lastRollover);
-      } else if (i) {
-        // Migrate from old instances
-        const oldInstances = JSON.parse(i);
-        const migratedBills = migrateFromInstances(oldInstances, loadedTemplates);
-
-        // Separate into active and historical
-        const { active, historical } = separateActiveAndHistorical(migratedBills);
-        setBills(active);
-        setHistoricalBills(historical);
-
-        // Generate 6 months of bills from templates
-        const now = new Date();
-        const newBills = [];
-        for (const template of loadedTemplates) {
-          const generated = generateBillsFromTemplate(template, 6, now, active);
-          newBills.push(...generated);
-        }
-        if (newBills.length > 0) {
-          setBills(prev => [...prev, ...newBills]);
-        }
-
-        // Generate paychecks if pay schedule exists
-        if (loadedPaySchedule) {
-          const generatedPaychecks = generatePaychecksFromSchedule(loadedPaySchedule, 6, []);
-          setPaychecks(generatedPaychecks);
-        }
-
-        setLastRolloverMonth(getCurrentMonth());
-
-        // Clear old instances storage after migration
-        // localStorage.removeItem(LS_INSTANCES); // Keep for now as backup
-      } else {
-        // Fresh start - generate bills from templates
-        const now = new Date();
-        const newBills = [];
-        for (const template of loadedTemplates) {
-          const generated = generateBillsFromTemplate(template, 6, now, []);
-          newBills.push(...generated);
-        }
-        setBills(newBills);
-
-        if (loadedPaySchedule) {
-          const generatedPaychecks = generatePaychecksFromSchedule(loadedPaySchedule, 6, []);
-          setPaychecks(generatedPaychecks);
-        }
-
-        setLastRolloverMonth(getCurrentMonth());
-      }
-
-      // Load legacy instances for backward compatibility during transition
-      if (i) setBillInstances(JSON.parse(i));
-
-      if (a) setAssets(JSON.parse(a));
-      if (o) setOneTimeBills(JSON.parse(o));
-      if (c) setCalendarConnected(JSON.parse(c));
-      if (pr) setPropaneFills(JSON.parse(pr));
-      if (e) setEmergencyFund(JSON.parse(e));
-      if (d) setDebtPayoff(JSON.parse(d));
-      if (env) setEnvelopes(JSON.parse(env));
-      if (bud) setBudgets(JSON.parse(bud));
-      if (ap) setActualPayEntries(JSON.parse(ap));
-      if (sr) setScannedReceipts(JSON.parse(sr));
-      if (inv) setInvestments(JSON.parse(inv));
-    } catch (err) {
-      console.warn('Load error', err);
-    } finally {
-      setLoading(false);
-    }
+    })();
   }, []);
 
   // ---------- Persist ----------
-  useEffect(
-    () => localStorage.setItem(LS_TEMPLATES, JSON.stringify(billTemplates)),
-    [billTemplates]
-  );
-  useEffect(
-    () => localStorage.setItem(LS_INSTANCES, JSON.stringify(billInstances)),
-    [billInstances]
-  );
-  useEffect(
-    () => localStorage.setItem(LS_ASSETS, JSON.stringify(assets)),
-    [assets]
-  );
-  useEffect(
-    () => localStorage.setItem(LS_ONETIME, JSON.stringify(oneTimeBills)),
-    [oneTimeBills]
-  );
-  useEffect(
-    () => localStorage.setItem(LS_PAY, JSON.stringify(paySchedule)),
-    [paySchedule]
-  );
-  useEffect(
-    () => localStorage.setItem(LS_CAL, JSON.stringify(calendarConnected)),
-    [calendarConnected]
-  );
-  useEffect(
-    () => localStorage.setItem(LS_PROPANE, JSON.stringify(propaneFills)),
-    [propaneFills]
-  );
-  useEffect(
-    () => localStorage.setItem(LS_EMERGENCY, JSON.stringify(emergencyFund)),
-    [emergencyFund]
-  );
-  useEffect(
-    () => localStorage.setItem(LS_DEBTS, JSON.stringify(debtPayoff)),
-    [debtPayoff]
-  );
-  useEffect(
-    () => localStorage.setItem(LS_ENVELOPES, JSON.stringify(envelopes)),
-    [envelopes]
-  );
-  useEffect(
-    () => localStorage.setItem(LS_BUDGETS, JSON.stringify(budgets)),
-    [budgets]
-  );
-  useEffect(
-    () => localStorage.setItem(LS_ACTUAL_PAY, JSON.stringify(actualPayEntries)),
-    [actualPayEntries]
-  );
-  useEffect(
-    () => localStorage.setItem(LS_SCANNED_RECEIPTS, JSON.stringify(scannedReceipts)),
-    [scannedReceipts]
-  );
-  useEffect(
-    () => localStorage.setItem(LS_INVESTMENTS, JSON.stringify(investments)),
-    [investments]
-  );
+  useEffect(() => { persistCollection('templates', billTemplates); }, [billTemplates]);
+  useEffect(() => { persistCollection('billInstances', billInstances); }, [billInstances]);
+  useEffect(() => { persistCollection('assets', assets); }, [assets]);
+  useEffect(() => { persistCollection('oneTimeBills', oneTimeBills); }, [oneTimeBills]);
+  useEffect(() => { persistCollection('paySchedule', paySchedule); }, [paySchedule]);
+  useEffect(() => { persistCollection('calendarConnected', calendarConnected); }, [calendarConnected]);
+  useEffect(() => { persistCollection('propaneFills', propaneFills); }, [propaneFills]);
+  useEffect(() => { persistCollection('emergencyFund', emergencyFund); }, [emergencyFund]);
+  useEffect(() => { persistCollection('debtPayoff', debtPayoff); }, [debtPayoff]);
+  useEffect(() => { persistCollection('envelopes', envelopes); }, [envelopes]);
+  useEffect(() => { persistCollection('budgets', budgets); }, [budgets]);
+  useEffect(() => { persistCollection('actualPayEntries', actualPayEntries); }, [actualPayEntries]);
+  useEffect(() => { persistCollection('scannedReceipts', scannedReceipts); }, [scannedReceipts]);
+  useEffect(() => { persistCollection('investments', investments); }, [investments]);
+  useEffect(() => { persistCollection('bills', bills); }, [bills]);
+  useEffect(() => { persistCollection('historicalBills', historicalBills); }, [historicalBills]);
+  useEffect(() => { persistCollection('paychecks', paychecks); }, [paychecks]);
+  useEffect(() => { if (lastRolloverMonth) persistCollection('lastRolloverMonth', lastRolloverMonth); }, [lastRolloverMonth]);
 
-  // New database persistence
-  useEffect(
-    () => localStorage.setItem(LS_BILLS, JSON.stringify(bills)),
-    [bills]
-  );
-  useEffect(
-    () => localStorage.setItem(LS_HISTORICAL_BILLS, JSON.stringify(historicalBills)),
-    [historicalBills]
-  );
-  useEffect(
-    () => localStorage.setItem(LS_PAYCHECKS, JSON.stringify(paychecks)),
-    [paychecks]
-  );
-  useEffect(
-    () => {
-      if (lastRolloverMonth) {
-        localStorage.setItem(LS_LAST_ROLLOVER, lastRolloverMonth);
-      }
-    },
-    [lastRolloverMonth]
-  );
 
+  useEffect(() => () => {
+    flushQueuedWrites();
+  }, []);
   // ---------- Monthly rollover - generate new month's bills on first load ----------
   useEffect(() => {
     if (!billTemplates.length || loading) return;
@@ -762,6 +662,8 @@ const BillPayPlanner = () => {
             : b
         )
       );
+      queueRecordPatch('bills', { type: 'patch', id: instanceId, patch: { paid: nowPaid, paidDate } });
+      flushQueuedWrites();
       return;
     }
 
@@ -1056,10 +958,13 @@ const BillPayPlanner = () => {
       createdAt: new Date().toISOString(),
     };
     setScannedReceipts((prev) => [...prev, entry]);
+    queueRecordPatch('scannedReceipts', { type: 'upsert', record: entry });
   };
 
-  const deleteScannedReceipt = (id) =>
+  const deleteScannedReceipt = (id) => {
     setScannedReceipts((prev) => prev.filter((r) => r.id !== id));
+    queueRecordPatch('scannedReceipts', { type: 'delete', id });
+  };
 
   // ---------- Investments ----------
   const addInvestment = (holding) => {
@@ -1159,6 +1064,66 @@ const BillPayPlanner = () => {
     };
   }, [currentMonthInstances, oneTimeBills, paySchedule, nextPayDates, actualPayEntries]);
 
+  const formatCurrency = (value) => {
+    const safeValue = Number.isFinite(value) ? value : 0;
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: 'USD',
+      maximumFractionDigits: 0,
+    }).format(safeValue);
+  };
+
+  const VIEW_METADATA = {
+    dashboard: {
+      label: 'Dashboard',
+      parentSection: 'Home',
+      description: `This month leftover: ${formatCurrency(overview.leftover)}`,
+      icon: LayoutDashboard,
+    },
+    income: {
+      label: 'Income',
+      parentSection: 'Income',
+      description: `${overview.paychecksThisMonth} paycheck${overview.paychecksThisMonth === 1 ? '' : 's'} this month`,
+      icon: DollarSign,
+    },
+    'bills-setup': {
+      label: 'Setup',
+      parentSection: 'Bills',
+      description: `${billTemplates.length} template${billTemplates.length === 1 ? '' : 's'} configured`,
+      icon: Wrench,
+    },
+    'bills-dashboard': {
+      label: 'Dashboard',
+      parentSection: 'Bills',
+      description: `Monthly bills total: ${formatCurrency(overview.totalMonthly)}`,
+      icon: LayoutDashboard,
+    },
+    'bills-analytics': {
+      label: 'Analytics',
+      parentSection: 'Bills',
+      description: 'Review trends and spending patterns',
+      icon: BarChart3,
+    },
+    'goals-setup': {
+      label: 'Setup',
+      parentSection: 'Goals',
+      description: `${debtPayoff.length + envelopes.length + investments.length} tracked goal items`,
+      icon: Wrench,
+    },
+    'goals-dashboard': {
+      label: 'Dashboard',
+      parentSection: 'Goals',
+      description: 'Track progress across savings, debt, and investing',
+      icon: LayoutDashboard,
+    },
+    'goals-analytics': {
+      label: 'Analytics',
+      parentSection: 'Goals',
+      description: 'Compare goal performance over time',
+      icon: BarChart3,
+    },
+  };
+
   // ---------- Navigation Configuration ----------
   // Map of which views belong to which tab and sub-tab
   const NAV_TABS = [
@@ -1200,6 +1165,24 @@ const BillPayPlanner = () => {
 
   const activeTabId = viewToTab[view] || 'home';
   const activeTab = NAV_TABS.find((t) => t.id === activeTabId);
+  const viewContext = VIEW_METADATA[view] || {
+    label: 'Dashboard',
+    parentSection: 'Home',
+    description: 'Overview',
+    icon: LayoutDashboard,
+  };
+
+  const siblingViews = Object.entries(VIEW_METADATA)
+    .filter(([viewId, metadata]) => {
+      if (metadata.parentSection !== viewContext.parentSection) return false;
+      if (!viewId.includes('-')) return false;
+      return viewId.startsWith(`${activeTabId}-`);
+    })
+    .map(([viewId, metadata]) => ({
+      viewId,
+      label: metadata.label,
+      icon: metadata.icon,
+    }));
 
   const handleTabClick = (tab) => {
     setView(tab.defaultView);
@@ -1219,14 +1202,14 @@ const BillPayPlanner = () => {
             <h1 className="text-xl md:text-2xl font-black text-white">
               PayPlan Pro
             </h1>
-            <button
+            <Button
               onClick={() => setShowSettings(true)}
-              className="p-2 rounded-xl transition-all bg-white/20 text-white hover:bg-white/30"
+              variant="nav"
+              size="icon"
               title="Settings"
-              aria-label="Open settings"
-            >
-              <SettingsIcon size={20} />
-            </button>
+              icon={SettingsIcon}
+              iconSize={20}
+            />
           </div>
 
           {/* Main Navigation - 4 Tabs */}
@@ -1236,19 +1219,17 @@ const BillPayPlanner = () => {
               const isActive = activeTabId === tab.id;
 
               return (
-                <button
+                <Button
                   key={tab.id}
                   onClick={() => handleTabClick(tab)}
                   title={tab.label}
-                  className={`px-1.5 sm:px-2 py-2 sm:py-2.5 rounded-xl font-semibold flex flex-col sm:flex-row items-center justify-center gap-0.5 sm:gap-2 transition-all border-2 active:scale-95 ${
-                    isActive
-                      ? 'bg-white text-emerald-600 shadow-lg border-white'
-                      : 'bg-white/25 text-white border-transparent hover:bg-white/35 hover:border-white/30'
-                  }`}
+                  variant={isActive ? 'navActive' : 'nav'}
+                  size="nav"
+                  className="flex flex-col sm:flex-row gap-0.5 sm:gap-2 border-2 border-transparent active:scale-95 hover:border-white/30"
                 >
                   <Icon size={16} className="sm:w-[18px] sm:h-[18px]" />
                   <span className="text-[10px] sm:text-xs font-bold leading-tight">{tab.label}</span>
-                </button>
+                </Button>
               );
             })}
           </div>
@@ -1262,23 +1243,64 @@ const BillPayPlanner = () => {
                   const isSubActive = view === sub.view;
 
                   return (
-                    <button
+                    <Button
                       key={sub.view}
                       onClick={() => handleSubTabClick(sub.view)}
-                      className={`flex-1 px-2 py-2 rounded-xl font-semibold flex items-center justify-center gap-1.5 transition-all ${
-                        isSubActive
-                          ? 'bg-emerald-600 text-white shadow-md'
-                          : 'text-slate-600 hover:bg-emerald-50 hover:text-emerald-700'
-                      }`}
+                      variant={isSubActive ? 'primary' : 'ghost'}
+                      className={`flex-1 px-2 py-2 ${isSubActive ? 'shadow-md' : 'text-slate-600 hover:bg-emerald-50 hover:text-emerald-700'}`}
                     >
                       <SubIcon size={14} />
                       <span className="text-xs sm:text-sm">{sub.label}</span>
-                    </button>
+                    </Button>
                   );
                 })}
               </div>
             </div>
           )}
+
+          <div className="mt-3 bg-white/15 border border-white/25 rounded-xl px-3 py-2.5 text-white">
+            <div className="flex flex-wrap items-center gap-2 text-[11px] sm:text-xs font-semibold uppercase tracking-wide text-white/85">
+              <span>{viewContext.parentSection}</span>
+              <span aria-hidden="true">/</span>
+              <span className="normal-case text-sm sm:text-base text-white font-bold tracking-normal">
+                {viewContext.parentSection} <span className="text-white/80">›</span> {viewContext.label}
+              </span>
+            </div>
+
+            {(viewContext.description || siblingViews.length > 1) && (
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                {viewContext.icon && (
+                  <viewContext.icon size={14} className="text-white/85" />
+                )}
+                {viewContext.description && (
+                  <p className="text-xs text-white/90 mr-1">{viewContext.description}</p>
+                )}
+                {siblingViews.length > 1 && (
+                  <div className="flex flex-wrap items-center gap-1">
+                    {siblingViews.map((sibling) => {
+                      const SiblingIcon = sibling.icon;
+                      const isActiveSibling = sibling.viewId === view;
+
+                      return (
+                        <button
+                          key={sibling.viewId}
+                          onClick={() => setView(sibling.viewId)}
+                          className={`px-2 py-1 rounded-lg text-[11px] sm:text-xs font-semibold flex items-center gap-1 transition-colors ${
+                            isActiveSibling
+                              ? 'bg-white text-emerald-700'
+                              : 'bg-white/20 text-white hover:bg-white/30'
+                          }`}
+                        >
+                          {SiblingIcon && <SiblingIcon size={11} />}
+                          {sibling.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
         </div>
       </div>
     );
@@ -1396,8 +1418,10 @@ const BillPayPlanner = () => {
             <div className="bg-white rounded-2xl shadow-xl p-5 mt-6">
               <div className="flex items-center justify-between mb-3">
                 <h3 className="font-bold text-slate-800">Envelopes</h3>
-                <button
-                  className="px-3 py-1.5 rounded-xl bg-emerald-100 text-emerald-700 font-semibold text-sm"
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  className="bg-emerald-100 text-emerald-700"
                   onClick={() => {
                     const name = prompt('Envelope name:');
                     if (!name) return;
@@ -1406,7 +1430,7 @@ const BillPayPlanner = () => {
                   }}
                 >
                   Add
-                </button>
+                </Button>
               </div>
               {envelopes.length ? (
                 <div className="space-y-2">
@@ -1420,8 +1444,10 @@ const BillPayPlanner = () => {
                         <div className="text-slate-600 text-sm">
                           ${parseAmt(e.perCheck).toFixed(2)} / check
                         </div>
-                        <button
-                          className="px-2 py-1 text-blue-700 bg-blue-100 rounded-lg text-xs"
+                        <Button
+                          variant="secondary"
+                          size="xs"
+                          className="bg-blue-100 text-blue-700"
                           onClick={() => {
                             const v = parseAmt(
                               prompt(`New amount for "${e.name}":`, e.perCheck) || 0
@@ -1432,15 +1458,17 @@ const BillPayPlanner = () => {
                           }}
                         >
                           Edit
-                        </button>
-                        <button
-                          className="px-2 py-1 text-red-700 bg-red-100 rounded-lg text-xs"
+                        </Button>
+                        <Button
+                          variant="destructiveOutline"
+                          size="xs"
+                          className="bg-red-100 border-red-100 text-red-700 hover:bg-red-200"
                           onClick={() =>
                             setEnvelopes(envelopes.filter((x) => x.id !== e.id))
                           }
                         >
                           Remove
-                        </button>
+                        </Button>
                       </div>
                     </div>
                   ))}
@@ -1457,8 +1485,10 @@ const BillPayPlanner = () => {
             <div className="bg-white rounded-2xl shadow-xl p-5 mt-6">
               <div className="flex items-center justify-between mb-3">
                 <h3 className="font-bold text-slate-800">Category Budgets</h3>
-                <button
-                  className="px-3 py-1.5 rounded-xl bg-emerald-100 text-emerald-700 font-semibold text-sm"
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  className="bg-emerald-100 text-emerald-700"
                   onClick={() => {
                     const cat = prompt(
                       'Category (utilities, subscription, insurance, loan, rent, other):'
@@ -1469,7 +1499,7 @@ const BillPayPlanner = () => {
                   }}
                 >
                   Set/Update
-                </button>
+                </Button>
               </div>
               <div className="grid grid-cols-2 gap-2 text-sm">
                 {Object.entries(budgets).map(([k, v]) => (
@@ -1532,6 +1562,20 @@ const BillPayPlanner = () => {
                         : bill
                     )
                   );
+                  queueRecordPatch('bills', {
+                    type: 'patch',
+                    id: updatedInstance.id,
+                    patch: {
+                      assignedCheck: updatedInstance.assignedCheck,
+                      assignedPayDate: updatedInstance.assignedPayDate
+                        ? toMMDDYYYY(parseLocalDate(updatedInstance.assignedPayDate))
+                        : null,
+                      paid: updatedInstance.paid,
+                      paidDate: updatedInstance.paidDate,
+                      actualPaid: updatedInstance.actualPaid,
+                      manuallyAssigned: true,
+                    },
+                  });
                   setBillInstances((prev) =>
                     prev.map((inst) =>
                       inst.id === updatedInstance.id
@@ -1683,34 +1727,43 @@ const BillPayPlanner = () => {
 
         {/* Settings Slide-Out Panel */}
         {showSettings && (
-          <Modal
-            isOpen={showSettings}
-            onClose={() => setShowSettings(false)}
-            title="Settings"
-            titleClassName="text-lg font-bold text-slate-800"
-            closeButtonLabel="Close settings"
-            maxWidth="max-w-md"
-            overlayClassName="bg-black/40"
-            contentClassName="p-0"
-            panelClassName="h-[calc(100vh-2rem)] max-h-[calc(100vh-2rem)] ml-auto bg-slate-50 overflow-y-auto animate-slide-in"
-          >
-            <div className="p-4">
-              <Settings
-                backupFileInputRef={backupFileInputRef}
-                billInstances={billInstances}
-                onExportBackup={exportBackup}
-                onImportBackup={importBackupFromFile}
-                bills={bills}
-                onDeduplicateBills={() => {
-                  const billsByNameMonth = {};
-                  let removed = 0;
+          <div className="fixed inset-0 z-50">
+            <div className="absolute inset-0 bg-black/40" onClick={() => setShowSettings(false)} />
+            <div className="absolute right-0 top-0 bottom-0 w-full max-w-md bg-slate-50 shadow-2xl overflow-y-auto animate-slide-in">
+              <div className="sticky top-0 z-10 bg-white border-b px-5 py-4 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <SettingsIcon size={20} className="text-slate-600" />
+                  <h2 className="text-lg font-bold text-slate-800">Settings</h2>
+                </div>
+                <Button
+                  onClick={() => setShowSettings(false)}
+                  variant="toolbar"
+                  size="iconSm"
+                  className="rounded-xl"
+                  icon={X}
+                  iconSize={20}
+                  aria-label="Close settings"
+                />
+              </div>
+              <div className="p-4">
+                <Settings
+                  backupFileInputRef={backupFileInputRef}
+                  billInstances={billInstances}
+                  onExportBackup={exportBackup}
+                  onImportBackup={importBackupFromFile}
+                  bills={bills}
+                  onDeduplicateBills={() => {
+                    const billsByNameMonth = {};
+                    let removed = 0;
 
-                  for (const bill of bills) {
-                    const dueDate = parseMMDDYYYY(bill.dueDate);
-                    if (!dueDate) continue;
-                    const monthKey = `${bill.name}-${dueDate.getFullYear()}-${dueDate.getMonth()}`;
-                    if (!billsByNameMonth[monthKey]) {
-                      billsByNameMonth[monthKey] = [];
+                    for (const bill of bills) {
+                      const dueDate = parseMMDDYYYY(bill.dueDate);
+                      if (!dueDate) continue;
+                      const monthKey = `${bill.name}-${dueDate.getFullYear()}-${dueDate.getMonth()}`;
+                      if (!billsByNameMonth[monthKey]) {
+                        billsByNameMonth[monthKey] = [];
+                      }
+                      billsByNameMonth[monthKey].push(bill);
                     }
                     billsByNameMonth[monthKey].push(bill);
                   }
@@ -1785,9 +1838,35 @@ const BillPayPlanner = () => {
                     return inst;
                   }));
 
-                  return marked;
-                }}
-              />
+                    return removed;
+                  }}
+                  onMarkPastBillsPaid={() => {
+                    const today = new Date();
+                    today.setHours(0, 0, 0, 0);
+                    let marked = 0;
+
+                    setBills(prev => prev.map(bill => {
+                      if (bill.paid) return bill;
+                      const dueDate = parseMMDDYYYY(bill.dueDate);
+                      if (dueDate && dueDate < today) {
+                        marked++;
+                        return { ...bill, paid: true, paidDate: null };
+                      }
+                      return bill;
+                    }));
+
+                    setBillInstances(prev => prev.map(inst => {
+                      if (inst.paid) return inst;
+                      const dueDate = new Date(inst.dueDate);
+                      if (dueDate < today) {
+                        return { ...inst, paid: true };
+                      }
+                      return inst;
+                    }));
+
+                    return marked;
+                  }}
+                />
             </div>
           </Modal>
         )}
