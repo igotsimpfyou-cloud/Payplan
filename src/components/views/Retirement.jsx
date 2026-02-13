@@ -541,12 +541,14 @@ import {
 // HELPER FUNCTIONS
 // ============================================
 const formatCurrency = (value) => {
+  if (!Number.isFinite(value)) return '$0';
   if (value >= 1000000) return `$${(value / 1000000).toFixed(2)}M`;
   if (value >= 1000) return `$${(value / 1000).toFixed(1)}K`;
   return `$${value.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
 };
 
 const formatFullCurrency = (value) => {
+  if (!Number.isFinite(value)) return '$0';
   return `$${value.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
 };
 
