@@ -1,10 +1,21 @@
 import React from 'react';
 
+const inputBase = 'w-full border-2 rounded-app transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-1 disabled:bg-slate-100 disabled:text-slate-500 disabled:cursor-not-allowed';
+
+const inputSizes = {
+  sm: 'px-3 py-1.5 text-sm',
+  md: 'px-3 py-2 text-sm',
+  lg: 'px-4 py-3',
+};
+
 export const Input = ({
   label,
   type = 'text',
   className = '',
+  inputClassName = '',
   error,
+  size = 'md',
+  rightElement,
   ...props
 }) => {
   return (
@@ -12,13 +23,18 @@ export const Input = ({
       {label && (
         <label className="block text-sm font-semibold mb-1">{label}</label>
       )}
-      <input
-        type={type}
-        className={`w-full px-3 py-2 border-2 rounded-xl focus:border-emerald-500 outline-none transition-colors ${
-          error ? 'border-red-500' : 'border-slate-200'
-        }`}
-        {...props}
-      />
+      <div className="relative">
+        <input
+          type={type}
+          className={`${inputBase} ${error ? 'border-red-500' : 'border-slate-200 focus:border-brand-500'} ${inputSizes[size] || inputSizes.md} ${rightElement ? 'pr-10' : ''} ${inputClassName}`}
+          {...props}
+        />
+        {rightElement && (
+          <div className="absolute right-2 top-1/2 -translate-y-1/2">
+            {rightElement}
+          </div>
+        )}
+      </div>
       {error && <p className="text-red-500 text-sm mt-1">{error}</p>}
     </div>
   );
@@ -28,6 +44,8 @@ export const Select = ({
   label,
   options = [],
   className = '',
+  size = 'md',
+  error,
   ...props
 }) => {
   return (
@@ -36,7 +54,7 @@ export const Select = ({
         <label className="block text-sm font-semibold mb-1">{label}</label>
       )}
       <select
-        className="w-full px-3 py-2 border-2 border-slate-200 rounded-xl focus:border-emerald-500 outline-none transition-colors"
+        className={`${inputBase} ${error ? 'border-red-500' : 'border-slate-200 focus:border-brand-500'} ${inputSizes[size] || inputSizes.md}`}
         {...props}
       >
         {options.map((opt) => (
@@ -56,7 +74,7 @@ export const Checkbox = ({
 }) => {
   return (
     <label className={`flex items-center gap-2 cursor-pointer ${className}`}>
-      <input type="checkbox" className="w-4 h-4" {...props} />
+      <input type="checkbox" className="w-4 h-4 accent-brand-600" {...props} />
       <span className="text-sm font-semibold">{label}</span>
     </label>
   );
