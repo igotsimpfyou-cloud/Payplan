@@ -2,6 +2,7 @@ import React, { useMemo } from 'react';
 import { DollarSign, AlertTriangle, Check, Clock, ArrowRight } from 'lucide-react';
 import { parseAmt } from '../../utils/formatters';
 import { parseLocalDate, toYMD } from '../../utils/dateHelpers';
+import { uiSpacing, uiType } from '../../constants/uiPresets';
 import { Button } from '../ui/Button';
 
 export const Dashboard = ({
