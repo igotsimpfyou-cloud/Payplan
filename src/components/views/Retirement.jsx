@@ -404,6 +404,7 @@ const MonteCarloSimulator = () => {
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [inflationRate, setInflationRate] = useState(0.025);
   const [taxRate, setTaxRate] = useState(0.22);
+  const [taxableEffectiveTaxRate, setTaxableEffectiveTaxRate] = useState(0.15);
   const [includeHealthcare, setIncludeHealthcare] = useState(true);
   const [healthcareCostBase, setHealthcareCostBase] = useState('');
 
@@ -451,7 +452,7 @@ const MonteCarloSimulator = () => {
         annualContribution: annContrib, contributionType,
         annualSpending: annSpend, ssBaseBenefit: ssBenefit, ssClaimingAge: ssAge,
         stocksPercent, bondsPercent, useGlidePath,
-        inflationRate, taxRate, includeHealthcare, healthcareCostBase: healthCost,
+        inflationRate, taxRate, taxableEffectiveTaxRate, includeHealthcare, healthcareCostBase: healthCost,
         simulationModel,
         customReturns: simulationModel === 'parameterized' ? {
           stocks: { mean: customStocksMean / 100, stdDev: customStocksStdDev / 100 },
@@ -865,9 +866,15 @@ const MonteCarloSimulator = () => {
                 className="w-full" min={1} max={5} step={0.5} />
             </div>
             <div>
-              <label className="block text-sm text-slate-600 mb-1">Tax Rate (marginal): {(taxRate * 100).toFixed(0)}%</label>
+              <label className="block text-sm text-slate-600 mb-1">Tax Rate (marginal, traditional withdrawals): {(taxRate * 100).toFixed(0)}%</label>
               <input type="range" value={taxRate * 100} onChange={(e) => setTaxRate(Number(e.target.value) / 100)}
                 className="w-full" min={10} max={37} step={1} />
+              <p className="text-xs text-slate-500 mt-1">Simulation tax model: Traditional and RMD withdrawals are taxed at this rate, taxable withdrawals use an effective taxable-account rate, and Roth withdrawals are tax-free. Spending success is measured in net (after-tax) dollars.</p>
+            </div>
+            <div>
+              <label className="block text-sm text-slate-600 mb-1">Taxable Withdrawal Effective Tax Rate: {(taxableEffectiveTaxRate * 100).toFixed(0)}%</label>
+              <input type="range" value={taxableEffectiveTaxRate * 100} onChange={(e) => setTaxableEffectiveTaxRate(Number(e.target.value) / 100)}
+                className="w-full" min={0} max={30} step={1} />
             </div>
             <div>
               <label className="flex items-center gap-2 cursor-pointer">
@@ -966,6 +973,18 @@ const MonteCarloSimulator = () => {
                   Average depletion age when failed: {Math.round(results.avgDepletionAge)}
                 </p>
               )}
+              <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3 text-left">
+                <div className="bg-white/70 rounded-xl p-3 border border-slate-200">
+                  <p className="text-xs text-slate-600">Median Lifetime Gross Withdrawals</p>
+                  <p className="text-lg font-bold text-slate-800">{formatCurrency(results.medianCumulativeGrossWithdrawals)}</p>
+                  <p className="text-xs text-slate-500">Average: {formatCurrency(results.avgCumulativeGrossWithdrawals)}</p>
+                </div>
+                <div className="bg-white/70 rounded-xl p-3 border border-slate-200">
+                  <p className="text-xs text-slate-600">Median Lifetime Taxes Paid on Withdrawals</p>
+                  <p className="text-lg font-bold text-slate-800">{formatCurrency(results.medianCumulativeTaxesPaid)}</p>
+                  <p className="text-xs text-slate-500">Average: {formatCurrency(results.avgCumulativeTaxesPaid)}</p>
+                </div>
+              </div>
             </div>
           </div>
 
