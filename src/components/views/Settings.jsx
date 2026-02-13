@@ -233,8 +233,10 @@ export const Settings = ({
                   className="w-full px-4 py-2 pr-10 border-2 rounded-xl"
                 />
                 <button
+                  type="button"
                   onClick={() => setShowApiKey(!showApiKey)}
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                  aria-label={showApiKey ? 'Hide API key' : 'Show API key'}
                 >
                   {showApiKey ? <EyeOff size={18} /> : <Eye size={18} />}
                 </button>
