@@ -399,6 +399,10 @@ const runEnhancedMonteCarloSimulation = (params, progressCallback) => {
     depletionCount: depletionAges.length,
   };
 };
+import {
+  DEFAULT_SIMULATION_COUNT,
+  runEnhancedMonteCarloSimulation,
+} from '../../utils/retirementSimulation';
 
 // ============================================
 // HELPER FUNCTIONS
@@ -948,7 +952,7 @@ const MonteCarloSimulator = () => {
           <h2 className="text-xl sm:text-2xl font-bold">Monte Carlo Simulator</h2>
         </div>
         <p className="text-indigo-100 text-sm sm:text-base">
-          Professional-grade simulation with {SIMULATIONS.toLocaleString()} scenarios, tax optimization,
+          Professional-grade simulation with {DEFAULT_SIMULATION_COUNT.toLocaleString()} scenarios, tax optimization,
           and automatic rebalancing.
         </p>
       </div>
@@ -1277,7 +1281,7 @@ const MonteCarloSimulator = () => {
         ) : (
           <>
             <Play size={20} className="sm:w-6 sm:h-6" />
-            <span>Run {SIMULATIONS.toLocaleString()} Simulations</span>
+            <span>Run {DEFAULT_SIMULATION_COUNT.toLocaleString()} Simulations</span>
           </>
         )}
       </button>
@@ -1418,7 +1422,7 @@ const MonteCarloSimulator = () => {
           {/* Projection Chart - Enhanced Fan Chart */}
           <div className="bg-white rounded-2xl shadow-xl p-4 sm:p-6">
             <h3 className="font-bold text-slate-800 mb-2">Portfolio Projection Over Time</h3>
-            <p className="text-xs text-slate-500 mb-4">The shaded areas show the range of possible outcomes based on {SIMULATIONS.toLocaleString()} simulations</p>
+            <p className="text-xs text-slate-500 mb-4">The shaded areas show the range of possible outcomes based on {DEFAULT_SIMULATION_COUNT.toLocaleString()} simulations</p>
             <div className="h-48 sm:h-64 relative">
               <svg viewBox="0 0 100 55" className="w-full h-full" preserveAspectRatio="none">
                 {/* Y-axis grid lines with labels */}
