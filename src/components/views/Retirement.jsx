@@ -117,6 +117,22 @@ const randomNormal = (mean, stdDev) => {
   return mean + stdDev * z;
 };
 
+// Calculate quantiles from a sorted array using linear interpolation
+const quantile = (sortedArray, q) => {
+  if (!sortedArray || sortedArray.length === 0) return 0;
+  if (q <= 0) return sortedArray[0];
+  if (q >= 1) return sortedArray[sortedArray.length - 1];
+
+  const position = (sortedArray.length - 1) * q;
+  const lowerIndex = Math.floor(position);
+  const upperIndex = Math.ceil(position);
+
+  if (lowerIndex === upperIndex) return sortedArray[lowerIndex];
+
+  const weight = position - lowerIndex;
+  return sortedArray[lowerIndex] + (sortedArray[upperIndex] - sortedArray[lowerIndex]) * weight;
+};
+
 // Calculate glide path allocation based on age
 const getGlidePath = (age, retirementAge, useGlidePath) => {
   if (!useGlidePath) return null;
@@ -320,7 +336,7 @@ const runEnhancedSimulation = (params) => {
 };
 
 // Run all simulations
-const runEnhancedMonteCarloSimulation = (params, progressCallback) => {
+const calculateEnhancedMonteCarloSimulation = (params, progressCallback) => {
   const results = [];
   const batchSize = 1000;
 
@@ -337,7 +353,6 @@ const runEnhancedMonteCarloSimulation = (params, progressCallback) => {
   const successRate = (successCount / SIMULATIONS) * 100;
 
   const finalBalances = results.map(r => r.finalBalance).sort((a, b) => a - b);
-  const percentile = (p) => finalBalances[Math.floor(p * SIMULATIONS / 100)] || 0;
 
   // Calculate yearly percentiles
   const totalYears = params.lifeExpectancy - params.currentAge;
@@ -350,12 +365,13 @@ const runEnhancedMonteCarloSimulation = (params, progressCallback) => {
 
   for (let year = 0; year <= totalYears; year++) {
     const yearBalances = results.map(r => r.yearlyBalances[year] || 0).sort((a, b) => a - b);
-    avgBalances.push(yearBalances.reduce((a, b) => a + b, 0) / SIMULATIONS);
-    p10Balances.push(yearBalances[Math.floor(0.10 * SIMULATIONS)] || 0);
-    p25Balances.push(yearBalances[Math.floor(0.25 * SIMULATIONS)] || 0);
-    p50Balances.push(yearBalances[Math.floor(0.50 * SIMULATIONS)] || 0);
-    p75Balances.push(yearBalances[Math.floor(0.75 * SIMULATIONS)] || 0);
-    p90Balances.push(yearBalances[Math.floor(0.90 * SIMULATIONS)] || 0);
+    const sampleSize = yearBalances.length;
+    avgBalances.push(sampleSize > 0 ? yearBalances.reduce((a, b) => a + b, 0) / sampleSize : 0);
+    p10Balances.push(quantile(yearBalances, 0.10));
+    p25Balances.push(quantile(yearBalances, 0.25));
+    p50Balances.push(quantile(yearBalances, 0.50));
+    p75Balances.push(quantile(yearBalances, 0.75));
+    p90Balances.push(quantile(yearBalances, 0.90));
   }
 
   // Calculate depletion age distribution
@@ -368,11 +384,11 @@ const runEnhancedMonteCarloSimulation = (params, progressCallback) => {
     successRate,
     successCount,
     totalSimulations: SIMULATIONS,
-    medianFinalBalance: percentile(50),
-    p10FinalBalance: percentile(10),
-    p25FinalBalance: percentile(25),
-    p75FinalBalance: percentile(75),
-    p90FinalBalance: percentile(90),
+    medianFinalBalance: quantile(finalBalances, 0.50),
+    p10FinalBalance: quantile(finalBalances, 0.10),
+    p25FinalBalance: quantile(finalBalances, 0.25),
+    p75FinalBalance: quantile(finalBalances, 0.75),
+    p90FinalBalance: quantile(finalBalances, 0.90),
     avgBalances,
     p10Balances,
     p25Balances,
@@ -821,7 +837,7 @@ const MonteCarloSimulator = () => {
         withdrawalModel, withdrawalPercent,
       };
 
-      const simulationResults = runEnhancedMonteCarloSimulation(params, setProgress);
+      const simulationResults = calculateEnhancedMonteCarloSimulation(params, setProgress);
       setResults(simulationResults);
       setIsRunning(false);
       setProgress(100);
