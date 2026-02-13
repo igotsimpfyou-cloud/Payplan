@@ -21,6 +21,25 @@ const getFocusableElements = (container) => {
   );
 };
 
+const FOCUSABLE_SELECTORS = [
+  'a[href]',
+  'area[href]',
+  'button:not([disabled])',
+  'input:not([disabled])',
+  'select:not([disabled])',
+  'textarea:not([disabled])',
+  'iframe',
+  '[tabindex]:not([tabindex="-1"])',
+  '[contenteditable="true"]',
+].join(',');
+
+const getFocusableElements = (container) => {
+  if (!container) return [];
+  return [...container.querySelectorAll(FOCUSABLE_SELECTORS)].filter(
+    (el) => !el.hasAttribute('disabled') && el.getAttribute('aria-hidden') !== 'true'
+  );
+};
+
 export const Modal = ({
   isOpen,
   onClose,
