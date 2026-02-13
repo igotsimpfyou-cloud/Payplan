@@ -1306,6 +1306,98 @@ const BillPayPlanner = () => {
     );
   };
 
+  const handleDeduplicateBills = () => {
+    const billsByNameMonth = {};
+    let removed = 0;
+
+    for (const bill of bills) {
+      const dueDate = parseMMDDYYYY(bill.dueDate);
+      if (!dueDate) continue;
+      const monthKey = `${bill.name}-${dueDate.getFullYear()}-${dueDate.getMonth()}`;
+      if (!billsByNameMonth[monthKey]) {
+        billsByNameMonth[monthKey] = [];
+      }
+      billsByNameMonth[monthKey].push(bill);
+    }
+
+    const unique = [];
+    for (const key in billsByNameMonth) {
+      const group = billsByNameMonth[key];
+      if (group.length === 1) {
+        unique.push(group[0]);
+      } else {
+        const template = billTemplates.find((t) => t.id === group[0].templateId);
+        const templateDueDay = template?.dueDay;
+        group.sort((a, b) => {
+          if (a.paid && !b.paid) return -1;
+          if (!a.paid && b.paid) return 1;
+          const aDate = parseMMDDYYYY(a.dueDate);
+          const bDate = parseMMDDYYYY(b.dueDate);
+          const aMatches = aDate?.getDate() === templateDueDay;
+          const bMatches = bDate?.getDate() === templateDueDay;
+          if (aMatches && !bMatches) return -1;
+          if (!aMatches && bMatches) return 1;
+          return 0;
+        });
+        unique.push(group[0]);
+        removed += group.length - 1;
+      }
+    }
+
+    setBills(unique);
+
+    const instancesByNameMonth = {};
+    for (const inst of billInstances) {
+      const dueDate = new Date(inst.dueDate);
+      const monthKey = `${inst.name}-${dueDate.getFullYear()}-${dueDate.getMonth()}`;
+      if (!instancesByNameMonth[monthKey]) {
+        instancesByNameMonth[monthKey] = [];
+      }
+      instancesByNameMonth[monthKey].push(inst);
+    }
+
+    const uniqueInstances = [];
+    for (const key in instancesByNameMonth) {
+      const group = instancesByNameMonth[key];
+      group.sort((a, b) => (a.paid && !b.paid ? -1 : !a.paid && b.paid ? 1 : 0));
+      uniqueInstances.push(group[0]);
+    }
+    setBillInstances(uniqueInstances);
+
+    return removed;
+  };
+
+  const handleMarkPastBillsPaid = () => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    let marked = 0;
+
+    setBills((prev) =>
+      prev.map((bill) => {
+        if (bill.paid) return bill;
+        const dueDate = parseMMDDYYYY(bill.dueDate);
+        if (dueDate && dueDate < today) {
+          marked++;
+          return { ...bill, paid: true, paidDate: null };
+        }
+        return bill;
+      })
+    );
+
+    setBillInstances((prev) =>
+      prev.map((inst) => {
+        if (inst.paid) return inst;
+        const dueDate = new Date(inst.dueDate);
+        if (dueDate < today) {
+          return { ...inst, paid: true };
+        }
+        return inst;
+      })
+    );
+
+    return marked;
+  };
+
   // ---------- Shell & Routing ----------
   if (loading) {
     return (
@@ -1752,92 +1844,8 @@ const BillPayPlanner = () => {
                   onExportBackup={exportBackup}
                   onImportBackup={importBackupFromFile}
                   bills={bills}
-                  onDeduplicateBills={() => {
-                    const billsByNameMonth = {};
-                    let removed = 0;
-
-                    for (const bill of bills) {
-                      const dueDate = parseMMDDYYYY(bill.dueDate);
-                      if (!dueDate) continue;
-                      const monthKey = `${bill.name}-${dueDate.getFullYear()}-${dueDate.getMonth()}`;
-                      if (!billsByNameMonth[monthKey]) {
-                        billsByNameMonth[monthKey] = [];
-                      }
-                      billsByNameMonth[monthKey].push(bill);
-                    }
-
-                    const unique = [];
-                    for (const key in billsByNameMonth) {
-                      const group = billsByNameMonth[key];
-                      if (group.length === 1) {
-                        unique.push(group[0]);
-                      } else {
-                        const template = billTemplates.find(t => t.id === group[0].templateId);
-                        const templateDueDay = template?.dueDay;
-                        group.sort((a, b) => {
-                          if (a.paid && !b.paid) return -1;
-                          if (!a.paid && b.paid) return 1;
-                          const aDate = parseMMDDYYYY(a.dueDate);
-                          const bDate = parseMMDDYYYY(b.dueDate);
-                          const aMatches = aDate?.getDate() === templateDueDay;
-                          const bMatches = bDate?.getDate() === templateDueDay;
-                          if (aMatches && !bMatches) return -1;
-                          if (!aMatches && bMatches) return 1;
-                          return 0;
-                        });
-                        unique.push(group[0]);
-                        removed += group.length - 1;
-                      }
-                    }
-
-                    setBills(unique);
-
-                    const instancesByNameMonth = {};
-                    for (const inst of billInstances) {
-                      const dueDate = new Date(inst.dueDate);
-                      const monthKey = `${inst.name}-${dueDate.getFullYear()}-${dueDate.getMonth()}`;
-                      if (!instancesByNameMonth[monthKey]) {
-                        instancesByNameMonth[monthKey] = [];
-                      }
-                      instancesByNameMonth[monthKey].push(inst);
-                    }
-
-                    const uniqueInstances = [];
-                    for (const key in instancesByNameMonth) {
-                      const group = instancesByNameMonth[key];
-                      group.sort((a, b) => (a.paid && !b.paid ? -1 : !a.paid && b.paid ? 1 : 0));
-                      uniqueInstances.push(group[0]);
-                    }
-                    setBillInstances(uniqueInstances);
-
-                    return removed;
-                  }}
-                  onMarkPastBillsPaid={() => {
-                    const today = new Date();
-                    today.setHours(0, 0, 0, 0);
-                    let marked = 0;
-
-                    setBills(prev => prev.map(bill => {
-                      if (bill.paid) return bill;
-                      const dueDate = parseMMDDYYYY(bill.dueDate);
-                      if (dueDate && dueDate < today) {
-                        marked++;
-                        return { ...bill, paid: true, paidDate: null };
-                      }
-                      return bill;
-                    }));
-
-                    setBillInstances(prev => prev.map(inst => {
-                      if (inst.paid) return inst;
-                      const dueDate = new Date(inst.dueDate);
-                      if (dueDate < today) {
-                        return { ...inst, paid: true };
-                      }
-                      return inst;
-                    }));
-
-                    return marked;
-                  }}
+                  onDeduplicateBills={handleDeduplicateBills}
+                  onMarkPastBillsPaid={handleMarkPastBillsPaid}
                 />
               </div>
             </div>
