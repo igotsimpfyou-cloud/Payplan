@@ -34,6 +34,7 @@ export const Modal = ({
   showCloseButton = true,
   closeOnOverlayClick = true,
   ariaLabelledBy,
+  ariaLabel,
 }) => {
   const generatedTitleId = useId();
   const dialogRef = useRef(null);
@@ -51,48 +52,53 @@ export const Modal = ({
       dialogRef.current?.focus();
     }
 
-    const handleKeyDown = (event) => {
-      if (!dialogRef.current) return;
-
-      if (event.key === 'Escape') {
-        event.preventDefault();
-        onClose();
-        return;
-      }
-
-      if (event.key !== 'Tab') return;
-
-      const currentFocusable = getFocusableElements(dialogRef.current);
-      if (currentFocusable.length === 0) {
-        event.preventDefault();
-        dialogRef.current.focus();
-        return;
-      }
-
-      const first = currentFocusable[0];
-      const last = currentFocusable[currentFocusable.length - 1];
-
-      if (event.shiftKey && document.activeElement === first) {
-        event.preventDefault();
-        last.focus();
-      } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault();
-        first.focus();
-      }
-    };
-
-    document.addEventListener('keydown', handleKeyDown);
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
 
     return () => {
-      document.removeEventListener('keydown', handleKeyDown);
       document.body.style.overflow = previousOverflow;
       previouslyFocusedRef.current?.focus?.();
     };
   }, [isOpen, onClose]);
 
   if (!isOpen) return null;
+
+  const handleKeyDown = (event) => {
+    if (!dialogRef.current) return;
+
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      onClose();
+      return;
+    }
+
+    if (event.key !== 'Tab') return;
+
+    const currentFocusable = getFocusableElements(dialogRef.current);
+    if (currentFocusable.length === 0) {
+      event.preventDefault();
+      dialogRef.current.focus();
+      return;
+    }
+
+    const first = currentFocusable[0];
+    const last = currentFocusable[currentFocusable.length - 1];
+    const active = document.activeElement;
+
+    if (!dialogRef.current.contains(active)) {
+      event.preventDefault();
+      first.focus();
+      return;
+    }
+
+    if (event.shiftKey && active === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && active === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  };
 
   return (
     <div className={`fixed inset-0 z-50 p-4 ${overlayClassName}`}>
@@ -101,13 +107,14 @@ export const Modal = ({
         onClick={closeOnOverlayClick ? onClose : undefined}
         aria-hidden="true"
       />
-      <div className="relative flex min-h-full items-center justify-center">
+      <div className="relative flex min-h-full items-center justify-center" onKeyDown={handleKeyDown}>
         <div
           ref={dialogRef}
           className={`bg-white rounded-2xl shadow-2xl w-full ${maxWidth} ${panelClassName}`}
           role="dialog"
           aria-modal="true"
           aria-labelledby={ariaLabelledBy || generatedTitleId}
+          aria-label={title ? undefined : (ariaLabel || 'Dialog')}
           tabIndex={-1}
         >
           <div className={contentClassName}>
