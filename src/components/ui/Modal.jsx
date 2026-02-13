@@ -63,6 +63,9 @@ export const Modal = ({
 
   if (!isOpen) return null;
 
+  const titleId = ariaLabelledBy || generatedTitleId;
+  const shouldUseLabelledBy = !!title || !ariaLabel;
+
   const handleKeyDown = (event) => {
     if (!dialogRef.current) return;
 
@@ -87,7 +90,11 @@ export const Modal = ({
 
     if (!dialogRef.current.contains(active)) {
       event.preventDefault();
-      first.focus();
+      if (event.shiftKey) {
+        last.focus();
+      } else {
+        first.focus();
+      }
       return;
     }
 
@@ -113,19 +120,19 @@ export const Modal = ({
           className={`bg-white rounded-2xl shadow-2xl w-full ${maxWidth} ${panelClassName}`}
           role="dialog"
           aria-modal="true"
-          aria-labelledby={ariaLabelledBy || generatedTitleId}
-          aria-label={title ? undefined : (ariaLabel || 'Dialog')}
+          aria-labelledby={shouldUseLabelledBy ? titleId : undefined}
+          aria-label={shouldUseLabelledBy ? undefined : ariaLabel}
           tabIndex={-1}
         >
           <div className={contentClassName}>
-            {(title || showCloseButton) && (
+            {(title || showCloseButton || shouldUseLabelledBy) && (
               <div className="flex items-center justify-between mb-4">
                 {title ? (
-                  <h2 id={ariaLabelledBy || generatedTitleId} className={titleClassName}>
+                  <h2 id={titleId} className={titleClassName}>
                     {title}
                   </h2>
                 ) : (
-                  <span id={ariaLabelledBy || generatedTitleId} className="sr-only">
+                  <span id={titleId} className="sr-only">
                     Dialog
                   </span>
                 )}
