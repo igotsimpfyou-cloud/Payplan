@@ -81,7 +81,7 @@ export const Dashboard = ({
   const isNegative = safeToSpend && safeToSpend.amount < 0;
 
   return (
-    <div className="space-y-4">
+    <div className={uiSpacing.pageStack}>
       {/* Overdue Alert */}
       {overdueBills.length > 0 && (
         <div className="bg-red-500 text-white rounded-2xl p-4 shadow-lg flex items-start gap-3">
@@ -90,7 +90,7 @@ export const Dashboard = ({
             <h3 className="font-bold">
               {overdueBills.length} Overdue Bill{overdueBills.length !== 1 ? 's' : ''}
             </h3>
-            <p className="text-red-100 text-sm">
+            <p className={`text-red-100 ${uiType.helperText}`}>
               {overdueBills.map(b => b.name).join(', ')}
             </p>
           </div>
@@ -103,12 +103,12 @@ export const Dashboard = ({
           ? 'bg-gradient-to-br from-red-500 to-red-700'
           : 'bg-gradient-to-br from-emerald-500 to-teal-600'
       }`}>
-        <p className="text-white/80 text-sm font-medium mb-1">Safe to Spend</p>
+        <p className={`text-white/80 font-medium mb-1 ${uiType.helperText}`}>Safe to Spend</p>
         <p className="text-white text-4xl sm:text-5xl font-black">
           ${safeToSpend ? Math.abs(safeToSpend.amount).toFixed(2) : '—'}
         </p>
         {isNegative && (
-          <p className="text-white/80 text-sm mt-1 font-medium">over budget</p>
+          <p className={`text-white/80 mt-1 font-medium ${uiType.helperText}`}>over budget</p>
         )}
         {safeToSpend && (
           <div className="flex justify-center gap-4 mt-4 text-white/70 text-xs">
@@ -124,19 +124,19 @@ export const Dashboard = ({
           </div>
         )}
         {!safeToSpend && (
-          <p className="text-white/60 text-sm mt-2">Set up your pay schedule to get started</p>
+          <p className={`text-white/60 mt-2 ${uiType.helperText}`}>Set up your pay schedule to get started</p>
         )}
       </div>
 
       {/* Next Paycheck */}
       {overview.nextPaycheckDate && (
-        <div className="bg-white rounded-2xl shadow-lg p-4 flex items-center justify-between">
+        <div className={`bg-white ${uiSpacing.card} flex items-center justify-between`}>
           <div className="flex items-center gap-3">
             <div className="p-2.5 bg-emerald-100 rounded-xl">
               <DollarSign size={20} className="text-emerald-600" />
             </div>
             <div>
-              <p className="text-sm text-slate-500">Next Paycheck</p>
+              <p className={`text-slate-500 ${uiType.helperText}`}>Next Paycheck</p>
               <p className="font-bold text-slate-800">
                 {overview.nextPaycheckDate.toLocaleDateString('en-US', {
                   weekday: 'short',
@@ -161,7 +161,7 @@ export const Dashboard = ({
       )}
 
       {/* Upcoming Bills */}
-      <div className="bg-white rounded-2xl shadow-lg p-4">
+      <div className={`bg-white ${uiSpacing.card}`}>
         <div className="flex items-center justify-between mb-3">
           <h3 className="font-bold text-slate-800">Upcoming Bills</h3>
           <Button
@@ -177,11 +177,11 @@ export const Dashboard = ({
         </div>
 
         {upcomingBills.length === 0 ? (
-          <p className="text-slate-400 text-sm text-center py-4">
+          <p className={`text-slate-400 text-center py-4 ${uiType.helperText}`}>
             No bills due in the next 2 weeks
           </p>
         ) : (
-          <div className="space-y-1.5">
+          <div className={uiSpacing.sectionStack}>
             {upcomingBills.map((bill) => {
               const due = parseLocalDate(bill.dueDate);
               const today = new Date();
@@ -201,7 +201,7 @@ export const Dashboard = ({
                     <span className="flex-shrink-0 w-6 h-6 rounded-full border-2 border-slate-300 flex items-center justify-center">
                     </span>
                     <div className="min-w-0">
-                      <span className="text-sm font-medium text-slate-700 truncate block">
+                      <span className={`font-medium text-slate-700 truncate block ${uiType.helperText}`}>
                         {bill.name}
                       </span>
                       <span className={`text-xs ${isUrgent ? 'text-red-500 font-medium' : 'text-slate-400'}`}>
@@ -226,17 +226,17 @@ export const Dashboard = ({
       </div>
 
       {/* Monthly Snapshot */}
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
         <div className="bg-white rounded-2xl shadow-lg p-3 text-center">
-          <p className="text-xs text-slate-400 mb-1">Income</p>
+          <p className={`text-slate-400 mb-1 ${uiType.helperText}`}>Income</p>
           <p className="font-bold text-emerald-600">${overview.monthlyIncome.toFixed(0)}</p>
         </div>
         <div className="bg-white rounded-2xl shadow-lg p-3 text-center">
-          <p className="text-xs text-slate-400 mb-1">Bills</p>
+          <p className={`text-slate-400 mb-1 ${uiType.helperText}`}>Bills</p>
           <p className="font-bold text-red-500">${overview.totalMonthly.toFixed(0)}</p>
         </div>
         <div className="bg-white rounded-2xl shadow-lg p-3 text-center">
-          <p className="text-xs text-slate-400 mb-1">Net</p>
+          <p className={`text-slate-400 mb-1 ${uiType.helperText}`}>Net</p>
           <p className={`font-bold ${overview.leftover >= 0 ? 'text-blue-600' : 'text-red-600'}`}>
             {overview.leftover >= 0 ? '+' : ''}${overview.leftover.toFixed(0)}
           </p>
