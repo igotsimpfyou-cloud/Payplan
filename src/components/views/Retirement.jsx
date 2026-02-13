@@ -399,6 +399,10 @@ const calculateEnhancedMonteCarloSimulation = (params, progressCallback) => {
     depletionCount: depletionAges.length,
   };
 };
+import {
+  DEFAULT_SIMULATION_COUNT,
+  runEnhancedMonteCarloSimulation,
+} from '../../utils/retirementSimulation';
 
 // ============================================
 // HELPER FUNCTIONS
@@ -780,6 +784,7 @@ const MonteCarloSimulator = () => {
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [inflationRate, setInflationRate] = useState(0.025);
   const [taxRate, setTaxRate] = useState(0.22);
+  const [taxableEffectiveTaxRate, setTaxableEffectiveTaxRate] = useState(0.15);
   const [includeHealthcare, setIncludeHealthcare] = useState(true);
   const [healthcareCostBase, setHealthcareCostBase] = useState('');
 
@@ -827,7 +832,7 @@ const MonteCarloSimulator = () => {
         annualContribution: annContrib, contributionType,
         annualSpending: annSpend, ssBaseBenefit: ssBenefit, ssClaimingAge: ssAge,
         stocksPercent, bondsPercent, useGlidePath,
-        inflationRate, taxRate, includeHealthcare, healthcareCostBase: healthCost,
+        inflationRate, taxRate, taxableEffectiveTaxRate, includeHealthcare, healthcareCostBase: healthCost,
         simulationModel,
         customReturns: simulationModel === 'parameterized' ? {
           stocks: { mean: customStocksMean / 100, stdDev: customStocksStdDev / 100 },
@@ -948,7 +953,7 @@ const MonteCarloSimulator = () => {
           <h2 className="text-xl sm:text-2xl font-bold">Monte Carlo Simulator</h2>
         </div>
         <p className="text-indigo-100 text-sm sm:text-base">
-          Professional-grade simulation with {SIMULATIONS.toLocaleString()} scenarios, tax optimization,
+          Professional-grade simulation with {DEFAULT_SIMULATION_COUNT.toLocaleString()} scenarios, tax optimization,
           and automatic rebalancing.
         </p>
       </div>
@@ -1241,9 +1246,15 @@ const MonteCarloSimulator = () => {
                 className="w-full" min={1} max={5} step={0.5} />
             </div>
             <div>
-              <label className="block text-sm text-slate-600 mb-1">Tax Rate (marginal): {(taxRate * 100).toFixed(0)}%</label>
+              <label className="block text-sm text-slate-600 mb-1">Tax Rate (marginal, traditional withdrawals): {(taxRate * 100).toFixed(0)}%</label>
               <input type="range" value={taxRate * 100} onChange={(e) => setTaxRate(Number(e.target.value) / 100)}
                 className="w-full" min={10} max={37} step={1} />
+              <p className="text-xs text-slate-500 mt-1">Simulation tax model: Traditional and RMD withdrawals are taxed at this rate, taxable withdrawals use an effective taxable-account rate, and Roth withdrawals are tax-free. Spending success is measured in net (after-tax) dollars.</p>
+            </div>
+            <div>
+              <label className="block text-sm text-slate-600 mb-1">Taxable Withdrawal Effective Tax Rate: {(taxableEffectiveTaxRate * 100).toFixed(0)}%</label>
+              <input type="range" value={taxableEffectiveTaxRate * 100} onChange={(e) => setTaxableEffectiveTaxRate(Number(e.target.value) / 100)}
+                className="w-full" min={0} max={30} step={1} />
             </div>
             <div>
               <label className="flex items-center gap-2 cursor-pointer">
@@ -1277,7 +1288,7 @@ const MonteCarloSimulator = () => {
         ) : (
           <>
             <Play size={20} className="sm:w-6 sm:h-6" />
-            <span>Run {SIMULATIONS.toLocaleString()} Simulations</span>
+            <span>Run {DEFAULT_SIMULATION_COUNT.toLocaleString()} Simulations</span>
           </>
         )}
       </button>
@@ -1342,6 +1353,18 @@ const MonteCarloSimulator = () => {
                   Average depletion age when failed: {Math.round(results.avgDepletionAge)}
                 </p>
               )}
+              <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3 text-left">
+                <div className="bg-white/70 rounded-xl p-3 border border-slate-200">
+                  <p className="text-xs text-slate-600">Median Lifetime Gross Withdrawals</p>
+                  <p className="text-lg font-bold text-slate-800">{formatCurrency(results.medianCumulativeGrossWithdrawals)}</p>
+                  <p className="text-xs text-slate-500">Average: {formatCurrency(results.avgCumulativeGrossWithdrawals)}</p>
+                </div>
+                <div className="bg-white/70 rounded-xl p-3 border border-slate-200">
+                  <p className="text-xs text-slate-600">Median Lifetime Taxes Paid on Withdrawals</p>
+                  <p className="text-lg font-bold text-slate-800">{formatCurrency(results.medianCumulativeTaxesPaid)}</p>
+                  <p className="text-xs text-slate-500">Average: {formatCurrency(results.avgCumulativeTaxesPaid)}</p>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -1418,7 +1441,7 @@ const MonteCarloSimulator = () => {
           {/* Projection Chart - Enhanced Fan Chart */}
           <div className="bg-white rounded-2xl shadow-xl p-4 sm:p-6">
             <h3 className="font-bold text-slate-800 mb-2">Portfolio Projection Over Time</h3>
-            <p className="text-xs text-slate-500 mb-4">The shaded areas show the range of possible outcomes based on {SIMULATIONS.toLocaleString()} simulations</p>
+            <p className="text-xs text-slate-500 mb-4">The shaded areas show the range of possible outcomes based on {DEFAULT_SIMULATION_COUNT.toLocaleString()} simulations</p>
             <div className="h-48 sm:h-64 relative">
               <svg viewBox="0 0 100 55" className="w-full h-full" preserveAspectRatio="none">
                 {/* Y-axis grid lines with labels */}
