@@ -59,12 +59,14 @@ export const Modal = ({
       document.body.style.overflow = previousOverflow;
       previouslyFocusedRef.current?.focus?.();
     };
-  }, [isOpen, onClose]);
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
-  const titleId = ariaLabelledBy || generatedTitleId;
-  const shouldUseLabelledBy = !!title || !ariaLabel;
+  const hasExternalLabelId = Boolean(ariaLabelledBy);
+  const needsInternalLabel = Boolean(title) || (!ariaLabel && !hasExternalLabelId);
+  const titleId = hasExternalLabelId ? ariaLabelledBy : (needsInternalLabel ? generatedTitleId : undefined);
+  const dialogAriaLabel = !titleId ? ariaLabel : undefined;
 
   const handleKeyDown = (event) => {
     if (!dialogRef.current) return;
@@ -120,21 +122,24 @@ export const Modal = ({
           className={`bg-white rounded-2xl shadow-2xl w-full ${maxWidth} ${panelClassName}`}
           role="dialog"
           aria-modal="true"
-          aria-labelledby={shouldUseLabelledBy ? titleId : undefined}
-          aria-label={shouldUseLabelledBy ? undefined : ariaLabel}
+          aria-labelledby={titleId}
+          aria-label={dialogAriaLabel}
           tabIndex={-1}
         >
           <div className={contentClassName}>
-            {(title || showCloseButton || shouldUseLabelledBy) && (
+            {!title && needsInternalLabel && !hasExternalLabelId && (
+              <span id={generatedTitleId} className="sr-only">
+                Dialog
+              </span>
+            )}
+            {(title || showCloseButton) && (
               <div className="flex items-center justify-between mb-4">
                 {title ? (
                   <h2 id={titleId} className={titleClassName}>
                     {title}
                   </h2>
                 ) : (
-                  <span id={titleId} className="sr-only">
-                    Dialog
-                  </span>
+                  <span className="sr-only">Dialog controls</span>
                 )}
                 {showCloseButton && (
                   <button
