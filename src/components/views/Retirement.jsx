@@ -210,6 +210,29 @@ const runEnhancedSimulation = (params) => {
     };
   };
 
+  const estimateNetFromGrossTarget = (grossTarget, balances) => {
+    if (grossTarget <= 0) return 0;
+
+    let grossRemaining = grossTarget;
+    let netSpending = 0;
+
+    const withdrawalOrder = [
+      ['taxable', balances.taxable],
+      ['traditional', balances.traditional],
+      ['roth', balances.roth],
+    ];
+
+    for (const [accountType, balance] of withdrawalOrder) {
+      if (grossRemaining <= 0) break;
+      const grossWithdrawal = Math.min(balance, grossRemaining);
+      const taxesPaid = grossWithdrawal * (accountTaxRates[accountType] ?? 0);
+      netSpending += grossWithdrawal - taxesPaid;
+      grossRemaining -= grossWithdrawal;
+    }
+
+    return netSpending;
+  };
+
   for (let year = 1; year <= totalYears; year++) {
     const age = currentAge + year;
     const isRetired = age >= retirementAge;
@@ -253,7 +276,12 @@ const runEnhancedSimulation = (params) => {
       if (withdrawalModel === 'percentage') {
         requiredSpending = totalPortfolio * ((withdrawalPercent || 4) / 100);
       } else if (withdrawalModel === 'lifeExpectancy') {
-        requiredSpending = remainingYears > 0 ? totalPortfolio / remainingYears : totalPortfolio;
+        const grossTarget = remainingYears > 0 ? totalPortfolio / remainingYears : totalPortfolio;
+        requiredSpending = estimateNetFromGrossTarget(grossTarget, {
+          traditional,
+          taxable,
+          roth,
+        });
       } else {
         // Fixed dollar (default) — inflation-adjusted
         requiredSpending = annualSpending * cumulativeInflation;
