@@ -155,64 +155,9 @@ export const Settings = ({
   onDeduplicateBills,
   onMarkPastBillsPaid,
 }) => {
-  // OCR API key state
-  const [ocrApiKey, setOcrApiKey] = useState('');
-  const [showApiKey, setShowApiKey] = useState(false);
-  const [apiKeySaved, setApiKeySaved] = useState(false);
-
-  // Calendar export state
-  const [exportSuccess, setExportSuccess] = useState(null);
-
-  // Load API key on mount
-  useEffect(() => {
-    const savedKey = localStorage.getItem(OCR_API_KEY_STORAGE) || '';
-    setOcrApiKey(savedKey);
-  }, []);
-
-  const handleSaveApiKey = () => {
-    localStorage.setItem(OCR_API_KEY_STORAGE, ocrApiKey.trim());
-    setApiKeySaved(true);
-    setTimeout(() => setApiKeySaved(false), 2000);
-  };
-
-  const handleClearApiKey = () => {
-    localStorage.removeItem(OCR_API_KEY_STORAGE);
-    setOcrApiKey('');
-  };
-
-  // Calendar export handler
-  const handleExportCalendar = () => {
-    if (!billInstances.length) {
-      setExportSuccess({ success: false, message: 'No bills to export' });
-      setTimeout(() => setExportSuccess(null), 3000);
-      return;
-    }
-
-    const filename = generateFilename(billInstances);
-    const result = downloadICSFile(billInstances, { filename });
-
-    setExportSuccess({
-      success: true,
-      message: `Downloaded ${result.eventCount} bill${result.eventCount !== 1 ? 's' : ''} to ${filename}`,
-    });
-    setTimeout(() => setExportSuccess(null), 5000);
-  };
-
   return (
     <div>
-      {/* Receipt Scanner OCR */}
-      <div className="bg-white rounded-2xl shadow-xl p-6 mb-6">
-        <div className="flex items-center gap-3 mb-4">
-          <div className="p-3 bg-gradient-to-br from-blue-500 to-indigo-500 rounded-xl text-white">
-            <Camera size={24} />
-          </div>
-          <div>
-            <h3 className="text-xl font-bold text-slate-800">Receipt Scanner OCR</h3>
-            <p className="text-slate-600 text-sm">
-              Auto-extract merchant, amount, and date from photos
-            </p>
-          </div>
-        </div>
+      <SettingsSectionNav sections={SETTINGS_SECTIONS} />
 
         <div className="space-y-4">
           <div>
@@ -260,25 +205,7 @@ export const Settings = ({
             </div>
           </div>
 
-          <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
-            <p className="text-blue-800 text-sm mb-2">
-              <strong>How to get a free API key:</strong>
-            </p>
-            <ol className="text-blue-700 text-sm list-decimal list-inside space-y-1">
-              <li>Visit <a href="https://tabscanner.com" target="_blank" rel="noopener noreferrer" className="underline font-medium">tabscanner.com</a></li>
-              <li>Create a free account</li>
-              <li>Copy your API key from the dashboard</li>
-              <li>Paste it above and click Save</li>
-            </ol>
-            <a
-              href="https://tabscanner.com"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-1 mt-3 text-blue-600 hover:text-blue-800 font-semibold text-sm"
-            >
-              Get Free API Key <ExternalLink size={14} />
-            </a>
-          </div>
+      <DataManagementSection bills={bills} />
 
           {!ocrApiKey && (
             <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4">
@@ -373,8 +300,7 @@ export const Settings = ({
         </div>
       </div>
 
-      {/* Data Cleanup */}
-      <DataCleanup
+      <AdvancedSection
         bills={bills}
         onDeduplicateBills={onDeduplicateBills}
         onMarkPastBillsPaid={onMarkPastBillsPaid}
