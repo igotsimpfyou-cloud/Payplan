@@ -102,11 +102,26 @@ const generateCorrelatedReturns = (customReturns) => {
   return { stockReturn, bondReturn, cashReturn };
 };
 
-// Generate returns from historical bootstrap (randomly sample a calendar year)
-const generateHistoricalReturns = () => {
-  const idx = Math.floor(Math.random() * HISTORICAL_ANNUAL.length);
-  const [stockReturn, bondReturn, cashReturn] = HISTORICAL_ANNUAL[idx];
-  return { stockReturn, bondReturn, cashReturn };
+// Generate a historical path using block bootstrap (contiguous return blocks)
+const generateHistoricalPath = (totalYears, targetBlockLength = 5) => {
+  const path = [];
+  const dataLength = HISTORICAL_ANNUAL.length;
+  const baseBlockLength = Math.max(1, Math.round(targetBlockLength));
+  const minBlockLength = Math.max(1, baseBlockLength - 2);
+  const maxBlockLength = Math.max(minBlockLength, baseBlockLength + 2);
+
+  while (path.length < totalYears) {
+    const sampledBlockLength = Math.floor(Math.random() * (maxBlockLength - minBlockLength + 1)) + minBlockLength;
+    const blockLength = Math.min(sampledBlockLength, totalYears - path.length);
+    const maxStartIndex = Math.max(0, dataLength - blockLength);
+    const startIndex = Math.floor(Math.random() * (maxStartIndex + 1));
+
+    for (let i = 0; i < blockLength; i++) {
+      path.push(HISTORICAL_ANNUAL[startIndex + i]);
+    }
+  }
+
+  return path;
 };
 
 // Generate random normal using Box-Muller transform
@@ -183,6 +198,7 @@ const runEnhancedSimulation = (params) => {
     inflationRate, taxRate, includeHealthcare,
     healthcareCostBase,
     simulationModel, customReturns,
+    historicalBlockLength,
     withdrawalModel, withdrawalPercent,
   } = params;
 
@@ -196,6 +212,10 @@ const runEnhancedSimulation = (params) => {
   const yearlyBalances = [traditional + roth + taxable];
   let cumulativeInflation = 1;
   let healthcareCost = healthcareCostBase;
+
+  const historicalPath = simulationModel === 'historical'
+    ? generateHistoricalPath(totalYears, historicalBlockLength)
+    : null;
 
   for (let year = 1; year <= totalYears; year++) {
     const age = currentAge + year;
@@ -217,7 +237,10 @@ const runEnhancedSimulation = (params) => {
 
     // Generate returns based on simulation model
     const { stockReturn, bondReturn, cashReturn } = simulationModel === 'historical'
-      ? generateHistoricalReturns()
+      ? (() => {
+        const [stock, bond, cash] = historicalPath[year - 1];
+        return { stockReturn: stock, bondReturn: bond, cashReturn: cash };
+      })()
       : generateCorrelatedReturns(simulationModel === 'parameterized' ? customReturns : null);
 
     // Calculate blended portfolio return
@@ -775,6 +798,7 @@ const MonteCarloSimulator = () => {
   const [customBondsStdDev, setCustomBondsStdDev] = useState(5);
   const [customCashMean, setCustomCashMean] = useState(3);
   const [customCashStdDev, setCustomCashStdDev] = useState(1);
+  const [historicalBlockLength, setHistoricalBlockLength] = useState(5);
 
   // Withdrawal model
   const [withdrawalModel, setWithdrawalModel] = useState('fixed');
@@ -834,6 +858,7 @@ const MonteCarloSimulator = () => {
         stocksPercent, bondsPercent, useGlidePath,
         inflationRate, taxRate, taxableEffectiveTaxRate, includeHealthcare, healthcareCostBase: healthCost,
         simulationModel,
+        historicalBlockLength,
         customReturns: simulationModel === 'parameterized' ? {
           stocks: { mean: customStocksMean / 100, stdDev: customStocksStdDev / 100 },
           bonds: { mean: customBondsMean / 100, stdDev: customBondsStdDev / 100 },
@@ -987,9 +1012,14 @@ const MonteCarloSimulator = () => {
         </select>
         <p className="text-[10px] text-slate-400">
           {simulationModel === 'statistical' && 'Generates correlated returns using long-run mean & volatility with Cholesky decomposition.'}
-          {simulationModel === 'historical' && 'Randomly samples full calendar years from 1972-2024 historical data, preserving cross-asset correlation.'}
+          {simulationModel === 'historical' && `Uses block bootstrap from 1972-2024 annual returns (random contiguous blocks around ${historicalBlockLength} years, preserving within-block sequence and cross-asset correlation).`}
           {simulationModel === 'parameterized' && 'Uses your custom return assumptions below.'}
         </p>
+        {simulationModel === 'historical' && (
+          <div className="mt-3 rounded-xl border border-indigo-100 bg-indigo-50 p-3 text-xs text-indigo-800">
+            Sampling method: Historical block bootstrap using ~{historicalBlockLength}-year contiguous blocks.
+          </div>
+        )}
         {simulationModel === 'parameterized' && (
           <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
             <div className="font-medium text-slate-600 col-span-3 grid grid-cols-3 gap-2">
@@ -1271,6 +1301,23 @@ const MonteCarloSimulator = () => {
                   <input type="number" value={healthcareCostBase} onChange={(e) => setHealthcareCostBase(e.target.value)}
                     placeholder="8,000" className="w-full pl-8 pr-4 py-2 border-2 rounded-xl" min={0} step={1000} />
                 </div>
+              </div>
+            )}
+            {simulationModel === 'historical' && (
+              <div>
+                <label className="block text-sm text-slate-600 mb-1">Historical Block Length: {historicalBlockLength} years</label>
+                <input
+                  type="range"
+                  value={historicalBlockLength}
+                  onChange={(e) => setHistoricalBlockLength(Number(e.target.value))}
+                  className="w-full"
+                  min={3}
+                  max={10}
+                  step={1}
+                />
+                <p className="text-xs text-slate-500 mt-1">
+                  Simulations sample contiguous blocks from ~{Math.max(1, historicalBlockLength - 2)} to {historicalBlockLength + 2} years.
+                </p>
               </div>
             )}
           </div>
