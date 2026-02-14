@@ -16,6 +16,13 @@ import { toYMD, startOfMonth, addMonths, sameMonth, idForInstance, parseLocalDat
 import { parseAmt } from './utils/formatters';
 import { calculateNextPayDates, monthlyTotal } from './utils/calculations';
 import { createStorageRepository } from './storage/repository';
+import {
+  BUDGET_CATEGORIES,
+  monthKeyFromDate,
+  normalizeBudgetsConfig,
+  resolveBudgetCapsForMonth,
+  upsertMonthlyBudgetCaps,
+} from './utils/budgetEngine';
 
 // Bill Database utilities
 import {
@@ -82,14 +89,8 @@ const BillPayPlanner = () => {
   const [emergencyFund, setEmergencyFund] = useState({ target: 0, current: 0 });
   const [debtPayoff, setDebtPayoff] = useState([]);
   const [envelopes, setEnvelopes] = useState([]);
-  const [budgets, setBudgets] = useState({
-    utilities: 0,
-    subscription: 0,
-    insurance: 0,
-    loan: 0,
-    rent: 0,
-    other: 0,
-  });
+  const [budgets, setBudgets] = useState(normalizeBudgetsConfig(null));
+  const [budgetEditorMonth, setBudgetEditorMonth] = useState(new Date());
   const [actualPayEntries, setActualPayEntries] = useState([]);
   const [scannedReceipts, setScannedReceipts] = useState([]);
   const [investments, setInvestments] = useState([]);
@@ -206,16 +207,7 @@ const BillPayPlanner = () => {
         setEmergencyFund(data.emergencyFund || { target: 0, current: 0 });
         setDebtPayoff(Array.isArray(data.debtPayoff) ? data.debtPayoff : []);
         setEnvelopes(Array.isArray(data.envelopes) ? data.envelopes : []);
-        setBudgets(
-          data.budgets || {
-            utilities: 0,
-            subscription: 0,
-            insurance: 0,
-            loan: 0,
-            rent: 0,
-            other: 0,
-          }
-        );
+        setBudgets(normalizeBudgetsConfig(data.budgets));
         setActualPayEntries(Array.isArray(data.actualPayEntries) ? data.actualPayEntries : []);
         setScannedReceipts(Array.isArray(data.scannedReceipts) ? data.scannedReceipts : []);
         setInvestments(Array.isArray(data.investments) ? data.investments : []);
@@ -906,6 +898,9 @@ const BillPayPlanner = () => {
   const perCheckEnvelopeSum = () =>
     envelopes.reduce((s, e) => s + parseAmt(e.perCheck), 0);
 
+  const budgetEditorMonthKey = monthKeyFromDate(budgetEditorMonth);
+  const budgetEditorCaps = resolveBudgetCapsForMonth(budgets, budgetEditorMonthKey);
+
   // ---------- Backup / Restore ----------
   const exportBackup = () => {
     const payload = {
@@ -960,16 +955,7 @@ const BillPayPlanner = () => {
     setEmergencyFund(d?.emergencyFund || { target: 0, current: 0 });
     setDebtPayoff(Array.isArray(d?.debtPayoff) ? d.debtPayoff : []);
     setEnvelopes(Array.isArray(d?.envelopes) ? d.envelopes : []);
-    setBudgets(
-      d?.budgets || {
-        utilities: 0,
-        subscription: 0,
-        insurance: 0,
-        loan: 0,
-        rent: 0,
-        other: 0,
-      }
-    );
+    setBudgets(normalizeBudgetsConfig(d?.budgets));
     setActualPayEntries(Array.isArray(d?.actualPayEntries) ? d.actualPayEntries : []);
     setScannedReceipts(Array.isArray(d?.scannedReceipts) ? d.scannedReceipts : []);
     setInvestments(Array.isArray(d?.investments) ? d.investments : []);
@@ -1624,34 +1610,78 @@ const BillPayPlanner = () => {
 
             {/* Category Budgets */}
             <div className="bg-white rounded-2xl shadow-xl p-5 mt-6">
-              <div className="flex items-center justify-between mb-3">
-                <h3 className="font-bold text-slate-800">Category Budgets</h3>
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+                <div>
+                  <h3 className="font-bold text-slate-800">Category Budgets (Phase 1C)</h3>
+                  <p className="text-xs text-slate-500">Month-specific plan-vs-actual setup with history snapshots.</p>
+                </div>
+                <input
+                  type="month"
+                  value={budgetEditorMonthKey}
+                  onChange={(e) => {
+                    if (!e.target.value) return;
+                    const [year, month] = e.target.value.split('-').map(Number);
+                    setBudgetEditorMonth(new Date(year, month - 1, 1));
+                  }}
+                  className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-2 text-sm">
+                {BUDGET_CATEGORIES.map((category) => (
+                  <label
+                    key={category}
+                    className="p-3 bg-slate-50 rounded-xl flex flex-col gap-1"
+                  >
+                    <span className="font-semibold capitalize text-slate-700">{category}</span>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={budgetEditorCaps[category] ?? 0}
+                      onChange={(e) => {
+                        const val = parseAmt(e.target.value || 0);
+                        setBudgets((prev) => upsertMonthlyBudgetCaps(prev, budgetEditorMonthKey, { [category]: val }));
+                      }}
+                      className="rounded-md border border-slate-300 px-2 py-1"
+                    />
+                  </label>
+                ))}
+              </div>
+
+              <div className="mt-4 flex flex-wrap items-center gap-2 text-xs">
                 <Button
                   variant="secondary"
-                  size="sm"
-                  className="bg-emerald-100 text-emerald-700"
+                  size="xs"
+                  className="bg-indigo-100 text-indigo-700"
                   onClick={() => {
-                    const cat = prompt(
-                      'Category (utilities, subscription, insurance, loan, rent, other):'
-                    );
-                    if (!cat) return;
-                    const cap = parseAmt(prompt('Monthly cap:') || 0);
-                    setBudgets({ ...budgets, [cat]: cap });
+                    setBudgets((prev) => ({
+                      ...prev,
+                      exclusions: {
+                        ...prev.exclusions,
+                        excludeTransfers: !prev.exclusions?.excludeTransfers,
+                      },
+                    }));
                   }}
                 >
-                  Set/Update
+                  Transfers: {budgets.exclusions?.excludeTransfers ? 'Excluded' : 'Included'}
                 </Button>
-              </div>
-              <div className="grid grid-cols-2 gap-2 text-sm">
-                {Object.entries(budgets).map(([k, v]) => (
-                  <div
-                    key={k}
-                    className="p-3 bg-slate-50 rounded-xl flex items-center justify-between"
-                  >
-                    <span className="font-semibold capitalize">{k}</span>
-                    <span>${parseAmt(v).toFixed(2)}</span>
-                  </div>
-                ))}
+                <Button
+                  variant="secondary"
+                  size="xs"
+                  className="bg-indigo-100 text-indigo-700"
+                  onClick={() => {
+                    setBudgets((prev) => ({
+                      ...prev,
+                      exclusions: {
+                        ...prev.exclusions,
+                        excludeRefunds: !prev.exclusions?.excludeRefunds,
+                      },
+                    }));
+                  }}
+                >
+                  Refunds: {budgets.exclusions?.excludeRefunds ? 'Excluded' : 'Included'}
+                </Button>
               </div>
             </div>
           </>
@@ -1740,6 +1770,7 @@ const BillPayPlanner = () => {
             bills={bills}
             historicalBills={historicalBills}
             scannedReceipts={scannedReceipts}
+            syncedTransactions={syncedTransactions}
             nextPayDates={nextPayDates}
             paySchedule={paySchedule}
             budgets={budgets}
