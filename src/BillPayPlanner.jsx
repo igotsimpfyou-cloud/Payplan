@@ -1545,36 +1545,13 @@ const BillPayPlanner = () => {
               </span>
             </div>
 
-            {(viewContext.description || siblingViews.length > 1) && (
+            {viewContext.description && (
               <div className="mt-2 flex flex-wrap items-center gap-2">
                 {viewContext.icon && (
                   <viewContext.icon size={14} className="text-white/85" />
                 )}
                 {viewContext.description && (
                   <p className="text-xs text-white/90 mr-1">{viewContext.description}</p>
-                )}
-                {siblingViews.length > 1 && (
-                  <div className="flex flex-wrap items-center gap-1">
-                    {siblingViews.map((sibling) => {
-                      const SiblingIcon = sibling.icon;
-                      const isActiveSibling = sibling.viewId === view;
-
-                      return (
-                        <button
-                          key={sibling.viewId}
-                          onClick={() => setView(sibling.viewId)}
-                          className={`px-2 py-1 rounded-lg text-[11px] sm:text-xs font-semibold flex items-center gap-1 transition-colors ${
-                            isActiveSibling
-                              ? 'bg-white text-emerald-700'
-                              : 'bg-white/20 text-white hover:bg-white/30'
-                          }`}
-                        >
-                          {SiblingIcon && <SiblingIcon size={11} />}
-                          {sibling.label}
-                        </button>
-                      );
-                    })}
-                  </div>
                 )}
               </div>
             )}
