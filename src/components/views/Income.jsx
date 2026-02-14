@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { DollarSign, Clock, Trash2, Calendar, Edit2 } from 'lucide-react';
+import { DollarSign, Clock, Trash2, Calendar, Edit2, ArrowRight, ListChecks } from 'lucide-react';
 import { parseAmt } from '../../utils/formatters';
 import { parseLocalDate, toYMD } from '../../utils/dateHelpers';
 import { uiSpacing, uiTap, uiType } from '../../constants/uiPresets';
@@ -94,9 +94,18 @@ export const Income = ({
             )}
           </div>
         ) : (
-          <div className="text-center py-6">
-            <DollarSign size={32} className="mx-auto text-slate-300 mb-2" />
-            <p className={`text-slate-400 ${uiType.helperText}`}>Set up your pay schedule to track income</p>
+          <div className="text-center py-6 rounded-xl border border-dashed border-emerald-200 bg-emerald-50/60">
+            <DollarSign size={32} className="mx-auto text-emerald-400 mb-2" />
+            <p className="text-slate-700 text-sm font-semibold">Set up your pay schedule first</p>
+            <p className={`text-slate-500 mt-1 mb-3 ${uiType.helperText}`}>
+              Add your frequency and paycheck amount to unlock paycheck forecasts.
+            </p>
+            <button
+              onClick={onEditPaySchedule}
+              className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold ${uiTap.control}`}
+            >
+              Set pay schedule <ArrowRight size={14} />
+            </button>
           </div>
         )}
       </div>
@@ -142,11 +151,18 @@ export const Income = ({
         </div>
         <button
           onClick={handleAddPay}
-          disabled={!payDate || !payAmount}
+          disabled={!payDate || !payAmount || !paySchedule}
           className={`w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 text-white rounded-xl font-semibold transition-colors ${uiTap.control}`}
         >
           Log Pay
         </button>
+
+        {!paySchedule && (
+          <p className={`text-amber-600 mt-2 flex items-center gap-1.5 ${uiType.helperText}`}>
+            <ListChecks size={12} />
+            Complete pay schedule setup to start logging actual pay.
+          </p>
+        )}
 
         {/* Pay History */}
         {sortedPayEntries.length > 0 && (
