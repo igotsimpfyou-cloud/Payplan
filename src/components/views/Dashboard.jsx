@@ -21,7 +21,8 @@ export const Dashboard = ({
   const allBills = bills.length > 0 ? bills : billInstances;
   const perCheck = parseAmt(paySchedule?.payAmount);
 
-  // Safe to spend: next paycheck amount minus bills assigned to that check
+  // Safe to spend: next paycheck amount minus all bills assigned to that check
+  // (including already-paid bills so spending doesn't get added back after payment)
   const safeToSpend = useMemo(() => {
     if (!nextPayDates.length || !perCheck) return null;
 
@@ -31,9 +32,17 @@ export const Dashboard = ({
     const checkAmount = actualEntry ? parseAmt(actualEntry.amount) : perCheck;
 
     // Bills assigned to check 1 (next paycheck)
-    const billsForNextCheck = allBills
-      .filter((b) => b.assignedCheck === 1 && !b.paid)
-      .reduce((sum, b) => sum + parseAmt(b.amountEstimate ?? b.amount), 0);
+    const billsForNextCheck = allBills.filter((b) => b.assignedCheck === 1);
+
+    const paidBillsTotal = billsForNextCheck
+      .filter((b) => b.paid)
+      .reduce((sum, b) => sum + parseAmt(b.actualPaid ?? b.amountEstimate ?? b.amount), 0);
+
+    const toPayBillsTotal = billsForNextCheck
+      .filter((b) => !b.paid)
+      .reduce((sum, b) => sum + parseAmt(b.actualPaid ?? b.amountEstimate ?? b.amount), 0);
+
+    const billsTotal = paidBillsTotal + toPayBillsTotal;
 
     // Receipts in this pay period
     const receiptTotal = scannedReceipts
@@ -44,9 +53,11 @@ export const Dashboard = ({
       .reduce((sum, r) => sum + parseAmt(r.amount), 0);
 
     return {
-      amount: checkAmount - perCheckEnvelopeSum - billsForNextCheck - receiptTotal,
+      amount: checkAmount - perCheckEnvelopeSum - billsTotal - receiptTotal,
       checkAmount,
-      billsTotal: billsForNextCheck,
+      billsTotal,
+      paidBillsTotal,
+      toPayBillsTotal,
       envelopeTotal: perCheckEnvelopeSum,
     };
   }, [allBills, nextPayDates, paySchedule, perCheckEnvelopeSum, scannedReceipts, actualPayEntries, perCheck]);
@@ -116,6 +127,7 @@ export const Dashboard = ({
             <span>Paycheck ${safeToSpend.checkAmount.toFixed(0)}</span>
             <span>-</span>
             <span>Bills ${safeToSpend.billsTotal.toFixed(0)}</span>
+            <span>(Paid ${safeToSpend.paidBillsTotal.toFixed(0)} · To pay ${safeToSpend.toPayBillsTotal.toFixed(0)})</span>
             {safeToSpend.envelopeTotal > 0 && (
               <>
                 <span>-</span>
