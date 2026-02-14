@@ -18,6 +18,13 @@ export const Settings = ({
   onImportBackup,
   billInstances = [],
   bills = [],
+  institutions = [],
+  accountConnections = [],
+  syncedAccounts = [],
+  syncJobs = [],
+  onLinkInstitution,
+  onRunSync,
+  onUnlinkConnection,
   onDeduplicateBills,
   onMarkPastBillsPaid,
 }) => {
@@ -25,7 +32,16 @@ export const Settings = ({
     <div>
       <SettingsSectionNav sections={SETTINGS_SECTIONS} />
 
-      <IntegrationsSection billInstances={billInstances} />
+      <IntegrationsSection
+        billInstances={billInstances}
+        institutions={institutions}
+        accountConnections={accountConnections}
+        syncedAccounts={syncedAccounts}
+        syncJobs={syncJobs}
+        onLinkInstitution={onLinkInstitution}
+        onRunSync={onRunSync}
+        onUnlinkConnection={onUnlinkConnection}
+      />
 
       <DataManagementSection bills={bills} />
 

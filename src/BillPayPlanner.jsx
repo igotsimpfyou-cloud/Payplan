@@ -94,6 +94,13 @@ const BillPayPlanner = () => {
   const [scannedReceipts, setScannedReceipts] = useState([]);
   const [investments, setInvestments] = useState([]);
 
+  // Phase 1A - account aggregation foundation
+  const [institutions, setInstitutions] = useState([]);
+  const [accountConnections, setAccountConnections] = useState([]);
+  const [syncedAccounts, setSyncedAccounts] = useState([]);
+  const [syncedTransactions, setSyncedTransactions] = useState([]);
+  const [syncJobs, setSyncJobs] = useState([]);
+
   // UI modals
   const [showTemplateForm, setShowTemplateForm] = useState(false);
   const [editingTemplate, setEditingTemplate] = useState(null);
@@ -212,6 +219,11 @@ const BillPayPlanner = () => {
         setActualPayEntries(Array.isArray(data.actualPayEntries) ? data.actualPayEntries : []);
         setScannedReceipts(Array.isArray(data.scannedReceipts) ? data.scannedReceipts : []);
         setInvestments(Array.isArray(data.investments) ? data.investments : []);
+        setInstitutions(Array.isArray(data.institutions) ? data.institutions : []);
+        setAccountConnections(Array.isArray(data.accountConnections) ? data.accountConnections : []);
+        setSyncedAccounts(Array.isArray(data.syncedAccounts) ? data.syncedAccounts : []);
+        setSyncedTransactions(Array.isArray(data.syncedTransactions) ? data.syncedTransactions : []);
+        setSyncJobs(Array.isArray(data.syncJobs) ? data.syncJobs : []);
       } catch (err) {
         console.warn('Load error', err);
       } finally {
@@ -235,6 +247,11 @@ const BillPayPlanner = () => {
   useEffect(() => { persistCollection('actualPayEntries', actualPayEntries); }, [actualPayEntries]);
   useEffect(() => { persistCollection('scannedReceipts', scannedReceipts); }, [scannedReceipts]);
   useEffect(() => { persistCollection('investments', investments); }, [investments]);
+  useEffect(() => { persistCollection('institutions', institutions); }, [institutions]);
+  useEffect(() => { persistCollection('accountConnections', accountConnections); }, [accountConnections]);
+  useEffect(() => { persistCollection('syncedAccounts', syncedAccounts); }, [syncedAccounts]);
+  useEffect(() => { persistCollection('syncedTransactions', syncedTransactions); }, [syncedTransactions]);
+  useEffect(() => { persistCollection('syncJobs', syncJobs); }, [syncJobs]);
   useEffect(() => { persistCollection('bills', bills); }, [bills]);
   useEffect(() => { persistCollection('historicalBills', historicalBills); }, [historicalBills]);
   useEffect(() => { persistCollection('paychecks', paychecks); }, [paychecks]);
@@ -244,6 +261,130 @@ const BillPayPlanner = () => {
   useEffect(() => () => {
     flushQueuedWrites();
   }, []);
+
+
+  const connectorCatalog = useMemo(
+    () => [
+      { id: 'chase-demo', name: 'Chase (Demo Connector)' },
+      { id: 'boa-demo', name: 'Bank of America (Demo Connector)' },
+      { id: 'amex-demo', name: 'American Express (Demo Connector)' },
+    ],
+    []
+  );
+
+  const handleLinkInstitution = () => {
+    const available = connectorCatalog.find(
+      (institution) => !accountConnections.some((connection) => connection.institutionId === institution.id)
+    ) || connectorCatalog[0];
+
+    if (!available) return;
+
+    const nowIso = new Date().toISOString();
+    const connectionId = `conn-${Date.now()}`;
+
+    const institutionRecord = {
+      id: available.id,
+      name: available.name,
+      connector: 'demo',
+      linkedAt: nowIso,
+    };
+
+    setInstitutions((prev) => {
+      if (prev.some((item) => item.id === institutionRecord.id)) return prev;
+      return [...prev, institutionRecord];
+    });
+
+    const connectionRecord = {
+      id: connectionId,
+      institutionId: institutionRecord.id,
+      institutionName: institutionRecord.name,
+      status: 'connected',
+      linkedAt: nowIso,
+      lastSyncAt: nowIso,
+    };
+    setAccountConnections((prev) => [...prev, connectionRecord]);
+
+    const sampleAccounts = [
+      { id: `acct-${connectionId}-checking`, type: 'checking', name: 'Everyday Checking', maskedIdentifier: '••••1024', currentBalance: 3250.12 },
+      { id: `acct-${connectionId}-savings`, type: 'savings', name: 'High-Yield Savings', maskedIdentifier: '••••8821', currentBalance: 12840.45 },
+    ].map((account) => ({
+      ...account,
+      connectionId,
+      institutionId: institutionRecord.id,
+      connectionStatus: 'connected',
+      lastSyncAt: nowIso,
+    }));
+
+    setSyncedAccounts((prev) => [...prev, ...sampleAccounts]);
+  };
+
+  const handleRunSync = () => {
+    if (!accountConnections.length) return;
+
+    const startedAt = new Date().toISOString();
+    const syncJob = {
+      id: `sync-${Date.now()}`,
+      status: 'success',
+      trigger: 'manual',
+      startedAt,
+      finishedAt: startedAt,
+      errorMessage: null,
+    };
+
+    setSyncJobs((prev) => [syncJob, ...prev].slice(0, 25));
+
+    setAccountConnections((prev) =>
+      prev.map((connection) => ({
+        ...connection,
+        status: 'connected',
+        lastSyncAt: startedAt,
+      }))
+    );
+
+    setSyncedAccounts((prev) =>
+      prev.map((account) => ({
+        ...account,
+        connectionStatus: 'connected',
+        lastSyncAt: startedAt,
+      }))
+    );
+
+    const generatedTransactions = syncedAccounts.map((account, index) => ({
+      id: `txn-${account.id}-${Date.now()}-${index}`,
+      accountId: account.id,
+      description: index % 2 === 0 ? 'Coffee Shop' : 'Payroll Deposit',
+      amount: index % 2 === 0 ? -12.75 : 1200,
+      status: index % 2 === 0 ? 'pending' : 'posted',
+      postedAt: startedAt,
+      dedupeKey: `${account.id}-${startedAt}-${index}`,
+    }));
+
+    if (generatedTransactions.length) {
+      setSyncedTransactions((prev) => [...generatedTransactions, ...prev].slice(0, 500));
+    }
+  };
+
+  const handleUnlinkConnection = (connectionId) => {
+    setAccountConnections((prev) => prev.filter((connection) => connection.id !== connectionId));
+    setSyncedAccounts((prev) => prev.filter((account) => account.connectionId !== connectionId));
+    setSyncedTransactions((prev) => {
+      const accountIds = new Set(
+        syncedAccounts.filter((account) => account.connectionId === connectionId).map((account) => account.id)
+      );
+      return prev.filter((transaction) => !accountIds.has(transaction.accountId));
+    });
+    setSyncJobs((prev) => [
+      {
+        id: `sync-${Date.now()}`,
+        status: 'success',
+        trigger: 'unlink',
+        startedAt: new Date().toISOString(),
+        finishedAt: new Date().toISOString(),
+        errorMessage: null,
+      },
+      ...prev,
+    ].slice(0, 25));
+  };
   // ---------- Monthly rollover - generate new month's bills on first load ----------
   useEffect(() => {
     if (!billTemplates.length || loading) return;
@@ -1752,6 +1893,13 @@ const BillPayPlanner = () => {
                   onExportBackup={exportBackup}
                   onImportBackup={importBackupFromFile}
                   bills={bills}
+                  institutions={institutions}
+                  accountConnections={accountConnections}
+                  syncedAccounts={syncedAccounts}
+                  syncJobs={syncJobs}
+                  onLinkInstitution={handleLinkInstitution}
+                  onRunSync={handleRunSync}
+                  onUnlinkConnection={handleUnlinkConnection}
                   onDeduplicateBills={() => {
                     const billsByNameMonth = {};
                     let removed = 0;
