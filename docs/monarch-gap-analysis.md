@@ -106,6 +106,115 @@ Monarch has a mature production product posture. PayPlan is a lightweight app sh
 2. Build transaction feed + categorization + rules.
 3. Introduce category budget engine with plan-vs-actual reporting.
 
+---
+
+## Phase 1 detailed comparison and delivery plan
+
+This phase closes the biggest product-positioning gap by shifting PayPlan from a manual planning system into a transaction-aware financial hub. In Monarch terms, this is the minimum viable foundation required before net worth, subscriptions, insights, and collaboration can deliver high-quality outputs.
+
+### Phase 1A — Account aggregation + sync foundation
+
+**Objective:** establish trusted, continuous inflow of account and transaction data.
+
+**User-facing outcomes:**
+- Users can link institutions through a secure connector flow.
+- Users can see all linked accounts and balances in one place.
+- Users can monitor sync health and recover from broken connections.
+
+**Capability comparison (Monarch vs current PayPlan):**
+- Monarch: institution linking and account sync are first-class onboarding.
+- PayPlan today: no linked institutions; no account-level transaction ingestion.
+- Phase-1 target: linked accounts with recurring sync, status visibility, and reconnect flows.
+
+**Core functional requirements:**
+- Institution search/link/unlink UX.
+- Account inventory with type, masked identifiers, current balance, and last sync timestamp.
+- Transaction ingestion pipeline with pending/posted support and de-duplication keys.
+- Sync scheduler (manual + background) and connector error-state handling.
+- Data model additions for institutions, accounts, connections, and sync jobs.
+
+**Definition of done:**
+- At least one connector integrated end-to-end.
+- Linked accounts persist across app restarts.
+- Sync status is visible and actionable in UI.
+- Imported data is available for Phase 1B transaction workflows.
+
+### Phase 1B — Transaction feed + categorization + rules
+
+**Objective:** make transaction intelligence the operational center of the app.
+
+**User-facing outcomes:**
+- Users can browse/search/filter all synced transactions.
+- Users can categorize transactions quickly, including bulk operations.
+- Users can create auto-categorization rules that apply on future syncs.
+
+**Capability comparison (Monarch vs current PayPlan):**
+- Monarch: transaction feed is the core daily workflow.
+- PayPlan today: planning-oriented bills/goals without a full transaction ledger.
+- Phase-1 target: full ledger with deterministic categorization and automation.
+
+**Core functional requirements:**
+- Unified transaction register (date, merchant, account, amount, category, status).
+- Filter/search/sort (merchant, account, category, date range, amount range).
+- Category management and bulk recategorization.
+- Rules engine with priority/order and deterministic reprocessing.
+- Optional metadata fields: tags, notes, splits.
+
+**Definition of done:**
+- Transaction feed renders synced data at usable performance.
+- Category updates are persisted and auditable.
+- Rules apply automatically to new imports and can be backfilled safely.
+- Users can resolve uncategorized transactions with minimal friction.
+
+### Phase 1C — Budget engine with plan-vs-actual
+
+**Objective:** connect transaction reality to monthly budget intent.
+
+**User-facing outcomes:**
+- Users can define monthly category budgets.
+- Users can see actual spend/income versus budget in real time.
+- Users can identify over/under budget categories quickly.
+
+**Capability comparison (Monarch vs current PayPlan):**
+- Monarch: monthly budget lifecycle is transaction-driven.
+- PayPlan today: planning fields exist but are not powered by synced actuals.
+- Phase-1 target: category budgets with live actuals from Phase 1A/1B transaction data.
+
+**Core functional requirements:**
+- Monthly budget setup/editing with category targets.
+- Budget calculation layer (assigned, spent, remaining, percentage).
+- Rollup views (overall month health + per-category progress).
+- Month navigation and budget history snapshots.
+- Handling rules for transfers/refunds and excluded transactions.
+
+**Definition of done:**
+- Budget numbers reconcile with categorized transactions for the selected period.
+- Over/under indicators are visible in dashboard and category-level views.
+- Month-to-month history can be reviewed without data loss.
+- Budget outputs can support later phases (alerts, forecasting, reporting).
+
+### Suggested execution sequence and dependencies
+
+1. **Data contracts first:** finalize shared schemas for institutions/accounts/transactions/categories/budgets.
+2. **Ingestion before intelligence:** complete sync reliability before advanced rules and budget math.
+3. **Categorization before budgets:** ensure category quality is high enough to trust plan-vs-actual outputs.
+4. **Instrumentation throughout:** add telemetry for sync failures, uncategorized rate, and budget coverage.
+
+### Phase 1 success metrics
+
+- **Connectivity:** % of active users with at least one linked institution.
+- **Freshness:** median transaction sync latency.
+- **Data quality:** uncategorized transaction rate after 7 days.
+- **Engagement:** weekly transaction review rate.
+- **Budget adoption:** % of active users with at least one configured monthly budget.
+
+### Risks and mitigations
+
+- **Connector instability risk:** design retry/backoff and user-visible remediation guidance.
+- **Data ambiguity risk (merchant/category noise):** expose bulk editing and clear rule precedence.
+- **Trust risk from mismatched totals:** build reconciliation checks and clear transfer/refund handling.
+- **Scope creep risk:** keep Phase 1 focused on dependable ingestion, categorization, and budget basics.
+
 ### Phase 2
 4. Net worth dashboard driven by synced balances.
 5. Recurring/subscription detection and alerts.
