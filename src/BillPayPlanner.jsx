@@ -55,6 +55,7 @@ import { Investments } from './components/views/Investments';
 import { DebtTracker } from './components/views/DebtTracker';
 import { GoalsDashboard } from './components/views/GoalsDashboard';
 import { Button } from './components/ui/Button';
+import { useToast } from './hooks/useToast';
 
 /**
  * PayPlan Pro - Slim Orchestrator
@@ -115,6 +116,7 @@ const BillPayPlanner = () => {
   const quickSwitchInputRef = useRef(null);
 
   const storageRef = useRef(null);
+  const { showToast } = useToast();
 
   const persistCollection = async (name, value) => {
     if (!storageRef.current) return;
@@ -669,6 +671,7 @@ const BillPayPlanner = () => {
       );
       queueRecordPatch('bills', { type: 'patch', id: instanceId, patch: { paid: nowPaid, paidDate } });
       flushQueuedWrites();
+      showToast(nowPaid ? `${bill.name} marked paid` : `${bill.name} marked unpaid`, nowPaid ? 'success' : 'info');
       return;
     }
 
@@ -684,6 +687,7 @@ const BillPayPlanner = () => {
     setBillInstances((prev) =>
       prev.map((i) => (i.id === instanceId ? { ...i, paid: nowPaid } : i))
     );
+    showToast(nowPaid ? `${inst.name} marked paid` : `${inst.name} marked unpaid`, nowPaid ? 'success' : 'info');
 
     if (nowPaid) {
       const tmpl = billTemplates.find((t) => t.id === inst.templateId);
@@ -691,6 +695,61 @@ const BillPayPlanner = () => {
         ensureNextMonthForTemplate(tmpl, new Date(inst.dueDate));
       }
     }
+  };
+
+  const snoozeBillOneDay = (instanceId) => {
+    const bill = bills.find((b) => b.id === instanceId);
+    if (bill) {
+      const due = parseMMDDYYYY(bill.dueDate);
+      if (!due) return;
+      due.setDate(due.getDate() + 1);
+      const dueDate = toMMDDYYYY(due);
+      setBills((prev) => prev.map((b) => (b.id === instanceId ? { ...b, dueDate } : b)));
+      queueRecordPatch('bills', { type: 'patch', id: instanceId, patch: { dueDate } });
+      flushQueuedWrites();
+      showToast(`${bill.name} snoozed to ${due.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`, 'info');
+      return;
+    }
+
+    const inst = billInstances.find((i) => i.id === instanceId);
+    if (!inst) return;
+    const due = parseLocalDate(inst.dueDate);
+    if (!due) return;
+    due.setDate(due.getDate() + 1);
+    const dueDate = toYMD(due);
+    setBillInstances((prev) => prev.map((i) => (i.id === instanceId ? { ...i, dueDate } : i)));
+    showToast(`${inst.name} snoozed by 1 day`, 'info');
+  };
+
+  const assignBillToNextPaycheck = (instanceId) => {
+    if (!nextPayDates.length) {
+      showToast('Add a pay schedule to assign this bill', 'warning');
+      return;
+    }
+
+    const bill = bills.find((b) => b.id === instanceId);
+    if (bill) {
+      const assignedPayDate = toMMDDYYYY(nextPayDates[0]);
+      setBills((prev) => prev.map((b) => (b.id === instanceId
+        ? { ...b, assignedCheck: 1, assignedPayDate, manuallyAssigned: true }
+        : b)));
+      queueRecordPatch('bills', {
+        type: 'patch',
+        id: instanceId,
+        patch: { assignedCheck: 1, assignedPayDate, manuallyAssigned: true },
+      });
+      flushQueuedWrites();
+      showToast(`${bill.name} assigned to next paycheck`, 'success');
+      return;
+    }
+
+    const inst = billInstances.find((i) => i.id === instanceId);
+    if (!inst) return;
+    const assignedPayDate = toYMD(nextPayDates[0]);
+    setBillInstances((prev) => prev.map((i) => (i.id === instanceId
+      ? { ...i, assignedCheck: 1, assignedPayDate, manuallyAssigned: true }
+      : i)));
+    showToast(`${inst.name} assigned to next paycheck`, 'success');
   };
 
   // ---------- Submit Actuals ----------
@@ -1629,6 +1688,7 @@ const BillPayPlanner = () => {
           </div>
         )}
 
+        <div key={view} className="animate-view-swap">
         {/* ===== HOME ===== */}
         {view === 'dashboard' && (
           <Dashboard
@@ -1645,6 +1705,8 @@ const BillPayPlanner = () => {
             onNavigateToChecklist={() => setView('bills-dashboard')}
             onNavigateToIncome={() => setView('income')}
             onNavigateToBillsSetup={() => setView('bills-setup')}
+            onSnoozeBillOneDay={snoozeBillOneDay}
+            onAssignBillToNextPaycheck={assignBillToNextPaycheck}
           />
         )}
 
@@ -1961,6 +2023,8 @@ const BillPayPlanner = () => {
         {view === 'goals-analytics' && (
           <Retirement />
         )}
+        </div>
+
         {/* Modals */}
         {showTemplateForm && (
           <TemplateForm

@@ -29,6 +29,8 @@ export const Dashboard = ({
   onNavigateToChecklist,
   onNavigateToIncome,
   onNavigateToBillsSetup,
+  onSnoozeBillOneDay,
+  onAssignBillToNextPaycheck,
 }) => {
   const [focusMode, setFocusMode] = useState(false);
   const allBills = bills.length > 0 ? bills : billInstances;
@@ -293,9 +295,17 @@ export const Dashboard = ({
                     {event.type === 'paycheck' ? '+' : '-'}${event.amount.toFixed(2)}
                   </span>
                   {event.type === 'bill' && (
-                    <Button size="xs" variant="ghost" className="text-emerald-700" onClick={() => onToggleInstancePaid(event.billId)}>
-                      Mark paid
-                    </Button>
+                    <div className="flex items-center gap-1">
+                      <Button size="xs" variant="ghost" className="text-emerald-700" onClick={() => onToggleInstancePaid(event.billId)}>
+                        Mark paid
+                      </Button>
+                      <Button size="xs" variant="ghost" className="text-slate-600" onClick={() => onSnoozeBillOneDay(event.billId)}>
+                        Snooze 1 day
+                      </Button>
+                      <Button size="xs" variant="ghost" className="text-blue-700" onClick={() => onAssignBillToNextPaycheck(event.billId)}>
+                        Assign to paycheck
+                      </Button>
+                    </div>
                   )}
                 </div>
               </div>
