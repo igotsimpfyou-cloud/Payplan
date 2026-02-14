@@ -1643,6 +1643,8 @@ const BillPayPlanner = () => {
             perCheckEnvelopeSum={perCheckEnvelopeSum()}
             onToggleInstancePaid={toggleInstancePaid}
             onNavigateToChecklist={() => setView('bills-dashboard')}
+            onNavigateToIncome={() => setView('income')}
+            onNavigateToBillsSetup={() => setView('bills-setup')}
           />
         )}
 
