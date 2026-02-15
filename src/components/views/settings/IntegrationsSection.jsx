@@ -14,7 +14,9 @@ import SectionCard from './SectionCard';
 
 const OCR_API_KEY_STORAGE = 'ppp.ocrApiKey';
 
-const IntegrationsSection = ({ billInstances = [] }) => {
+const IntegrationsSection = ({ billInstances = [], bills = [] }) => {
+  // Use new bills array when legacy billInstances is empty
+  const exportBills = billInstances.length > 0 ? billInstances : bills;
   const [ocrApiKey, setOcrApiKey] = useState('');
   const [showApiKey, setShowApiKey] = useState(false);
   const [apiKeySaved, setApiKeySaved] = useState(false);
@@ -37,14 +39,14 @@ const IntegrationsSection = ({ billInstances = [] }) => {
   };
 
   const handleExportCalendar = () => {
-    if (!billInstances.length) {
+    if (!exportBills.length) {
       setExportSuccess({ success: false, message: 'No bills to export' });
       setTimeout(() => setExportSuccess(null), 3000);
       return;
     }
 
-    const filename = generateFilename(billInstances);
-    const result = downloadICSFile(billInstances, { filename });
+    const filename = generateFilename(exportBills);
+    const result = downloadICSFile(exportBills, { filename });
 
     setExportSuccess({
       success: true,
@@ -175,7 +177,7 @@ const IntegrationsSection = ({ billInstances = [] }) => {
           )}
 
           <div className="mt-3 text-sm text-slate-500">
-            {billInstances.length} bill{billInstances.length !== 1 ? 's' : ''} will be exported
+            {exportBills.length} bill{exportBills.length !== 1 ? 's' : ''} will be exported
           </div>
 
           <LearnMoreToggle
