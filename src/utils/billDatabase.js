@@ -266,7 +266,7 @@ export const generatePaychecksFromSchedule = (
         nextDate.setDate(nextDate.getDate() + 14);
         break;
       case 'semimonthly':
-        if (nextDate.getDate() <= 15) {
+        if (nextDate.getDate() < 15) {
           nextDate.setDate(15);
         } else {
           nextDate.setMonth(nextDate.getMonth() + 1);

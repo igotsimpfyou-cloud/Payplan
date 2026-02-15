@@ -8,6 +8,9 @@ import {
   Target,
   Wrench,
   LayoutDashboard,
+  Search,
+  Clock3,
+  X,
 } from 'lucide-react';
 
 // Utils
@@ -56,6 +59,44 @@ import { DebtTracker } from './components/views/DebtTracker';
 import { GoalsDashboard } from './components/views/GoalsDashboard';
 import { Button } from './components/ui/Button';
 import { useToast } from './hooks/useToast';
+
+// ---------- Navigation Configuration (static, module-level) ----------
+const NAV_TABS = [
+  { id: 'home', label: 'Home', icon: Home, defaultView: 'dashboard' },
+  { id: 'income', label: 'Income', icon: DollarSign, defaultView: 'income' },
+  {
+    id: 'bills',
+    label: 'Bills',
+    icon: Receipt,
+    defaultView: 'bills-dashboard',
+    subTabs: [
+      { id: 'setup', label: 'Setup', icon: Wrench, view: 'bills-setup' },
+      { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, view: 'bills-dashboard' },
+      { id: 'analytics', label: 'Analytics', icon: BarChart3, view: 'bills-analytics' },
+    ],
+  },
+  {
+    id: 'goals',
+    label: 'Goals',
+    icon: Target,
+    defaultView: 'goals-dashboard',
+    subTabs: [
+      { id: 'setup', label: 'Setup', icon: Wrench, view: 'goals-setup' },
+      { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, view: 'goals-dashboard' },
+      { id: 'analytics', label: 'Analytics', icon: BarChart3, view: 'goals-analytics' },
+    ],
+  },
+];
+
+// Pre-compute view-to-tab mapping
+const VIEW_TO_TAB = {};
+NAV_TABS.forEach((tab) => {
+  if (tab.subTabs) {
+    tab.subTabs.forEach((sub) => { VIEW_TO_TAB[sub.view] = tab.id; });
+  } else {
+    VIEW_TO_TAB[tab.defaultView] = tab.id;
+  }
+});
 
 /**
  * PayPlan Pro - Slim Orchestrator
@@ -1188,46 +1229,7 @@ const BillPayPlanner = () => {
     },
   };
 
-  // ---------- Navigation Configuration ----------
-  // Map of which views belong to which tab and sub-tab
-  const NAV_TABS = [
-    { id: 'home', label: 'Home', icon: Home, defaultView: 'dashboard' },
-    { id: 'income', label: 'Income', icon: DollarSign, defaultView: 'income' },
-    {
-      id: 'bills',
-      label: 'Bills',
-      icon: Receipt,
-      defaultView: 'bills-dashboard',
-      subTabs: [
-        { id: 'setup', label: 'Setup', icon: Wrench, view: 'bills-setup' },
-        { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, view: 'bills-dashboard' },
-        { id: 'analytics', label: 'Analytics', icon: BarChart3, view: 'bills-analytics' },
-      ],
-    },
-    {
-      id: 'goals',
-      label: 'Goals',
-      icon: Target,
-      defaultView: 'goals-dashboard',
-      subTabs: [
-        { id: 'setup', label: 'Setup', icon: Wrench, view: 'goals-setup' },
-        { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, view: 'goals-dashboard' },
-        { id: 'analytics', label: 'Analytics', icon: BarChart3, view: 'goals-analytics' },
-      ],
-    },
-  ];
-
-  // All valid views mapped to their parent tab
-  const viewToTab = {};
-  NAV_TABS.forEach((tab) => {
-    if (tab.subTabs) {
-      tab.subTabs.forEach((sub) => { viewToTab[sub.view] = tab.id; });
-    } else {
-      viewToTab[tab.defaultView] = tab.id;
-    }
-  });
-
-  const activeTabId = viewToTab[view] || 'home';
+  const activeTabId = VIEW_TO_TAB[view] || 'home';
   const activeTab = NAV_TABS.find((t) => t.id === activeTabId);
   const viewContext = VIEW_METADATA[view] || {
     label: 'Dashboard',
@@ -1344,7 +1346,8 @@ const BillPayPlanner = () => {
     ];
 
     return [...navActions, ...modalActions];
-  }, [NAV_TABS]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     try {

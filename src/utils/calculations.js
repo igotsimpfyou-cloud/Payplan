@@ -30,6 +30,8 @@ export const calculateAmortization = (asset) => {
   while (balance > 0.01 && period < 1000) {
     period++;
     const interestPayment = balance * periodicRate;
+    // If payment doesn't cover interest, balance will grow — stop early
+    if (payment <= interestPayment && period > 1) break;
     const principalPayment = Math.min(payment - interestPayment, balance);
     const totalPayment = interestPayment + principalPayment;
     balance -= principalPayment;
@@ -73,7 +75,7 @@ export const calculateNextPayDates = (paySchedule) => {
       case 'weekly': x.setDate(x.getDate() + 7); break;
       case 'biweekly': x.setDate(x.getDate() + 14); break;
       case 'semimonthly':
-        if (x.getDate() <= 15) x.setDate(15);
+        if (x.getDate() < 15) x.setDate(15);
         else { x.setMonth(x.getMonth() + 1); x.setDate(1); }
         break;
       case 'monthly': x.setMonth(x.getMonth() + 1); break;
