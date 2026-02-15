@@ -21,6 +21,7 @@ import {
 
 import {
   DEFAULT_SIMULATION_COUNT,
+  RMD_FACTORS,
   SS_ADJUSTMENT,
   runEnhancedMonteCarloSimulation,
 } from '../../utils/retirementSimulation';
@@ -353,6 +354,147 @@ const NestEggCalculator = () => {
               fill="none" stroke="#9333ea" strokeWidth="1.5" />
           </svg>
         </div>
+      </div>
+    </div>
+  );
+};
+
+// ============================================
+// RMD PLANNER
+// ============================================
+const RMDPlanner = () => {
+  const [birthYear, setBirthYear] = useState('1962');
+  const [traditionalBalance, setTraditionalBalance] = useState('500000');
+  const [annualGrowthRate, setAnnualGrowthRate] = useState(5);
+  const [effectiveTaxRate, setEffectiveTaxRate] = useState(22);
+
+  const byear = Number(birthYear) || 0;
+  const startingBalance = Number(traditionalBalance) || 0;
+  const rmdStartAge = byear && (byear + 73) >= 2033 ? 75 : 73;
+
+  const rows = useMemo(() => {
+    if (!startingBalance || !byear) return [];
+
+    const schedule = [];
+    let balance = startingBalance;
+
+    for (let age = rmdStartAge; age <= 95; age++) {
+      const factor = RMD_FACTORS[age];
+      if (!factor || balance <= 0) continue;
+
+      const grownBalance = balance * (1 + annualGrowthRate / 100);
+      const rmd = grownBalance / factor;
+      const estimatedTax = rmd * (effectiveTaxRate / 100);
+      const endBalance = Math.max(0, grownBalance - rmd);
+
+      schedule.push({ age, factor, startBalance: balance, rmd, estimatedTax, endBalance });
+      balance = endBalance;
+    }
+
+    return schedule;
+  }, [startingBalance, byear, annualGrowthRate, effectiveTaxRate, rmdStartAge]);
+
+  const firstYearRmd = rows[0]?.rmd ?? 0;
+  const totalRmd = rows.reduce((sum, row) => sum + row.rmd, 0);
+  const totalTax = rows.reduce((sum, row) => sum + row.estimatedTax, 0);
+
+  return (
+    <div className="space-y-6">
+      <div className="bg-gradient-to-r from-amber-500 to-orange-600 rounded-2xl p-6 text-white">
+        <div className="flex items-center gap-3 mb-2">
+          <Calendar size={28} />
+          <h2 className="text-2xl font-bold">RMD Planner</h2>
+        </div>
+        <p className="text-amber-100">
+          Project Required Minimum Distributions from traditional accounts and estimate taxes year by year.
+        </p>
+      </div>
+
+      <div className="bg-white rounded-2xl shadow-xl p-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label className="block text-sm font-medium text-slate-600 mb-1">Birth Year</label>
+            <input type="number" value={birthYear} onChange={(e) => setBirthYear(e.target.value)}
+              className="w-full px-4 py-3 border-2 rounded-xl" min={1930} max={2010} />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-slate-600 mb-1">Traditional IRA / 401(k) Balance</label>
+            <div className="relative">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">$</span>
+              <input type="number" value={traditionalBalance} onChange={(e) => setTraditionalBalance(e.target.value)}
+                className="w-full pl-8 pr-4 py-3 border-2 rounded-xl" min={0} step={5000} />
+            </div>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-slate-600 mb-1">Annual Growth: {annualGrowthRate}%</label>
+            <input type="range" value={annualGrowthRate} onChange={(e) => setAnnualGrowthRate(Number(e.target.value))}
+              className="w-full" min={0} max={10} step={0.5} />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-slate-600 mb-1">Effective Tax Rate: {effectiveTaxRate}%</label>
+            <input type="range" value={effectiveTaxRate} onChange={(e) => setEffectiveTaxRate(Number(e.target.value))}
+              className="w-full" min={0} max={40} step={1} />
+          </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="bg-amber-50 rounded-2xl p-6 text-center border-2 border-amber-200">
+          <p className="text-sm text-slate-600 mb-1">RMD Start Age</p>
+          <p className="text-3xl font-black text-amber-600">{rmdStartAge}</p>
+        </div>
+        <div className="bg-blue-50 rounded-2xl p-6 text-center border-2 border-blue-200">
+          <p className="text-sm text-slate-600 mb-1">First-Year RMD</p>
+          <p className="text-3xl font-black text-blue-600">{formatCurrency(firstYearRmd)}</p>
+        </div>
+        <div className="bg-rose-50 rounded-2xl p-6 text-center border-2 border-rose-200">
+          <p className="text-sm text-slate-600 mb-1">Estimated Lifetime Tax</p>
+          <p className="text-3xl font-black text-rose-600">{formatCurrency(totalTax)}</p>
+        </div>
+      </div>
+
+      <div className="bg-white rounded-2xl shadow-xl p-6">
+        <h3 className="text-lg font-bold text-slate-800 mb-4">Projected RMD Schedule</h3>
+        {rows.length === 0 ? (
+          <p className="text-slate-500">Enter your birth year and traditional balance to generate a schedule.</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b text-slate-500">
+                  <th className="text-left py-2 pr-2">Age</th>
+                  <th className="text-right py-2 px-2">IRS Factor</th>
+                  <th className="text-right py-2 px-2">Start Balance</th>
+                  <th className="text-right py-2 px-2">RMD</th>
+                  <th className="text-right py-2 px-2">Tax</th>
+                  <th className="text-right py-2 pl-2">End Balance</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((row) => (
+                  <tr key={row.age} className="border-b last:border-0">
+                    <td className="py-2 pr-2 font-medium text-slate-700">{row.age}</td>
+                    <td className="py-2 px-2 text-right">{row.factor.toFixed(1)}</td>
+                    <td className="py-2 px-2 text-right">{formatCurrency(row.startBalance)}</td>
+                    <td className="py-2 px-2 text-right">{formatCurrency(row.rmd)}</td>
+                    <td className="py-2 px-2 text-right">{formatCurrency(row.estimatedTax)}</td>
+                    <td className="py-2 pl-2 text-right">{formatCurrency(row.endBalance)}</td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr className="font-bold text-slate-800 border-t-2">
+                  <td className="py-2 pr-2">Total</td>
+                  <td className="py-2 px-2"></td>
+                  <td className="py-2 px-2"></td>
+                  <td className="py-2 px-2 text-right">{formatCurrency(totalRmd)}</td>
+                  <td className="py-2 px-2 text-right">{formatCurrency(totalTax)}</td>
+                  <td className="py-2 pl-2"></td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -1264,6 +1406,7 @@ export const Retirement = () => {
     { id: 'investment', label: 'Investment', icon: TrendingUp },
     { id: 'needs', label: 'Retirement Needs', icon: Target },
     { id: 'nestegg', label: 'Nest Egg', icon: Wallet },
+    { id: 'rmd', label: 'RMD Planner', icon: Calendar },
   ];
 
   return (
@@ -1291,6 +1434,7 @@ export const Retirement = () => {
       {activeTab === 'investment' && <InvestmentCalculator />}
       {activeTab === 'needs' && <RetirementNeedsCalculator />}
       {activeTab === 'nestegg' && <NestEggCalculator />}
+      {activeTab === 'rmd' && <RMDPlanner />}
     </div>
   );
 };
