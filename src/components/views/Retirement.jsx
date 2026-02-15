@@ -261,6 +261,264 @@ const RetirementNeedsCalculator = () => {
 };
 
 // ============================================
+// 401(k) CONTRIBUTION CALCULATOR
+// ============================================
+const Employer401kCalculator = () => {
+  const [annualSalary, setAnnualSalary] = useState('');
+  const [salaryGrowthRate, setSalaryGrowthRate] = useState('');
+  const [currentAge, setCurrentAge] = useState('');
+  const [retirementAge, setRetirementAge] = useState('');
+  const [employeeContributionPct, setEmployeeContributionPct] = useState('');
+  const [currentBalance, setCurrentBalance] = useState('');
+  const [expectedReturn, setExpectedReturn] = useState(8);
+
+  const [firstTierMatchPct, setFirstTierMatchPct] = useState('100');
+  const [firstTierLimitPct, setFirstTierLimitPct] = useState('3');
+  const [secondTierMatchPct, setSecondTierMatchPct] = useState('50');
+  const [secondTierLimitPct, setSecondTierLimitPct] = useState('6');
+  const [discretionaryType, setDiscretionaryType] = useState('percent');
+  const [discretionaryValue, setDiscretionaryValue] = useState('0');
+
+  const salary = Number(annualSalary) || 0;
+  const growth = (Number(salaryGrowthRate) || 0) / 100;
+  const age = Number(currentAge) || 0;
+  const retireAge = Number(retirementAge) || 0;
+  const employeePct = (Number(employeeContributionPct) || 0) / 100;
+  const balance = Number(currentBalance) || 0;
+  const returnRate = expectedReturn / 100;
+
+  const employerRules = {
+    firstTierMatchRate: (Number(firstTierMatchPct) || 0) / 100,
+    firstTierLimit: (Number(firstTierLimitPct) || 0) / 100,
+    secondTierMatchRate: (Number(secondTierMatchPct) || 0) / 100,
+    secondTierLimit: (Number(secondTierLimitPct) || 0) / 100,
+    discretionaryType,
+    discretionaryValue: Number(discretionaryValue) || 0,
+  };
+
+  const getEmployerContribution = (salaryForYear) => {
+    const tier1Pct = Math.min(employeePct, employerRules.firstTierLimit);
+    const tier1 = salaryForYear * tier1Pct * employerRules.firstTierMatchRate;
+
+    const tier2EligiblePct = Math.max(
+      0,
+      Math.min(employeePct, employerRules.secondTierLimit) - employerRules.firstTierLimit,
+    );
+    const tier2 = salaryForYear * tier2EligiblePct * employerRules.secondTierMatchRate;
+
+    const discretionary = employerRules.discretionaryType === 'percent'
+      ? salaryForYear * (employerRules.discretionaryValue / 100)
+      : employerRules.discretionaryValue;
+
+    return Math.max(0, tier1 + tier2 + discretionary);
+  };
+
+  const results = useMemo(() => {
+    const yearsToRetirement = Math.max(0, retireAge - age);
+    if (yearsToRetirement <= 0 || salary <= 0) {
+      return {
+        yearsToRetirement,
+        employeeAnnual: 0,
+        employerAnnual: 0,
+        totalAnnual: 0,
+        employeeMonthly: 0,
+        employerMonthly: 0,
+        totalMonthly: 0,
+        projectedBalance: balance,
+      };
+    }
+
+    const firstYearEmployeeAnnual = salary * employeePct;
+    const firstYearEmployerAnnual = getEmployerContribution(salary);
+    const firstYearTotalAnnual = firstYearEmployeeAnnual + firstYearEmployerAnnual;
+
+    let projectedBalance = balance;
+    for (let year = 0; year < yearsToRetirement; year += 1) {
+      const yearSalary = salary * Math.pow(1 + growth, year);
+      const employeeAnnual = yearSalary * employeePct;
+      const employerAnnual = getEmployerContribution(yearSalary);
+      const yearContribution = employeeAnnual + employerAnnual;
+      projectedBalance = (projectedBalance + yearContribution) * (1 + returnRate);
+    }
+
+    return {
+      yearsToRetirement,
+      employeeAnnual: firstYearEmployeeAnnual,
+      employerAnnual: firstYearEmployerAnnual,
+      totalAnnual: firstYearTotalAnnual,
+      employeeMonthly: firstYearEmployeeAnnual / 12,
+      employerMonthly: firstYearEmployerAnnual / 12,
+      totalMonthly: firstYearTotalAnnual / 12,
+      projectedBalance,
+    };
+  }, [age, retireAge, salary, employeePct, growth, returnRate, balance, employerRules]);
+
+  const scenarioReturns = [
+    Math.max(1, expectedReturn - 2),
+    expectedReturn,
+    Math.min(15, expectedReturn + 2),
+  ];
+
+  const scenarioBalances = scenarioReturns.map((scenarioReturn) => {
+    const yearsToRetirement = Math.max(0, retireAge - age);
+    let projectedBalance = balance;
+    for (let year = 0; year < yearsToRetirement; year += 1) {
+      const yearSalary = salary * Math.pow(1 + growth, year);
+      const employeeAnnual = yearSalary * employeePct;
+      const employerAnnual = getEmployerContribution(yearSalary);
+      projectedBalance = (projectedBalance + employeeAnnual + employerAnnual) * (1 + (scenarioReturn / 100));
+    }
+    return projectedBalance;
+  });
+
+  return (
+    <div className="space-y-6">
+      <div className="bg-gradient-to-r from-violet-600 to-indigo-600 rounded-2xl p-6 text-white">
+        <div className="flex items-center gap-3 mb-2">
+          <Wallet size={28} />
+          <h2 className="text-2xl font-bold">Employer 401(k) Contribution Calculator</h2>
+        </div>
+        <p className="text-indigo-100">
+          Model your salary, your contribution rate, and employer plan match/discretionary rules to project retirement savings.
+        </p>
+      </div>
+
+      <div className="bg-white rounded-2xl shadow-xl p-6">
+        <h3 className="text-lg font-bold text-slate-800 mb-4">Your Inputs</h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label className="block text-sm font-medium text-slate-600 mb-1">Annual Salary</label>
+            <div className="relative">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">$</span>
+              <input type="number" value={annualSalary} onChange={(e) => setAnnualSalary(e.target.value)}
+                placeholder="85000" className="w-full pl-8 pr-4 py-3 border-2 rounded-xl focus:border-indigo-500 focus:outline-none" min={0} />
+            </div>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-slate-600 mb-1">Salary Increase Rate (%)</label>
+            <input type="number" value={salaryGrowthRate} onChange={(e) => setSalaryGrowthRate(e.target.value)}
+              placeholder="3" className="w-full px-4 py-3 border-2 rounded-xl focus:border-indigo-500 focus:outline-none" min={0} max={20} step="0.1" />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-slate-600 mb-1">Current Age</label>
+            <input type="number" value={currentAge} onChange={(e) => setCurrentAge(e.target.value)}
+              placeholder="35" className="w-full px-4 py-3 border-2 rounded-xl focus:border-indigo-500 focus:outline-none" min={18} max={80} />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-slate-600 mb-1">Retirement Age</label>
+            <input type="number" value={retirementAge} onChange={(e) => setRetirementAge(e.target.value)}
+              placeholder="65" className="w-full px-4 py-3 border-2 rounded-xl focus:border-indigo-500 focus:outline-none" min={19} max={85} />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-slate-600 mb-1">Percent of Salary Contributed (%)</label>
+            <input type="number" value={employeeContributionPct} onChange={(e) => setEmployeeContributionPct(e.target.value)}
+              placeholder="10" className="w-full px-4 py-3 border-2 rounded-xl focus:border-indigo-500 focus:outline-none" min={0} max={100} step="0.1" />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-slate-600 mb-1">Current 401(k) Balance</label>
+            <div className="relative">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">$</span>
+              <input type="number" value={currentBalance} onChange={(e) => setCurrentBalance(e.target.value)}
+                placeholder="50000" className="w-full pl-8 pr-4 py-3 border-2 rounded-xl focus:border-indigo-500 focus:outline-none" min={0} />
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-5">
+          <label className="block text-sm font-medium text-slate-600 mb-2">Expected Return: {expectedReturn}%</label>
+          <input type="range" value={expectedReturn} onChange={(e) => setExpectedReturn(Number(e.target.value))}
+            className="w-full" min={1} max={15} step={0.5} />
+          <div className="flex justify-between text-xs text-slate-500 mt-1"><span>1%</span><span>Moderate: 7-9%</span><span>15%</span></div>
+        </div>
+      </div>
+
+      <div className="bg-white rounded-2xl shadow-xl p-6">
+        <h3 className="text-lg font-bold text-slate-800 mb-4">Employer Plan Details</h3>
+        <p className="text-sm text-slate-500 mb-4">Enter match tiers and discretionary contribution rules in the same input style as the rest of the planner.</p>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label className="block text-sm font-medium text-slate-600 mb-1">Tier 1 Match (%)</label>
+            <input type="number" value={firstTierMatchPct} onChange={(e) => setFirstTierMatchPct(e.target.value)}
+              className="w-full px-4 py-3 border-2 rounded-xl focus:border-indigo-500 focus:outline-none" min={0} max={200} step="0.1" />
+            <p className="text-xs text-slate-500 mt-1">Example: 100 means dollar-for-dollar match.</p>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-slate-600 mb-1">Tier 1 Limit (% of pay)</label>
+            <input type="number" value={firstTierLimitPct} onChange={(e) => setFirstTierLimitPct(e.target.value)}
+              className="w-full px-4 py-3 border-2 rounded-xl focus:border-indigo-500 focus:outline-none" min={0} max={100} step="0.1" />
+            <p className="text-xs text-slate-500 mt-1">Example: first 3% contributed.</p>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-slate-600 mb-1">Tier 2 Match (%)</label>
+            <input type="number" value={secondTierMatchPct} onChange={(e) => setSecondTierMatchPct(e.target.value)}
+              className="w-full px-4 py-3 border-2 rounded-xl focus:border-indigo-500 focus:outline-none" min={0} max={200} step="0.1" />
+            <p className="text-xs text-slate-500 mt-1">Example: 50 for 50 cents on the dollar.</p>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-slate-600 mb-1">Tier 2 Limit (% of pay)</label>
+            <input type="number" value={secondTierLimitPct} onChange={(e) => setSecondTierLimitPct(e.target.value)}
+              className="w-full px-4 py-3 border-2 rounded-xl focus:border-indigo-500 focus:outline-none" min={0} max={100} step="0.1" />
+            <p className="text-xs text-slate-500 mt-1">Example: up to 6% total contribution.</p>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-slate-600 mb-1">Discretionary Contribution Type</label>
+            <select value={discretionaryType} onChange={(e) => setDiscretionaryType(e.target.value)}
+              className="w-full px-4 py-3 border-2 rounded-xl focus:border-indigo-500 focus:outline-none bg-white">
+              <option value="percent">Percent of salary (%)</option>
+              <option value="dollar">Flat annual dollar amount ($)</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-slate-600 mb-1">
+              Discretionary Value {discretionaryType === 'percent' ? '(%)' : '($/year)'}
+            </label>
+            <input type="number" value={discretionaryValue} onChange={(e) => setDiscretionaryValue(e.target.value)}
+              className="w-full px-4 py-3 border-2 rounded-xl focus:border-indigo-500 focus:outline-none" min={0} step="0.1" />
+          </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="bg-blue-50 rounded-2xl p-6 border-2 border-blue-200 text-center">
+          <p className="text-sm text-slate-600">Employee Contribution</p>
+          <p className="text-2xl font-black text-blue-700">{formatCurrency(results.employeeAnnual)}/yr</p>
+          <p className="text-sm text-slate-500">{formatCurrency(results.employeeMonthly)}/mo</p>
+        </div>
+        <div className="bg-indigo-50 rounded-2xl p-6 border-2 border-indigo-200 text-center">
+          <p className="text-sm text-slate-600">Employer Contribution</p>
+          <p className="text-2xl font-black text-indigo-700">{formatCurrency(results.employerAnnual)}/yr</p>
+          <p className="text-sm text-slate-500">{formatCurrency(results.employerMonthly)}/mo</p>
+        </div>
+        <div className="bg-violet-50 rounded-2xl p-6 border-2 border-violet-200 text-center">
+          <p className="text-sm text-slate-600">Combined 401(k) Contribution</p>
+          <p className="text-2xl font-black text-violet-700">{formatCurrency(results.totalAnnual)}/yr</p>
+          <p className="text-sm text-slate-500">{formatCurrency(results.totalMonthly)}/mo</p>
+        </div>
+      </div>
+
+      <div className="bg-white rounded-2xl shadow-xl p-6 text-center">
+        <p className="text-slate-600 mb-2">Projected Portfolio at Retirement</p>
+        <p className="text-5xl font-black text-indigo-600">{formatCurrency(results.projectedBalance)}</p>
+        <p className="text-sm text-slate-500 mt-2">Assumes {results.yearsToRetirement} years until retirement with salary growth and your employer plan inputs.</p>
+      </div>
+
+      <div className="bg-white rounded-2xl shadow-xl p-6">
+        <h3 className="text-lg font-bold text-slate-800 mb-4">Return Rate Scenarios</h3>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {scenarioReturns.map((scenarioReturn, index) => (
+            <div key={scenarioReturn} className="rounded-xl p-4 border-2 border-slate-200 bg-slate-50 text-center">
+              <p className="text-sm text-slate-600">{index === 0 ? 'Conservative' : index === 1 ? 'Base Case' : 'Aggressive'}</p>
+              <p className="text-2xl font-black text-slate-800">{scenarioReturn}%</p>
+              <p className="text-sm text-slate-500 mt-1">{formatCurrency(scenarioBalances[index])} at retirement</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ============================================
 // NEST EGG CALCULATOR
 // ============================================
 const NestEggCalculator = () => {
@@ -1404,6 +1662,7 @@ export const Retirement = () => {
   const tabs = [
     { id: 'montecarlo', label: 'Monte Carlo', icon: Zap },
     { id: 'investment', label: 'Investment', icon: TrendingUp },
+    { id: 'employer401k', label: 'Employer 401(k)', icon: DollarSign },
     { id: 'needs', label: 'Retirement Needs', icon: Target },
     { id: 'nestegg', label: 'Nest Egg', icon: Wallet },
     { id: 'rmd', label: 'RMD Planner', icon: Calendar },
@@ -1432,6 +1691,7 @@ export const Retirement = () => {
 
       {activeTab === 'montecarlo' && <MonteCarloSimulator />}
       {activeTab === 'investment' && <InvestmentCalculator />}
+      {activeTab === 'employer401k' && <Employer401kCalculator />}
       {activeTab === 'needs' && <RetirementNeedsCalculator />}
       {activeTab === 'nestegg' && <NestEggCalculator />}
       {activeTab === 'rmd' && <RMDPlanner />}
