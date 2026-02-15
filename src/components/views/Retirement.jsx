@@ -1064,7 +1064,7 @@ const MonteCarloSimulator = () => {
     { label: 'Retire 2 years later', effect: '+2 years', apply: () => setRetirementAge(String(retAge + 2)) },
     { label: 'Spend 10% less', effect: '-10%', apply: () => setAnnualSpending(String(Math.round(annSpend * 0.9))) },
     { label: 'Save $5K more/year', effect: '+$5K', apply: () => setAnnualContribution(String(annContrib + 5000)) },
-    { label: 'Delay SS to 70', effect: '+24%', apply: () => setSsClaimingAge('70') },
+    ...(ssAge < 70 ? [{ label: 'Delay SS to 70', effect: `+${Math.round((SS_ADJUSTMENT[70] / (SS_ADJUSTMENT[ssAge] || 1) - 1) * 100)}%`, apply: () => setSsClaimingAge('70') }] : []),
   ];
 
   // Success rate gauge SVG component
@@ -1707,15 +1707,17 @@ const MonteCarloSimulator = () => {
                       </p>
                     </div>
                   </div>
-                  <div className="flex gap-3 p-3 bg-amber-50 rounded-xl">
-                    <AlertCircle className="text-amber-500 flex-shrink-0" size={20} />
-                    <div>
-                      <p className="font-medium text-amber-800">Delay Social Security if possible</p>
-                      <p className="text-sm text-amber-700">
-                        Waiting until 70 increases your benefit by 24% over claiming at 67.
-                      </p>
+                  {ssAge < 70 && (
+                    <div className="flex gap-3 p-3 bg-amber-50 rounded-xl">
+                      <AlertCircle className="text-amber-500 flex-shrink-0" size={20} />
+                      <div>
+                        <p className="font-medium text-amber-800">Delay Social Security if possible</p>
+                        <p className="text-sm text-amber-700">
+                          Waiting until 70 increases your benefit by {Math.round((SS_ADJUSTMENT[70] / (SS_ADJUSTMENT[ssAge] || 1) - 1) * 100)}% over claiming at {ssAge}.
+                        </p>
+                      </div>
                     </div>
-                  </div>
+                  )}
                 </>
               )}
 
