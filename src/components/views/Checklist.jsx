@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { Check, Calendar, DollarSign, Clock, Receipt, RefreshCw, AlertTriangle, Filter, ChevronDown, X } from 'lucide-react';
 import { parseAmt } from '../../utils/formatters';
 import { parseLocalDate, formatPayDatesAsMonthCheck, getMonthCheckLabel } from '../../utils/dateHelpers';
+import { uiSpacing, uiTap, uiType } from '../../constants/uiPresets';
 
 // Bill Edit Modal
 const BillEditModal = ({ bill, nextPayDates, onSave, onClose }) => {
@@ -36,14 +37,14 @@ const BillEditModal = ({ bill, nextPayDates, onSave, onClose }) => {
       <div className="bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl w-full sm:max-w-md p-4 sm:p-6 max-h-[90vh] overflow-y-auto">
         <div className="flex justify-between items-center mb-4">
           <h3 className="text-xl font-bold text-slate-800">Edit Bill</h3>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-600">
+          <button onClick={onClose} className={`text-slate-400 hover:text-slate-600 ${uiTap.iconControl}`}>
             <X size={24} />
           </button>
         </div>
 
         <div className="mb-4">
           <div className="text-lg font-semibold text-slate-800">{bill.name}</div>
-          <div className="text-sm text-slate-500">
+          <div className={`text-slate-500 ${uiType.helperText}`}>
             Due: {parseLocalDate(bill.dueDate).toLocaleDateString()} •
             ${parseAmt(bill.amountEstimate).toFixed(2)}
           </div>
@@ -62,7 +63,7 @@ const BillEditModal = ({ bill, nextPayDates, onSave, onClose }) => {
                   <button
                     key={checkNum}
                     onClick={() => setAssignedCheck(checkNum)}
-                    className={`p-2.5 sm:p-3 rounded-xl font-semibold text-center transition-all ${
+                    className={`p-2.5 sm:p-3 rounded-xl font-semibold text-center transition-all ${uiTap.control} ${
                       assignedCheck === checkNum
                         ? 'bg-emerald-600 text-white'
                         : 'bg-slate-100 text-slate-600 hover:bg-slate-200 active:bg-slate-300'
@@ -70,7 +71,7 @@ const BillEditModal = ({ bill, nextPayDates, onSave, onClose }) => {
                   >
                     <div className="text-base sm:text-lg">{labelInfo?.label || `#${checkNum}`}</div>
                     {nextPayDates[checkNum - 1] && (
-                      <div className="text-xs opacity-75">
+                      <div className={`opacity-75 ${uiType.helperText}`}>
                         {new Date(nextPayDates[checkNum - 1]).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
                       </div>
                     )}
@@ -94,7 +95,7 @@ const BillEditModal = ({ bill, nextPayDates, onSave, onClose }) => {
             {paidDate && (
               <button
                 onClick={() => setPaidDate('')}
-                className="mt-2 text-sm text-red-600 hover:text-red-700"
+                className={`mt-2 text-red-600 hover:text-red-700 ${uiType.helperText}`}
               >
                 Clear paid date (mark as unpaid)
               </button>
@@ -118,7 +119,7 @@ const BillEditModal = ({ bill, nextPayDates, onSave, onClose }) => {
                 className="w-full pl-8 pr-4 py-3 border-2 rounded-xl focus:border-emerald-500 focus:outline-none"
               />
             </div>
-            <p className="text-xs text-slate-500 mt-1">
+            <p className={`text-slate-500 mt-1 ${uiType.helperText}`}>
               Estimated: ${parseAmt(bill.amountEstimate).toFixed(2)}
               {actualPaid && (
                 <span className={`ml-2 font-medium ${parseAmt(actualPaid) > parseAmt(bill.amountEstimate) ? 'text-red-600' : 'text-green-600'}`}>
@@ -133,13 +134,13 @@ const BillEditModal = ({ bill, nextPayDates, onSave, onClose }) => {
         <div className="flex gap-3 mt-6">
           <button
             onClick={onClose}
-            className="flex-1 px-4 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-semibold transition-colors"
+            className={`flex-1 px-4 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-semibold transition-colors ${uiTap.control}`}
           >
             Cancel
           </button>
           <button
             onClick={handleSave}
-            className="flex-1 px-4 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-semibold transition-colors"
+            className={`flex-1 px-4 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-semibold transition-colors ${uiTap.control}`}
           >
             Save Changes
           </button>
@@ -284,9 +285,9 @@ export const Checklist = ({
   };
 
   return (
-    <div>
+    <div className={uiSpacing.pageStack}>
       {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between mb-4 gap-3">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-3">
             <h2 className="text-2xl font-bold text-white">Checklist</h2>
@@ -294,7 +295,7 @@ export const Checklist = ({
             <select
               value={selectedMonth}
               onChange={(e) => setSelectedMonth(e.target.value)}
-              className="px-3 py-1.5 rounded-lg bg-white/20 text-white font-semibold border-0 focus:ring-2 focus:ring-white/50 cursor-pointer"
+              className={`px-3 py-1.5 rounded-lg bg-white/20 text-white font-semibold border-0 focus:ring-2 focus:ring-white/50 cursor-pointer ${uiTap.control}`}
             >
               {availableMonths.map(m => (
                 <option key={m.key} value={m.key} className="text-slate-800">
@@ -303,7 +304,7 @@ export const Checklist = ({
               ))}
             </select>
           </div>
-          <p className="text-emerald-100 text-sm mt-1">
+          <p className={`text-emerald-100 mt-1 ${uiType.helperText}`}>
             {unpaidCount} unpaid • {monthBills.length} total
             {overdueCount > 0 && <span className="text-red-300 font-bold"> • {overdueCount} overdue</span>}
             {dueSoonCount > 0 && <span className="text-amber-300"> • {dueSoonCount} due soon</span>}
@@ -313,7 +314,7 @@ export const Checklist = ({
         <div className="flex gap-2">
           <button
             onClick={() => setShowUnpaidOnly(!showUnpaidOnly)}
-            className={`px-3 py-2 rounded-xl font-semibold flex items-center gap-2 text-sm ${
+            className={`px-3 py-2 rounded-xl font-semibold flex items-center gap-2 text-sm ${uiTap.control} ${
               showUnpaidOnly
                 ? 'bg-white text-emerald-600'
                 : 'bg-white/20 text-white hover:bg-white/30'
@@ -324,7 +325,7 @@ export const Checklist = ({
           </button>
           <button
             onClick={onReassignChecks}
-            className="px-3 py-2 rounded-xl bg-white/20 text-white hover:bg-white/30 font-semibold flex items-center gap-2 text-sm"
+            className={`px-3 py-2 rounded-xl bg-white/20 text-white hover:bg-white/30 font-semibold flex items-center gap-2 text-sm ${uiTap.control}`}
           >
             <RefreshCw size={16} />
             Re-assign
@@ -333,18 +334,18 @@ export const Checklist = ({
       </div>
 
       {/* Bills List */}
-      <div className="grid grid-cols-1 gap-3">
+      <div className="grid grid-cols-1 gap-4">
         {filteredBills.length ? (
           filteredBills.map((i) => {
             const status = getBillStatus(i);
             return (
               <div
                 key={i.id}
-                className={`rounded-xl p-4 shadow flex items-start gap-3 ${getCardStyle(status)}`}
+                className={`rounded-xl p-4 sm:p-5 shadow flex items-start gap-3 ${getCardStyle(status)}`}
               >
                 <button
                   onClick={() => onToggleInstancePaid(i.id)}
-                  className={`p-2 rounded-lg transition-colors ${
+                  className={`p-2 rounded-lg transition-colors ${uiTap.iconControl} ${
                     i.paid
                       ? 'bg-green-500 text-white'
                       : status === 'overdue'
@@ -377,7 +378,7 @@ export const Checklist = ({
                       </span>
                     )}
                   </div>
-                  <div className="text-sm text-slate-600 flex flex-wrap gap-x-4 gap-y-1">
+                  <div className={`text-slate-600 flex flex-wrap gap-x-4 gap-y-2 ${uiType.helperText}`}>
                     <span>
                       <Calendar size={14} className="inline mr-1" />
                       Due {parseLocalDate(i.dueDate).toLocaleDateString()}
@@ -390,7 +391,7 @@ export const Checklist = ({
                     {i.assignedPayDate && (
                       <button
                         onClick={() => setEditingBill(i)}
-                        className="text-emerald-600 hover:text-emerald-700 font-medium flex items-center gap-1"
+                        className={`text-emerald-600 hover:text-emerald-700 font-medium flex items-center gap-1 ${uiTap.control}`}
                       >
                         <Clock size={14} />
                         {getMonthCheckLabel(i.assignedPayDate, nextPayDates) || `Check #${i.assignedCheck}`}

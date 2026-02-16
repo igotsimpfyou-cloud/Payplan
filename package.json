@@ -13,7 +13,7 @@
     "dist:win": "vite build && electron-builder --win",
     "dist:mac": "vite build && electron-builder --mac",
     "dist:linux": "vite build && electron-builder --linux",
-    "test": "node --test src/utils/__tests__/retirementSimulation.test.js"
+    "test": "node --test src/utils/__tests__/*.test.js"
   },
   "build": {
     "appId": "com.payplanpro.app",

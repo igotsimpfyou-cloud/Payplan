@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X } from 'lucide-react';
+import Modal from '../ui/Modal';
 
 const ASSET_TYPES = [
   { value: 'mortgage', label: 'Mortgage' },
@@ -40,21 +40,14 @@ export const AssetForm = ({ asset, onSubmit, onCancel }) => {
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full">
-        <div className="p-6">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-2xl font-bold">
-              {asset ? 'Edit Asset' : 'Add Asset'}
-            </h2>
-            <button
-              className="p-2 rounded-lg hover:bg-slate-100"
-              onClick={onCancel}
-            >
-              <X size={20} />
-            </button>
-          </div>
-          <form onSubmit={handleSubmit} className="space-y-3">
+    <Modal
+      isOpen
+      onClose={onCancel}
+      title={asset ? 'Edit Asset' : 'Add Asset'}
+      maxWidth="max-w-md"
+      closeButtonLabel="Close asset form"
+    >
+      <form onSubmit={handleSubmit} className="space-y-3">
             <div>
               <label className="text-sm font-semibold">Name</label>
               <input
@@ -205,10 +198,8 @@ export const AssetForm = ({ asset, onSubmit, onCancel }) => {
                 {asset ? 'Update' : 'Add'}
               </button>
             </div>
-          </form>
-        </div>
-      </div>
-    </div>
+      </form>
+    </Modal>
   );
 };
 
