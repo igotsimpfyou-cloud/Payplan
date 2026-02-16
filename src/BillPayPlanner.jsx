@@ -1010,7 +1010,7 @@ const BillPayPlanner = () => {
   const exportBackup = () => {
     const payload = {
       app: 'PayPlan Pro',
-      version: 3, // Bump version for new database format
+      version: 4, // Includes Phase 1A sync foundation data in backup payloads
       exportedAt: new Date().toISOString(),
       data: {
         billTemplates,
@@ -1031,6 +1031,11 @@ const BillPayPlanner = () => {
         actualPayEntries,
         scannedReceipts,
         investments,
+        institutions,
+        accountConnections,
+        syncedAccounts,
+        syncedTransactions,
+        syncJobs,
       },
     };
     const blob = new Blob([JSON.stringify(payload, null, 2)], {
@@ -1064,6 +1069,11 @@ const BillPayPlanner = () => {
     setActualPayEntries(Array.isArray(d?.actualPayEntries) ? d.actualPayEntries : []);
     setScannedReceipts(Array.isArray(d?.scannedReceipts) ? d.scannedReceipts : []);
     setInvestments(Array.isArray(d?.investments) ? d.investments : []);
+    setInstitutions(Array.isArray(d?.institutions) ? d.institutions : []);
+    setAccountConnections(Array.isArray(d?.accountConnections) ? d.accountConnections : []);
+    setSyncedAccounts(Array.isArray(d?.syncedAccounts) ? d.syncedAccounts : []);
+    setSyncedTransactions(Array.isArray(d?.syncedTransactions) ? d.syncedTransactions : []);
+    setSyncJobs(Array.isArray(d?.syncJobs) ? d.syncJobs : []);
   };
 
   const importBackupFromFile = async (file) => {

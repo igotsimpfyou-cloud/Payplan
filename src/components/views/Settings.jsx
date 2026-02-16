@@ -28,16 +28,23 @@ export const Settings = ({
   onDeduplicateBills,
   onMarkPastBillsPaid,
 }) => {
+  const safeBillInstances = Array.isArray(billInstances) ? billInstances : [];
+  const safeBills = Array.isArray(bills) ? bills : [];
+  const safeInstitutions = Array.isArray(institutions) ? institutions : [];
+  const safeAccountConnections = Array.isArray(accountConnections) ? accountConnections : [];
+  const safeSyncedAccounts = Array.isArray(syncedAccounts) ? syncedAccounts : [];
+  const safeSyncJobs = Array.isArray(syncJobs) ? syncJobs : [];
+
   return (
     <div>
       <SettingsSectionNav sections={SETTINGS_SECTIONS} />
 
       <IntegrationsSection billInstances={billInstances} bills={bills} />
 
-      <DataManagementSection bills={bills} />
+      <DataManagementSection bills={safeBills} />
 
       <AdvancedSection
-        bills={bills}
+        bills={safeBills}
         onDeduplicateBills={onDeduplicateBills}
         onMarkPastBillsPaid={onMarkPastBillsPaid}
       />
