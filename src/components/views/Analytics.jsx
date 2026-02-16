@@ -1,12 +1,12 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Flame, TrendingUp, Calendar, PieChart, CreditCard, TrendingDown } from 'lucide-react';
 import { parseAmt } from '../../utils/formatters';
 import { calculateDebtPayoff } from '../../utils/calculations';
 import { parseMMDDYYYY } from '../../utils/billDatabase';
-import { parseLocalDate } from '../../utils/dateHelpers';
+import { parseLocalDate, addMonths, startOfMonth } from '../../utils/dateHelpers';
+import { BUDGET_CATEGORIES, calculateBudgetActuals, monthKeyFromDate } from '../../utils/budgetEngine';
 
-// Extended categories to include receipt categories
-const CATEGORIES = ['utilities', 'subscription', 'insurance', 'loan', 'rent', 'groceries', 'dining', 'transport', 'shopping', 'other'];
+const CATEGORIES = BUDGET_CATEGORIES;
 const CATEGORY_COLORS = {
   utilities: '#10b981',
   subscription: '#6366f1',
@@ -27,6 +27,7 @@ export const Analytics = ({
   bills = [],           // New database format
   historicalBills = [], // Archived bills (12+ months)
   scannedReceipts = [], // Receipts from receipt scanner
+  syncedTransactions = [],
   nextPayDates,
   paySchedule,
   budgets,
@@ -60,33 +61,27 @@ export const Analytics = ({
     }));
   }, [scannedReceipts]);
 
-  // Get current month for filtering
-  const currentMonth = useMemo(() => {
-    const now = new Date();
-    return { year: now.getFullYear(), month: now.getMonth() };
-  }, []);
+  const [selectedBudgetMonth, setSelectedBudgetMonth] = useState(startOfMonth(new Date()));
 
-  // Current month receipts
-  const currentMonthReceipts = useMemo(() => {
-    return receiptsNormalized.filter(r =>
-      r._date.getFullYear() === currentMonth.year &&
-      r._date.getMonth() === currentMonth.month
-    );
-  }, [receiptsNormalized, currentMonth]);
+  const thisMonthByCategory = useMemo(() => {
+    const summary = calculateBudgetActuals({
+      monthDate: selectedBudgetMonth,
+      budgetConfig: budgets,
+      bills: allBillsNormalized.map((b) => ({ ...b, dueDate: b._date })),
+      receipts: receiptsNormalized,
+      syncedTransactions,
+    });
 
-  const thisMonthByCategory = CATEGORIES.map((cat) => {
-    // Sum from bills
-    const billSum = currentMonthInstances
-      .filter((i) => i.category === cat)
-      .reduce((s, i) => s + parseAmt(i.actualPaid ?? i.amountEstimate), 0);
+    return summary.perCategory.map((row) => ({
+      cat: row.category,
+      sum: row.spent,
+      cap: row.assigned,
+      remaining: row.remaining,
+      percent: row.percent,
+    }));
+  }, [selectedBudgetMonth, budgets, allBillsNormalized, receiptsNormalized, syncedTransactions]);
 
-    // Sum from receipts
-    const receiptSum = currentMonthReceipts
-      .filter((r) => r.category === cat)
-      .reduce((s, r) => s + r.amount, 0);
-
-    return { cat, sum: billSum + receiptSum, cap: parseAmt(budgets[cat] || 0) };
-  });
+  const selectedBudgetMonthKey = monthKeyFromDate(selectedBudgetMonth);
 
   // === 1. Bill Payment Streak ===
   const paymentStreak = useMemo(() => {
@@ -112,7 +107,15 @@ export const Analytics = ({
 
     // Count on-time payments (paid before or on due date)
     paidBills.forEach((bill) => {
-      onTimeCount++;
+      if (bill.paidDate) {
+        const paid = new Date(bill.paidDate);
+        if (paid <= bill._date) {
+          onTimeCount++;
+        }
+      } else {
+        // If no paidDate recorded, assume on-time for legacy data
+        onTimeCount++;
+      }
     });
 
     return { streak, totalPaid, onTimeCount };
@@ -472,7 +475,34 @@ export const Analytics = ({
 
       {/* Category budgets */}
       <div className="bg-white rounded-2xl shadow-xl p-6 mb-6">
-        <h3 className="text-xl font-bold mb-4">Category Budgets</h3>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-xl font-bold">Category Budgets (Plan vs Actual)</h3>
+          <div className="flex items-center gap-2">
+            <button
+              className="px-2 py-1 bg-slate-100 rounded-lg text-sm"
+              onClick={() => setSelectedBudgetMonth((prev) => addMonths(prev, -1))}
+            >
+              ←
+            </button>
+            <span className="text-sm font-semibold min-w-20 text-center">
+              {selectedBudgetMonth.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}
+            </span>
+            <button
+              className="px-2 py-1 bg-slate-100 rounded-lg text-sm"
+              onClick={() => setSelectedBudgetMonth((prev) => addMonths(prev, 1))}
+            >
+              →
+            </button>
+          </div>
+        </div>
+
+        <div className="mb-4 p-3 bg-slate-50 rounded-xl text-sm flex flex-wrap gap-4">
+          <span>Assigned: <b>${thisMonthByCategory.reduce((s, c) => s + c.cap, 0).toFixed(2)}</b></span>
+          <span>Spent: <b>${thisMonthByCategory.reduce((s, c) => s + c.sum, 0).toFixed(2)}</b></span>
+          <span>Remaining: <b>${thisMonthByCategory.reduce((s, c) => s + (c.cap - c.sum), 0).toFixed(2)}</b></span>
+          <span className="text-slate-500">Snapshot key: {selectedBudgetMonthKey}</span>
+        </div>
+
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           {thisMonthByCategory.map(({ cat, sum, cap }) => {
             const pct = cap > 0 ? Math.min((sum / cap) * 100, 100) : 0;

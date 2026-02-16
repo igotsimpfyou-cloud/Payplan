@@ -22,3 +22,10 @@ export const LS_BILLS = 'ppp.bills';                    // Active bills (18-mont
 export const LS_HISTORICAL_BILLS = 'ppp.historicalBills'; // Archived bills (12+ months old)
 export const LS_PAYCHECKS = 'ppp.paychecks';            // Income records
 export const LS_LAST_ROLLOVER = 'ppp.lastRolloverMonth'; // Track when we last generated new month
+
+// Phase 1A sync foundation
+export const LS_INSTITUTIONS = 'ppp.institutions';
+export const LS_ACCOUNT_CONNECTIONS = 'ppp.accountConnections';
+export const LS_SYNCED_ACCOUNTS = 'ppp.syncedAccounts';
+export const LS_SYNCED_TRANSACTIONS = 'ppp.syncedTransactions';
+export const LS_SYNC_JOBS = 'ppp.syncJobs';

@@ -8,6 +8,9 @@ import {
   Target,
   Wrench,
   LayoutDashboard,
+  Search,
+  Clock3,
+  X,
 } from 'lucide-react';
 
 // Utils
@@ -15,6 +18,13 @@ import { toYMD, startOfMonth, addMonths, sameMonth, idForInstance, parseLocalDat
 import { parseAmt } from './utils/formatters';
 import { calculateNextPayDates, monthlyTotal } from './utils/calculations';
 import { createStorageRepository } from './storage/repository';
+import {
+  BUDGET_CATEGORIES,
+  monthKeyFromDate,
+  normalizeBudgetsConfig,
+  resolveBudgetCapsForMonth,
+  upsertMonthlyBudgetCaps,
+} from './utils/budgetEngine';
 
 // Bill Database utilities
 import {
@@ -55,6 +65,45 @@ import { Investments } from './components/views/Investments';
 import { DebtTracker } from './components/views/DebtTracker';
 import { GoalsDashboard } from './components/views/GoalsDashboard';
 import { Button } from './components/ui/Button';
+import { useToast } from './hooks/useToast';
+
+// ---------- Navigation Configuration (static, module-level) ----------
+const NAV_TABS = [
+  { id: 'home', label: 'Home', icon: Home, defaultView: 'dashboard' },
+  { id: 'income', label: 'Income', icon: DollarSign, defaultView: 'income' },
+  {
+    id: 'bills',
+    label: 'Bills',
+    icon: Receipt,
+    defaultView: 'bills-dashboard',
+    subTabs: [
+      { id: 'setup', label: 'Setup', icon: Wrench, view: 'bills-setup' },
+      { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, view: 'bills-dashboard' },
+      { id: 'analytics', label: 'Analytics', icon: BarChart3, view: 'bills-analytics' },
+    ],
+  },
+  {
+    id: 'goals',
+    label: 'Goals',
+    icon: Target,
+    defaultView: 'goals-dashboard',
+    subTabs: [
+      { id: 'setup', label: 'Setup', icon: Wrench, view: 'goals-setup' },
+      { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, view: 'goals-dashboard' },
+      { id: 'analytics', label: 'Analytics', icon: BarChart3, view: 'goals-analytics' },
+    ],
+  },
+];
+
+// Pre-compute view-to-tab mapping
+const VIEW_TO_TAB = {};
+NAV_TABS.forEach((tab) => {
+  if (tab.subTabs) {
+    tab.subTabs.forEach((sub) => { VIEW_TO_TAB[sub.view] = tab.id; });
+  } else {
+    VIEW_TO_TAB[tab.defaultView] = tab.id;
+  }
+});
 
 /**
  * PayPlan Pro - Slim Orchestrator
@@ -83,17 +132,18 @@ const BillPayPlanner = () => {
   const [emergencyFund, setEmergencyFund] = useState({ target: 0, current: 0 });
   const [debtPayoff, setDebtPayoff] = useState([]);
   const [envelopes, setEnvelopes] = useState([]);
-  const [budgets, setBudgets] = useState({
-    utilities: 0,
-    subscription: 0,
-    insurance: 0,
-    loan: 0,
-    rent: 0,
-    other: 0,
-  });
+  const [budgets, setBudgets] = useState(normalizeBudgetsConfig(null));
+  const [budgetEditorMonth, setBudgetEditorMonth] = useState(new Date());
   const [actualPayEntries, setActualPayEntries] = useState([]);
   const [scannedReceipts, setScannedReceipts] = useState([]);
   const [investments, setInvestments] = useState([]);
+
+  // Phase 1A - account aggregation foundation
+  const [institutions, setInstitutions] = useState([]);
+  const [accountConnections, setAccountConnections] = useState([]);
+  const [syncedAccounts, setSyncedAccounts] = useState([]);
+  const [syncedTransactions, setSyncedTransactions] = useState([]);
+  const [syncJobs, setSyncJobs] = useState([]);
 
   // UI modals
   const [showTemplateForm, setShowTemplateForm] = useState(false);
@@ -115,6 +165,7 @@ const BillPayPlanner = () => {
   const quickSwitchInputRef = useRef(null);
 
   const storageRef = useRef(null);
+  const { showToast } = useToast();
 
   const persistCollection = async (name, value) => {
     if (!storageRef.current) return;
@@ -204,19 +255,15 @@ const BillPayPlanner = () => {
         setEmergencyFund(data.emergencyFund || { target: 0, current: 0 });
         setDebtPayoff(Array.isArray(data.debtPayoff) ? data.debtPayoff : []);
         setEnvelopes(Array.isArray(data.envelopes) ? data.envelopes : []);
-        setBudgets(
-          data.budgets || {
-            utilities: 0,
-            subscription: 0,
-            insurance: 0,
-            loan: 0,
-            rent: 0,
-            other: 0,
-          }
-        );
+        setBudgets(normalizeBudgetsConfig(data.budgets));
         setActualPayEntries(Array.isArray(data.actualPayEntries) ? data.actualPayEntries : []);
         setScannedReceipts(Array.isArray(data.scannedReceipts) ? data.scannedReceipts : []);
         setInvestments(Array.isArray(data.investments) ? data.investments : []);
+        setInstitutions(Array.isArray(data.institutions) ? data.institutions : []);
+        setAccountConnections(Array.isArray(data.accountConnections) ? data.accountConnections : []);
+        setSyncedAccounts(Array.isArray(data.syncedAccounts) ? data.syncedAccounts : []);
+        setSyncedTransactions(Array.isArray(data.syncedTransactions) ? data.syncedTransactions : []);
+        setSyncJobs(Array.isArray(data.syncJobs) ? data.syncJobs : []);
       } catch (err) {
         console.warn('Load error', err);
       } finally {
@@ -240,6 +287,11 @@ const BillPayPlanner = () => {
   useEffect(() => { persistCollection('actualPayEntries', actualPayEntries); }, [actualPayEntries]);
   useEffect(() => { persistCollection('scannedReceipts', scannedReceipts); }, [scannedReceipts]);
   useEffect(() => { persistCollection('investments', investments); }, [investments]);
+  useEffect(() => { persistCollection('institutions', institutions); }, [institutions]);
+  useEffect(() => { persistCollection('accountConnections', accountConnections); }, [accountConnections]);
+  useEffect(() => { persistCollection('syncedAccounts', syncedAccounts); }, [syncedAccounts]);
+  useEffect(() => { persistCollection('syncedTransactions', syncedTransactions); }, [syncedTransactions]);
+  useEffect(() => { persistCollection('syncJobs', syncJobs); }, [syncJobs]);
   useEffect(() => { persistCollection('bills', bills); }, [bills]);
   useEffect(() => { persistCollection('historicalBills', historicalBills); }, [historicalBills]);
   useEffect(() => { persistCollection('paychecks', paychecks); }, [paychecks]);
@@ -249,6 +301,130 @@ const BillPayPlanner = () => {
   useEffect(() => () => {
     flushQueuedWrites();
   }, []);
+
+
+  const connectorCatalog = useMemo(
+    () => [
+      { id: 'chase-demo', name: 'Chase (Demo Connector)' },
+      { id: 'boa-demo', name: 'Bank of America (Demo Connector)' },
+      { id: 'amex-demo', name: 'American Express (Demo Connector)' },
+    ],
+    []
+  );
+
+  const handleLinkInstitution = () => {
+    const available = connectorCatalog.find(
+      (institution) => !accountConnections.some((connection) => connection.institutionId === institution.id)
+    ) || connectorCatalog[0];
+
+    if (!available) return;
+
+    const nowIso = new Date().toISOString();
+    const connectionId = `conn-${Date.now()}`;
+
+    const institutionRecord = {
+      id: available.id,
+      name: available.name,
+      connector: 'demo',
+      linkedAt: nowIso,
+    };
+
+    setInstitutions((prev) => {
+      if (prev.some((item) => item.id === institutionRecord.id)) return prev;
+      return [...prev, institutionRecord];
+    });
+
+    const connectionRecord = {
+      id: connectionId,
+      institutionId: institutionRecord.id,
+      institutionName: institutionRecord.name,
+      status: 'connected',
+      linkedAt: nowIso,
+      lastSyncAt: nowIso,
+    };
+    setAccountConnections((prev) => [...prev, connectionRecord]);
+
+    const sampleAccounts = [
+      { id: `acct-${connectionId}-checking`, type: 'checking', name: 'Everyday Checking', maskedIdentifier: '••••1024', currentBalance: 3250.12 },
+      { id: `acct-${connectionId}-savings`, type: 'savings', name: 'High-Yield Savings', maskedIdentifier: '••••8821', currentBalance: 12840.45 },
+    ].map((account) => ({
+      ...account,
+      connectionId,
+      institutionId: institutionRecord.id,
+      connectionStatus: 'connected',
+      lastSyncAt: nowIso,
+    }));
+
+    setSyncedAccounts((prev) => [...prev, ...sampleAccounts]);
+  };
+
+  const handleRunSync = () => {
+    if (!accountConnections.length) return;
+
+    const startedAt = new Date().toISOString();
+    const syncJob = {
+      id: `sync-${Date.now()}`,
+      status: 'success',
+      trigger: 'manual',
+      startedAt,
+      finishedAt: startedAt,
+      errorMessage: null,
+    };
+
+    setSyncJobs((prev) => [syncJob, ...prev].slice(0, 25));
+
+    setAccountConnections((prev) =>
+      prev.map((connection) => ({
+        ...connection,
+        status: 'connected',
+        lastSyncAt: startedAt,
+      }))
+    );
+
+    setSyncedAccounts((prev) =>
+      prev.map((account) => ({
+        ...account,
+        connectionStatus: 'connected',
+        lastSyncAt: startedAt,
+      }))
+    );
+
+    const generatedTransactions = syncedAccounts.map((account, index) => ({
+      id: `txn-${account.id}-${Date.now()}-${index}`,
+      accountId: account.id,
+      description: index % 2 === 0 ? 'Coffee Shop' : 'Payroll Deposit',
+      amount: index % 2 === 0 ? -12.75 : 1200,
+      status: index % 2 === 0 ? 'pending' : 'posted',
+      postedAt: startedAt,
+      dedupeKey: `${account.id}-${startedAt}-${index}`,
+    }));
+
+    if (generatedTransactions.length) {
+      setSyncedTransactions((prev) => [...generatedTransactions, ...prev].slice(0, 500));
+    }
+  };
+
+  const handleUnlinkConnection = (connectionId) => {
+    setAccountConnections((prev) => prev.filter((connection) => connection.id !== connectionId));
+    setSyncedAccounts((prev) => prev.filter((account) => account.connectionId !== connectionId));
+    setSyncedTransactions((prev) => {
+      const accountIds = new Set(
+        syncedAccounts.filter((account) => account.connectionId === connectionId).map((account) => account.id)
+      );
+      return prev.filter((transaction) => !accountIds.has(transaction.accountId));
+    });
+    setSyncJobs((prev) => [
+      {
+        id: `sync-${Date.now()}`,
+        status: 'success',
+        trigger: 'unlink',
+        startedAt: new Date().toISOString(),
+        finishedAt: new Date().toISOString(),
+        errorMessage: null,
+      },
+      ...prev,
+    ].slice(0, 25));
+  };
   // ---------- Monthly rollover - generate new month's bills on first load ----------
   useEffect(() => {
     if (!billTemplates.length || loading) return;
@@ -669,6 +845,7 @@ const BillPayPlanner = () => {
       );
       queueRecordPatch('bills', { type: 'patch', id: instanceId, patch: { paid: nowPaid, paidDate } });
       flushQueuedWrites();
+      showToast(nowPaid ? `${bill.name} marked paid` : `${bill.name} marked unpaid`, nowPaid ? 'success' : 'info');
       return;
     }
 
@@ -684,6 +861,7 @@ const BillPayPlanner = () => {
     setBillInstances((prev) =>
       prev.map((i) => (i.id === instanceId ? { ...i, paid: nowPaid } : i))
     );
+    showToast(nowPaid ? `${inst.name} marked paid` : `${inst.name} marked unpaid`, nowPaid ? 'success' : 'info');
 
     if (nowPaid) {
       const tmpl = billTemplates.find((t) => t.id === inst.templateId);
@@ -691,6 +869,61 @@ const BillPayPlanner = () => {
         ensureNextMonthForTemplate(tmpl, new Date(inst.dueDate));
       }
     }
+  };
+
+  const snoozeBillOneDay = (instanceId) => {
+    const bill = bills.find((b) => b.id === instanceId);
+    if (bill) {
+      const due = parseMMDDYYYY(bill.dueDate);
+      if (!due) return;
+      due.setDate(due.getDate() + 1);
+      const dueDate = toMMDDYYYY(due);
+      setBills((prev) => prev.map((b) => (b.id === instanceId ? { ...b, dueDate } : b)));
+      queueRecordPatch('bills', { type: 'patch', id: instanceId, patch: { dueDate } });
+      flushQueuedWrites();
+      showToast(`${bill.name} snoozed to ${due.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`, 'info');
+      return;
+    }
+
+    const inst = billInstances.find((i) => i.id === instanceId);
+    if (!inst) return;
+    const due = parseLocalDate(inst.dueDate);
+    if (!due) return;
+    due.setDate(due.getDate() + 1);
+    const dueDate = toYMD(due);
+    setBillInstances((prev) => prev.map((i) => (i.id === instanceId ? { ...i, dueDate } : i)));
+    showToast(`${inst.name} snoozed by 1 day`, 'info');
+  };
+
+  const assignBillToNextPaycheck = (instanceId) => {
+    if (!nextPayDates.length) {
+      showToast('Add a pay schedule to assign this bill', 'warning');
+      return;
+    }
+
+    const bill = bills.find((b) => b.id === instanceId);
+    if (bill) {
+      const assignedPayDate = toMMDDYYYY(nextPayDates[0]);
+      setBills((prev) => prev.map((b) => (b.id === instanceId
+        ? { ...b, assignedCheck: 1, assignedPayDate, manuallyAssigned: true }
+        : b)));
+      queueRecordPatch('bills', {
+        type: 'patch',
+        id: instanceId,
+        patch: { assignedCheck: 1, assignedPayDate, manuallyAssigned: true },
+      });
+      flushQueuedWrites();
+      showToast(`${bill.name} assigned to next paycheck`, 'success');
+      return;
+    }
+
+    const inst = billInstances.find((i) => i.id === instanceId);
+    if (!inst) return;
+    const assignedPayDate = toYMD(nextPayDates[0]);
+    setBillInstances((prev) => prev.map((i) => (i.id === instanceId
+      ? { ...i, assignedCheck: 1, assignedPayDate, manuallyAssigned: true }
+      : i)));
+    showToast(`${inst.name} assigned to next paycheck`, 'success');
   };
 
   // ---------- Submit Actuals ----------
@@ -770,6 +1003,9 @@ const BillPayPlanner = () => {
   const perCheckEnvelopeSum = () =>
     envelopes.reduce((s, e) => s + parseAmt(e.perCheck), 0);
 
+  const budgetEditorMonthKey = monthKeyFromDate(budgetEditorMonth);
+  const budgetEditorCaps = resolveBudgetCapsForMonth(budgets, budgetEditorMonthKey);
+
   // ---------- Backup / Restore ----------
   const exportBackup = () => {
     const payload = {
@@ -824,16 +1060,7 @@ const BillPayPlanner = () => {
     setEmergencyFund(d?.emergencyFund || { target: 0, current: 0 });
     setDebtPayoff(Array.isArray(d?.debtPayoff) ? d.debtPayoff : []);
     setEnvelopes(Array.isArray(d?.envelopes) ? d.envelopes : []);
-    setBudgets(
-      d?.budgets || {
-        utilities: 0,
-        subscription: 0,
-        insurance: 0,
-        loan: 0,
-        rent: 0,
-        other: 0,
-      }
-    );
+    setBudgets(normalizeBudgetsConfig(d?.budgets));
     setActualPayEntries(Array.isArray(d?.actualPayEntries) ? d.actualPayEntries : []);
     setScannedReceipts(Array.isArray(d?.scannedReceipts) ? d.scannedReceipts : []);
     setInvestments(Array.isArray(d?.investments) ? d.investments : []);
@@ -1129,46 +1356,7 @@ const BillPayPlanner = () => {
     },
   };
 
-  // ---------- Navigation Configuration ----------
-  // Map of which views belong to which tab and sub-tab
-  const NAV_TABS = [
-    { id: 'home', label: 'Home', icon: Home, defaultView: 'dashboard' },
-    { id: 'income', label: 'Income', icon: DollarSign, defaultView: 'income' },
-    {
-      id: 'bills',
-      label: 'Bills',
-      icon: Receipt,
-      defaultView: 'bills-dashboard',
-      subTabs: [
-        { id: 'setup', label: 'Setup', icon: Wrench, view: 'bills-setup' },
-        { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, view: 'bills-dashboard' },
-        { id: 'analytics', label: 'Analytics', icon: BarChart3, view: 'bills-analytics' },
-      ],
-    },
-    {
-      id: 'goals',
-      label: 'Goals',
-      icon: Target,
-      defaultView: 'goals-dashboard',
-      subTabs: [
-        { id: 'setup', label: 'Setup', icon: Wrench, view: 'goals-setup' },
-        { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, view: 'goals-dashboard' },
-        { id: 'analytics', label: 'Analytics', icon: BarChart3, view: 'goals-analytics' },
-      ],
-    },
-  ];
-
-  // All valid views mapped to their parent tab
-  const viewToTab = {};
-  NAV_TABS.forEach((tab) => {
-    if (tab.subTabs) {
-      tab.subTabs.forEach((sub) => { viewToTab[sub.view] = tab.id; });
-    } else {
-      viewToTab[tab.defaultView] = tab.id;
-    }
-  });
-
-  const activeTabId = viewToTab[view] || 'home';
+  const activeTabId = VIEW_TO_TAB[view] || 'home';
   const activeTab = NAV_TABS.find((t) => t.id === activeTabId);
   const viewContext = VIEW_METADATA[view] || {
     label: 'Dashboard',
@@ -1285,7 +1473,8 @@ const BillPayPlanner = () => {
     ];
 
     return [...navActions, ...modalActions];
-  }, [NAV_TABS]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     try {
@@ -1381,6 +1570,95 @@ const BillPayPlanner = () => {
     }
   }, [showQuickSwitch]);
 
+
+  const handleDeduplicateBills = () => {
+    const billsByNameMonth = {};
+    let removed = 0;
+
+    for (const bill of bills) {
+      const dueDate = parseMMDDYYYY(bill.dueDate);
+      if (!dueDate) continue;
+      const monthKey = `${bill.name}-${dueDate.getFullYear()}-${dueDate.getMonth()}`;
+      if (!billsByNameMonth[monthKey]) {
+        billsByNameMonth[monthKey] = [];
+      }
+      billsByNameMonth[monthKey].push(bill);
+    }
+
+    const unique = [];
+    for (const key in billsByNameMonth) {
+      const group = billsByNameMonth[key];
+      if (group.length === 1) {
+        unique.push(group[0]);
+      } else {
+        const template = billTemplates.find(t => t.id === group[0].templateId);
+        const templateDueDay = template?.dueDay;
+        group.sort((a, b) => {
+          if (a.paid && !b.paid) return -1;
+          if (!a.paid && b.paid) return 1;
+          const aDate = parseMMDDYYYY(a.dueDate);
+          const bDate = parseMMDDYYYY(b.dueDate);
+          const aMatches = aDate?.getDate() === templateDueDay;
+          const bMatches = bDate?.getDate() === templateDueDay;
+          if (aMatches && !bMatches) return -1;
+          if (!aMatches && bMatches) return 1;
+          return 0;
+        });
+        unique.push(group[0]);
+        removed += group.length - 1;
+      }
+    }
+
+    setBills(unique);
+
+    const instancesByNameMonth = {};
+    for (const inst of billInstances) {
+      const dueDate = new Date(inst.dueDate);
+      const monthKey = `${inst.name}-${dueDate.getFullYear()}-${dueDate.getMonth()}`;
+      if (!instancesByNameMonth[monthKey]) {
+        instancesByNameMonth[monthKey] = [];
+      }
+      instancesByNameMonth[monthKey].push(inst);
+    }
+
+    const uniqueInstances = [];
+    for (const key in instancesByNameMonth) {
+      const group = instancesByNameMonth[key];
+      group.sort((a, b) => (a.paid && !b.paid ? -1 : !a.paid && b.paid ? 1 : 0));
+      uniqueInstances.push(group[0]);
+    }
+    setBillInstances(uniqueInstances);
+
+    return removed;
+  };
+
+  const handleMarkPastBillsPaid = () => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    let marked = 0;
+
+    setBills(prev => prev.map(bill => {
+      if (bill.paid) return bill;
+      const dueDate = parseMMDDYYYY(bill.dueDate);
+      if (dueDate && dueDate < today) {
+        marked++;
+        return { ...bill, paid: true, paidDate: null };
+      }
+      return bill;
+    }));
+
+    setBillInstances(prev => prev.map(inst => {
+      if (inst.paid) return inst;
+      const dueDate = new Date(inst.dueDate);
+      if (dueDate < today) {
+        return { ...inst, paid: true };
+      }
+      return inst;
+    }));
+
+    return marked;
+  };
+
   // ---------- Header ----------
   const Header = () => {
     return (
@@ -1456,36 +1734,13 @@ const BillPayPlanner = () => {
               </span>
             </div>
 
-            {(viewContext.description || siblingViews.length > 1) && (
+            {viewContext.description && (
               <div className="mt-2 flex flex-wrap items-center gap-2">
                 {viewContext.icon && (
                   <viewContext.icon size={14} className="text-white/85" />
                 )}
                 {viewContext.description && (
                   <p className="text-xs text-white/90 mr-1">{viewContext.description}</p>
-                )}
-                {siblingViews.length > 1 && (
-                  <div className="flex flex-wrap items-center gap-1">
-                    {siblingViews.map((sibling) => {
-                      const SiblingIcon = sibling.icon;
-                      const isActiveSibling = sibling.viewId === view;
-
-                      return (
-                        <button
-                          key={sibling.viewId}
-                          onClick={() => setView(sibling.viewId)}
-                          className={`px-2 py-1 rounded-lg text-[11px] sm:text-xs font-semibold flex items-center gap-1 transition-colors ${
-                            isActiveSibling
-                              ? 'bg-white text-emerald-700'
-                              : 'bg-white/20 text-white hover:bg-white/30'
-                          }`}
-                        >
-                          {SiblingIcon && <SiblingIcon size={11} />}
-                          {sibling.label}
-                        </button>
-                      );
-                    })}
-                  </div>
                 )}
               </div>
             )}
@@ -1563,6 +1818,7 @@ const BillPayPlanner = () => {
           </div>
         )}
 
+        <div key={view} className="animate-view-swap">
         {/* ===== HOME ===== */}
         {view === 'dashboard' && (
           <Dashboard
@@ -1577,6 +1833,10 @@ const BillPayPlanner = () => {
             perCheckEnvelopeSum={perCheckEnvelopeSum()}
             onToggleInstancePaid={toggleInstancePaid}
             onNavigateToChecklist={() => setView('bills-dashboard')}
+            onNavigateToIncome={() => setView('income')}
+            onNavigateToBillsSetup={() => setView('bills-setup')}
+            onSnoozeBillOneDay={snoozeBillOneDay}
+            onAssignBillToNextPaycheck={assignBillToNextPaycheck}
           />
         )}
 
@@ -1726,34 +1986,78 @@ const BillPayPlanner = () => {
 
             {/* Category Budgets */}
             <div className="bg-white rounded-2xl shadow-xl p-5 mt-6">
-              <div className="flex items-center justify-between mb-3">
-                <h3 className="font-bold text-slate-800">Category Budgets</h3>
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+                <div>
+                  <h3 className="font-bold text-slate-800">Category Budgets (Phase 1C)</h3>
+                  <p className="text-xs text-slate-500">Month-specific plan-vs-actual setup with history snapshots.</p>
+                </div>
+                <input
+                  type="month"
+                  value={budgetEditorMonthKey}
+                  onChange={(e) => {
+                    if (!e.target.value) return;
+                    const [year, month] = e.target.value.split('-').map(Number);
+                    setBudgetEditorMonth(new Date(year, month - 1, 1));
+                  }}
+                  className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-2 text-sm">
+                {BUDGET_CATEGORIES.map((category) => (
+                  <label
+                    key={category}
+                    className="p-3 bg-slate-50 rounded-xl flex flex-col gap-1"
+                  >
+                    <span className="font-semibold capitalize text-slate-700">{category}</span>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={budgetEditorCaps[category] ?? 0}
+                      onChange={(e) => {
+                        const val = parseAmt(e.target.value || 0);
+                        setBudgets((prev) => upsertMonthlyBudgetCaps(prev, budgetEditorMonthKey, { [category]: val }));
+                      }}
+                      className="rounded-md border border-slate-300 px-2 py-1"
+                    />
+                  </label>
+                ))}
+              </div>
+
+              <div className="mt-4 flex flex-wrap items-center gap-2 text-xs">
                 <Button
                   variant="secondary"
-                  size="sm"
-                  className="bg-emerald-100 text-emerald-700"
+                  size="xs"
+                  className="bg-indigo-100 text-indigo-700"
                   onClick={() => {
-                    const cat = prompt(
-                      'Category (utilities, subscription, insurance, loan, rent, other):'
-                    );
-                    if (!cat) return;
-                    const cap = parseAmt(prompt('Monthly cap:') || 0);
-                    setBudgets({ ...budgets, [cat]: cap });
+                    setBudgets((prev) => ({
+                      ...prev,
+                      exclusions: {
+                        ...prev.exclusions,
+                        excludeTransfers: !prev.exclusions?.excludeTransfers,
+                      },
+                    }));
                   }}
                 >
-                  Set/Update
+                  Transfers: {budgets.exclusions?.excludeTransfers ? 'Excluded' : 'Included'}
                 </Button>
-              </div>
-              <div className="grid grid-cols-2 gap-2 text-sm">
-                {Object.entries(budgets).map(([k, v]) => (
-                  <div
-                    key={k}
-                    className="p-3 bg-slate-50 rounded-xl flex items-center justify-between"
-                  >
-                    <span className="font-semibold capitalize">{k}</span>
-                    <span>${parseAmt(v).toFixed(2)}</span>
-                  </div>
-                ))}
+                <Button
+                  variant="secondary"
+                  size="xs"
+                  className="bg-indigo-100 text-indigo-700"
+                  onClick={() => {
+                    setBudgets((prev) => ({
+                      ...prev,
+                      exclusions: {
+                        ...prev.exclusions,
+                        excludeRefunds: !prev.exclusions?.excludeRefunds,
+                      },
+                    }));
+                  }}
+                >
+                  Refunds: {budgets.exclusions?.excludeRefunds ? 'Excluded' : 'Included'}
+                </Button>
               </div>
             </div>
           </>
@@ -1842,6 +2146,7 @@ const BillPayPlanner = () => {
             bills={bills}
             historicalBills={historicalBills}
             scannedReceipts={scannedReceipts}
+            syncedTransactions={syncedTransactions}
             nextPayDates={nextPayDates}
             paySchedule={paySchedule}
             budgets={budgets}
@@ -1893,6 +2198,8 @@ const BillPayPlanner = () => {
         {view === 'goals-analytics' && (
           <Retirement />
         )}
+        </div>
+
         {/* Modals */}
         {showTemplateForm && (
           <TemplateForm
@@ -1995,123 +2302,12 @@ const BillPayPlanner = () => {
                   onExportBackup={exportBackup}
                   onImportBackup={importBackupFromFile}
                   bills={bills}
-                  onDeduplicateBills={() => {
-                    const billsByNameMonth = {};
-                    let removed = 0;
-
-                    for (const bill of bills) {
-                      const dueDate = parseMMDDYYYY(bill.dueDate);
-                      if (!dueDate) continue;
-                      const monthKey = `${bill.name}-${dueDate.getFullYear()}-${dueDate.getMonth()}`;
-                      if (!billsByNameMonth[monthKey]) {
-                        billsByNameMonth[monthKey] = [];
-                      }
-                      billsByNameMonth[monthKey].push(bill);
-                    }
-                    billsByNameMonth[monthKey].push(bill);
-                  }
-
-                  const unique = [];
-                  for (const key in billsByNameMonth) {
-                    const group = billsByNameMonth[key];
-                    if (group.length === 1) {
-                      unique.push(group[0]);
-                    } else {
-                      const template = billTemplates.find(t => t.id === group[0].templateId);
-                      const templateDueDay = template?.dueDay;
-                      group.sort((a, b) => {
-                        if (a.paid && !b.paid) return -1;
-                        if (!a.paid && b.paid) return 1;
-                        const aDate = parseMMDDYYYY(a.dueDate);
-                        const bDate = parseMMDDYYYY(b.dueDate);
-                        const aMatches = aDate?.getDate() === templateDueDay;
-                        const bMatches = bDate?.getDate() === templateDueDay;
-                        if (aMatches && !bMatches) return -1;
-                        if (!aMatches && bMatches) return 1;
-                        return 0;
-                      });
-                      unique.push(group[0]);
-                      removed += group.length - 1;
-                    }
-                  }
-
-                  setBills(unique);
-
-                  const instancesByNameMonth = {};
-                  for (const inst of billInstances) {
-                    const dueDate = new Date(inst.dueDate);
-                    const monthKey = `${inst.name}-${dueDate.getFullYear()}-${dueDate.getMonth()}`;
-                    if (!instancesByNameMonth[monthKey]) {
-                      instancesByNameMonth[monthKey] = [];
-                    }
-                    instancesByNameMonth[monthKey].push(inst);
-                  }
-
-                  const uniqueInstances = [];
-                  for (const key in instancesByNameMonth) {
-                    const group = instancesByNameMonth[key];
-                    group.sort((a, b) => (a.paid && !b.paid ? -1 : !a.paid && b.paid ? 1 : 0));
-                    uniqueInstances.push(group[0]);
-                  }
-                  setBillInstances(uniqueInstances);
-
-                  return removed;
-                }}
-                onMarkPastBillsPaid={() => {
-                  const today = new Date();
-                  today.setHours(0, 0, 0, 0);
-                  let marked = 0;
-
-                  setBills(prev => prev.map(bill => {
-                    if (bill.paid) return bill;
-                    const dueDate = parseMMDDYYYY(bill.dueDate);
-                    if (dueDate && dueDate < today) {
-                      marked++;
-                      return { ...bill, paid: true, paidDate: null };
-                    }
-                    return bill;
-                  }));
-
-                  setBillInstances(prev => prev.map(inst => {
-                    if (inst.paid) return inst;
-                    const dueDate = new Date(inst.dueDate);
-                    if (dueDate < today) {
-                      return { ...inst, paid: true };
-                    }
-                    return inst;
-                  }));
-
-                    return removed;
-                  }}
-                  onMarkPastBillsPaid={() => {
-                    const today = new Date();
-                    today.setHours(0, 0, 0, 0);
-                    let marked = 0;
-
-                    setBills(prev => prev.map(bill => {
-                      if (bill.paid) return bill;
-                      const dueDate = parseMMDDYYYY(bill.dueDate);
-                      if (dueDate && dueDate < today) {
-                        marked++;
-                        return { ...bill, paid: true, paidDate: null };
-                      }
-                      return bill;
-                    }));
-
-                    setBillInstances(prev => prev.map(inst => {
-                      if (inst.paid) return inst;
-                      const dueDate = new Date(inst.dueDate);
-                      if (dueDate < today) {
-                        return { ...inst, paid: true };
-                      }
-                      return inst;
-                    }));
-
-                    return marked;
-                  }}
+                  onDeduplicateBills={handleDeduplicateBills}
+                  onMarkPastBillsPaid={handleMarkPastBillsPaid}
                 />
+              </div>
             </div>
-          </Modal>
+          </div>
         )}
       </div>
     </div>

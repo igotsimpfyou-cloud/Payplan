@@ -247,7 +247,7 @@ export const GoalsDashboard = ({
                   <div className="text-right">
                     <span className="font-medium text-sm text-slate-700">${value.toFixed(0)}</span>
                     <span className={`text-xs ml-2 ${gain >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
-                      {gain >= 0 ? '+' : ''}{((gain / cost) * 100).toFixed(1)}%
+                      {gain >= 0 ? '+' : ''}{cost > 0 ? ((gain / cost) * 100).toFixed(1) : '0.0'}%
                     </span>
                   </div>
                 </div>
