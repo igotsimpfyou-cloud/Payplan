@@ -18,6 +18,13 @@ import { toYMD, startOfMonth, addMonths, sameMonth, idForInstance, parseLocalDat
 import { parseAmt } from './utils/formatters';
 import { calculateNextPayDates, monthlyTotal } from './utils/calculations';
 import { createStorageRepository } from './storage/repository';
+import {
+  BUDGET_CATEGORIES,
+  monthKeyFromDate,
+  normalizeBudgetsConfig,
+  resolveBudgetCapsForMonth,
+  upsertMonthlyBudgetCaps,
+} from './utils/budgetEngine';
 
 // Bill Database utilities
 import {
@@ -125,17 +132,18 @@ const BillPayPlanner = () => {
   const [emergencyFund, setEmergencyFund] = useState({ target: 0, current: 0 });
   const [debtPayoff, setDebtPayoff] = useState([]);
   const [envelopes, setEnvelopes] = useState([]);
-  const [budgets, setBudgets] = useState({
-    utilities: 0,
-    subscription: 0,
-    insurance: 0,
-    loan: 0,
-    rent: 0,
-    other: 0,
-  });
+  const [budgets, setBudgets] = useState(normalizeBudgetsConfig(null));
+  const [budgetEditorMonth, setBudgetEditorMonth] = useState(new Date());
   const [actualPayEntries, setActualPayEntries] = useState([]);
   const [scannedReceipts, setScannedReceipts] = useState([]);
   const [investments, setInvestments] = useState([]);
+
+  // Phase 1A - account aggregation foundation
+  const [institutions, setInstitutions] = useState([]);
+  const [accountConnections, setAccountConnections] = useState([]);
+  const [syncedAccounts, setSyncedAccounts] = useState([]);
+  const [syncedTransactions, setSyncedTransactions] = useState([]);
+  const [syncJobs, setSyncJobs] = useState([]);
 
   // UI modals
   const [showTemplateForm, setShowTemplateForm] = useState(false);
@@ -247,19 +255,15 @@ const BillPayPlanner = () => {
         setEmergencyFund(data.emergencyFund || { target: 0, current: 0 });
         setDebtPayoff(Array.isArray(data.debtPayoff) ? data.debtPayoff : []);
         setEnvelopes(Array.isArray(data.envelopes) ? data.envelopes : []);
-        setBudgets(
-          data.budgets || {
-            utilities: 0,
-            subscription: 0,
-            insurance: 0,
-            loan: 0,
-            rent: 0,
-            other: 0,
-          }
-        );
+        setBudgets(normalizeBudgetsConfig(data.budgets));
         setActualPayEntries(Array.isArray(data.actualPayEntries) ? data.actualPayEntries : []);
         setScannedReceipts(Array.isArray(data.scannedReceipts) ? data.scannedReceipts : []);
         setInvestments(Array.isArray(data.investments) ? data.investments : []);
+        setInstitutions(Array.isArray(data.institutions) ? data.institutions : []);
+        setAccountConnections(Array.isArray(data.accountConnections) ? data.accountConnections : []);
+        setSyncedAccounts(Array.isArray(data.syncedAccounts) ? data.syncedAccounts : []);
+        setSyncedTransactions(Array.isArray(data.syncedTransactions) ? data.syncedTransactions : []);
+        setSyncJobs(Array.isArray(data.syncJobs) ? data.syncJobs : []);
       } catch (err) {
         console.warn('Load error', err);
       } finally {
@@ -283,6 +287,11 @@ const BillPayPlanner = () => {
   useEffect(() => { persistCollection('actualPayEntries', actualPayEntries); }, [actualPayEntries]);
   useEffect(() => { persistCollection('scannedReceipts', scannedReceipts); }, [scannedReceipts]);
   useEffect(() => { persistCollection('investments', investments); }, [investments]);
+  useEffect(() => { persistCollection('institutions', institutions); }, [institutions]);
+  useEffect(() => { persistCollection('accountConnections', accountConnections); }, [accountConnections]);
+  useEffect(() => { persistCollection('syncedAccounts', syncedAccounts); }, [syncedAccounts]);
+  useEffect(() => { persistCollection('syncedTransactions', syncedTransactions); }, [syncedTransactions]);
+  useEffect(() => { persistCollection('syncJobs', syncJobs); }, [syncJobs]);
   useEffect(() => { persistCollection('bills', bills); }, [bills]);
   useEffect(() => { persistCollection('historicalBills', historicalBills); }, [historicalBills]);
   useEffect(() => { persistCollection('paychecks', paychecks); }, [paychecks]);
@@ -292,6 +301,130 @@ const BillPayPlanner = () => {
   useEffect(() => () => {
     flushQueuedWrites();
   }, []);
+
+
+  const connectorCatalog = useMemo(
+    () => [
+      { id: 'chase-demo', name: 'Chase (Demo Connector)' },
+      { id: 'boa-demo', name: 'Bank of America (Demo Connector)' },
+      { id: 'amex-demo', name: 'American Express (Demo Connector)' },
+    ],
+    []
+  );
+
+  const handleLinkInstitution = () => {
+    const available = connectorCatalog.find(
+      (institution) => !accountConnections.some((connection) => connection.institutionId === institution.id)
+    ) || connectorCatalog[0];
+
+    if (!available) return;
+
+    const nowIso = new Date().toISOString();
+    const connectionId = `conn-${Date.now()}`;
+
+    const institutionRecord = {
+      id: available.id,
+      name: available.name,
+      connector: 'demo',
+      linkedAt: nowIso,
+    };
+
+    setInstitutions((prev) => {
+      if (prev.some((item) => item.id === institutionRecord.id)) return prev;
+      return [...prev, institutionRecord];
+    });
+
+    const connectionRecord = {
+      id: connectionId,
+      institutionId: institutionRecord.id,
+      institutionName: institutionRecord.name,
+      status: 'connected',
+      linkedAt: nowIso,
+      lastSyncAt: nowIso,
+    };
+    setAccountConnections((prev) => [...prev, connectionRecord]);
+
+    const sampleAccounts = [
+      { id: `acct-${connectionId}-checking`, type: 'checking', name: 'Everyday Checking', maskedIdentifier: '••••1024', currentBalance: 3250.12 },
+      { id: `acct-${connectionId}-savings`, type: 'savings', name: 'High-Yield Savings', maskedIdentifier: '••••8821', currentBalance: 12840.45 },
+    ].map((account) => ({
+      ...account,
+      connectionId,
+      institutionId: institutionRecord.id,
+      connectionStatus: 'connected',
+      lastSyncAt: nowIso,
+    }));
+
+    setSyncedAccounts((prev) => [...prev, ...sampleAccounts]);
+  };
+
+  const handleRunSync = () => {
+    if (!accountConnections.length) return;
+
+    const startedAt = new Date().toISOString();
+    const syncJob = {
+      id: `sync-${Date.now()}`,
+      status: 'success',
+      trigger: 'manual',
+      startedAt,
+      finishedAt: startedAt,
+      errorMessage: null,
+    };
+
+    setSyncJobs((prev) => [syncJob, ...prev].slice(0, 25));
+
+    setAccountConnections((prev) =>
+      prev.map((connection) => ({
+        ...connection,
+        status: 'connected',
+        lastSyncAt: startedAt,
+      }))
+    );
+
+    setSyncedAccounts((prev) =>
+      prev.map((account) => ({
+        ...account,
+        connectionStatus: 'connected',
+        lastSyncAt: startedAt,
+      }))
+    );
+
+    const generatedTransactions = syncedAccounts.map((account, index) => ({
+      id: `txn-${account.id}-${Date.now()}-${index}`,
+      accountId: account.id,
+      description: index % 2 === 0 ? 'Coffee Shop' : 'Payroll Deposit',
+      amount: index % 2 === 0 ? -12.75 : 1200,
+      status: index % 2 === 0 ? 'pending' : 'posted',
+      postedAt: startedAt,
+      dedupeKey: `${account.id}-${startedAt}-${index}`,
+    }));
+
+    if (generatedTransactions.length) {
+      setSyncedTransactions((prev) => [...generatedTransactions, ...prev].slice(0, 500));
+    }
+  };
+
+  const handleUnlinkConnection = (connectionId) => {
+    setAccountConnections((prev) => prev.filter((connection) => connection.id !== connectionId));
+    setSyncedAccounts((prev) => prev.filter((account) => account.connectionId !== connectionId));
+    setSyncedTransactions((prev) => {
+      const accountIds = new Set(
+        syncedAccounts.filter((account) => account.connectionId === connectionId).map((account) => account.id)
+      );
+      return prev.filter((transaction) => !accountIds.has(transaction.accountId));
+    });
+    setSyncJobs((prev) => [
+      {
+        id: `sync-${Date.now()}`,
+        status: 'success',
+        trigger: 'unlink',
+        startedAt: new Date().toISOString(),
+        finishedAt: new Date().toISOString(),
+        errorMessage: null,
+      },
+      ...prev,
+    ].slice(0, 25));
+  };
   // ---------- Monthly rollover - generate new month's bills on first load ----------
   useEffect(() => {
     if (!billTemplates.length || loading) return;
@@ -870,6 +1003,9 @@ const BillPayPlanner = () => {
   const perCheckEnvelopeSum = () =>
     envelopes.reduce((s, e) => s + parseAmt(e.perCheck), 0);
 
+  const budgetEditorMonthKey = monthKeyFromDate(budgetEditorMonth);
+  const budgetEditorCaps = resolveBudgetCapsForMonth(budgets, budgetEditorMonthKey);
+
   // ---------- Backup / Restore ----------
   const exportBackup = () => {
     const payload = {
@@ -924,16 +1060,7 @@ const BillPayPlanner = () => {
     setEmergencyFund(d?.emergencyFund || { target: 0, current: 0 });
     setDebtPayoff(Array.isArray(d?.debtPayoff) ? d.debtPayoff : []);
     setEnvelopes(Array.isArray(d?.envelopes) ? d.envelopes : []);
-    setBudgets(
-      d?.budgets || {
-        utilities: 0,
-        subscription: 0,
-        insurance: 0,
-        loan: 0,
-        rent: 0,
-        other: 0,
-      }
-    );
+    setBudgets(normalizeBudgetsConfig(d?.budgets));
     setActualPayEntries(Array.isArray(d?.actualPayEntries) ? d.actualPayEntries : []);
     setScannedReceipts(Array.isArray(d?.scannedReceipts) ? d.scannedReceipts : []);
     setInvestments(Array.isArray(d?.investments) ? d.investments : []);
@@ -1859,34 +1986,78 @@ const BillPayPlanner = () => {
 
             {/* Category Budgets */}
             <div className="bg-white rounded-2xl shadow-xl p-5 mt-6">
-              <div className="flex items-center justify-between mb-3">
-                <h3 className="font-bold text-slate-800">Category Budgets</h3>
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+                <div>
+                  <h3 className="font-bold text-slate-800">Category Budgets (Phase 1C)</h3>
+                  <p className="text-xs text-slate-500">Month-specific plan-vs-actual setup with history snapshots.</p>
+                </div>
+                <input
+                  type="month"
+                  value={budgetEditorMonthKey}
+                  onChange={(e) => {
+                    if (!e.target.value) return;
+                    const [year, month] = e.target.value.split('-').map(Number);
+                    setBudgetEditorMonth(new Date(year, month - 1, 1));
+                  }}
+                  className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-2 text-sm">
+                {BUDGET_CATEGORIES.map((category) => (
+                  <label
+                    key={category}
+                    className="p-3 bg-slate-50 rounded-xl flex flex-col gap-1"
+                  >
+                    <span className="font-semibold capitalize text-slate-700">{category}</span>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={budgetEditorCaps[category] ?? 0}
+                      onChange={(e) => {
+                        const val = parseAmt(e.target.value || 0);
+                        setBudgets((prev) => upsertMonthlyBudgetCaps(prev, budgetEditorMonthKey, { [category]: val }));
+                      }}
+                      className="rounded-md border border-slate-300 px-2 py-1"
+                    />
+                  </label>
+                ))}
+              </div>
+
+              <div className="mt-4 flex flex-wrap items-center gap-2 text-xs">
                 <Button
                   variant="secondary"
-                  size="sm"
-                  className="bg-emerald-100 text-emerald-700"
+                  size="xs"
+                  className="bg-indigo-100 text-indigo-700"
                   onClick={() => {
-                    const cat = prompt(
-                      'Category (utilities, subscription, insurance, loan, rent, other):'
-                    );
-                    if (!cat) return;
-                    const cap = parseAmt(prompt('Monthly cap:') || 0);
-                    setBudgets({ ...budgets, [cat]: cap });
+                    setBudgets((prev) => ({
+                      ...prev,
+                      exclusions: {
+                        ...prev.exclusions,
+                        excludeTransfers: !prev.exclusions?.excludeTransfers,
+                      },
+                    }));
                   }}
                 >
-                  Set/Update
+                  Transfers: {budgets.exclusions?.excludeTransfers ? 'Excluded' : 'Included'}
                 </Button>
-              </div>
-              <div className="grid grid-cols-2 gap-2 text-sm">
-                {Object.entries(budgets).map(([k, v]) => (
-                  <div
-                    key={k}
-                    className="p-3 bg-slate-50 rounded-xl flex items-center justify-between"
-                  >
-                    <span className="font-semibold capitalize">{k}</span>
-                    <span>${parseAmt(v).toFixed(2)}</span>
-                  </div>
-                ))}
+                <Button
+                  variant="secondary"
+                  size="xs"
+                  className="bg-indigo-100 text-indigo-700"
+                  onClick={() => {
+                    setBudgets((prev) => ({
+                      ...prev,
+                      exclusions: {
+                        ...prev.exclusions,
+                        excludeRefunds: !prev.exclusions?.excludeRefunds,
+                      },
+                    }));
+                  }}
+                >
+                  Refunds: {budgets.exclusions?.excludeRefunds ? 'Excluded' : 'Included'}
+                </Button>
               </div>
             </div>
           </>
@@ -1975,6 +2146,7 @@ const BillPayPlanner = () => {
             bills={bills}
             historicalBills={historicalBills}
             scannedReceipts={scannedReceipts}
+            syncedTransactions={syncedTransactions}
             nextPayDates={nextPayDates}
             paySchedule={paySchedule}
             budgets={budgets}

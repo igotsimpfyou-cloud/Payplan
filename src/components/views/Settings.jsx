@@ -18,6 +18,13 @@ export const Settings = ({
   onImportBackup,
   billInstances = [],
   bills = [],
+  institutions = [],
+  accountConnections = [],
+  syncedAccounts = [],
+  syncJobs = [],
+  onLinkInstitution,
+  onRunSync,
+  onUnlinkConnection,
   onDeduplicateBills,
   onMarkPastBillsPaid,
 }) => {
