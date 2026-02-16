@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { DollarSign, Clock, Trash2, Calendar, Edit2 } from 'lucide-react';
+import { DollarSign, Clock, Trash2, Calendar, Edit2, ArrowRight, ListChecks } from 'lucide-react';
 import { parseAmt } from '../../utils/formatters';
 import { parseLocalDate, toYMD } from '../../utils/dateHelpers';
+import { uiSpacing, uiTap, uiType } from '../../constants/uiPresets';
 
 export const Income = ({
   paySchedule,
@@ -37,17 +38,17 @@ export const Income = ({
   const perCheck = parseAmt(paySchedule?.payAmount);
 
   return (
-    <div className="space-y-4">
+    <div className={uiSpacing.pageStack}>
       {/* Pay Schedule Card */}
-      <div className="bg-white rounded-2xl shadow-lg p-5">
+      <div className={`bg-white ${uiSpacing.card}`}>
         <div className="flex items-center justify-between mb-3">
-          <h3 className="font-bold text-slate-800 flex items-center gap-2">
+          <h3 className={`${uiType.sectionTitle} text-slate-800 flex items-center gap-2`}>
             <Calendar size={18} className="text-emerald-600" />
             Pay Schedule
           </h3>
           <button
             onClick={onEditPaySchedule}
-            className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold"
+            className={`px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold ${uiTap.control}`}
           >
             {paySchedule ? 'Edit' : 'Set Up'}
           </button>
@@ -55,17 +56,17 @@ export const Income = ({
 
         {paySchedule ? (
           <div className="space-y-3">
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div className="bg-slate-50 rounded-xl p-3 text-center">
-                <p className="text-xs text-slate-400 mb-1">Frequency</p>
+                <p className={`text-slate-400 mb-1 ${uiType.helperText}`}>Frequency</p>
                 <p className="font-bold text-slate-700 text-sm capitalize">{paySchedule.frequency}</p>
               </div>
               <div className="bg-slate-50 rounded-xl p-3 text-center">
-                <p className="text-xs text-slate-400 mb-1">Per Check</p>
+                <p className={`text-slate-400 mb-1 ${uiType.helperText}`}>Per Check</p>
                 <p className="font-bold text-emerald-600 text-sm">${perCheck.toFixed(2)}</p>
               </div>
               <div className="bg-slate-50 rounded-xl p-3 text-center">
-                <p className="text-xs text-slate-400 mb-1">Next Pay</p>
+                <p className={`text-slate-400 mb-1 ${uiType.helperText}`}>Next Pay</p>
                 <p className="font-bold text-slate-700 text-sm">
                   {nextPayDates.length > 0
                     ? nextPayDates[0].toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
@@ -93,47 +94,56 @@ export const Income = ({
             )}
           </div>
         ) : (
-          <div className="text-center py-6">
-            <DollarSign size={32} className="mx-auto text-slate-300 mb-2" />
-            <p className="text-slate-400 text-sm">Set up your pay schedule to track income</p>
+          <div className="text-center py-6 rounded-xl border border-dashed border-emerald-200 bg-emerald-50/60">
+            <DollarSign size={32} className="mx-auto text-emerald-400 mb-2" />
+            <p className="text-slate-700 text-sm font-semibold">Set up your pay schedule first</p>
+            <p className={`text-slate-500 mt-1 mb-3 ${uiType.helperText}`}>
+              Add your frequency and paycheck amount to unlock paycheck forecasts.
+            </p>
+            <button
+              onClick={onEditPaySchedule}
+              className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold ${uiTap.control}`}
+            >
+              Set pay schedule <ArrowRight size={14} />
+            </button>
           </div>
         )}
       </div>
 
       {/* Log Actual Pay */}
-      <div className="bg-white rounded-2xl shadow-lg p-5">
-        <h3 className="font-bold text-slate-800 flex items-center gap-2 mb-3">
+      <div className={`bg-white ${uiSpacing.card}`}>
+        <h3 className={`${uiType.sectionTitle} text-slate-800 flex items-center gap-2 mb-4`}>
           <DollarSign size={18} className="text-emerald-600" />
           Log Actual Pay
         </h3>
-        <div className="grid grid-cols-3 gap-2 mb-3">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
           <div>
-            <label className="text-xs font-semibold text-slate-500">Date</label>
+            <label className={`font-semibold text-slate-500 ${uiType.helperText}`}>Date</label>
             <input
               type="date"
-              className="w-full mt-1 px-3 py-2 border-2 rounded-xl text-sm"
+              className={`w-full mt-1 px-3 py-2 border-2 rounded-xl text-sm ${uiTap.control}`}
               value={payDate}
               onChange={(e) => setPayDate(e.target.value)}
             />
           </div>
           <div>
-            <label className="text-xs font-semibold text-slate-500">Amount</label>
+            <label className={`font-semibold text-slate-500 ${uiType.helperText}`}>Amount</label>
             <input
               type="number"
               step="0.01"
               placeholder="$0.00"
-              className="w-full mt-1 px-3 py-2 border-2 rounded-xl text-sm"
+              className={`w-full mt-1 px-3 py-2 border-2 rounded-xl text-sm ${uiTap.control}`}
               value={payAmount}
               onChange={(e) => setPayAmount(e.target.value)}
             />
           </div>
           <div>
-            <label className="text-xs font-semibold text-slate-500">OT Hrs</label>
+            <label className={`font-semibold text-slate-500 ${uiType.helperText}`}>OT Hrs</label>
             <input
               type="number"
               step="0.5"
               placeholder="0"
-              className="w-full mt-1 px-3 py-2 border-2 rounded-xl text-sm"
+              className={`w-full mt-1 px-3 py-2 border-2 rounded-xl text-sm ${uiTap.control}`}
               value={overtimeHours}
               onChange={(e) => setOvertimeHours(e.target.value)}
             />
@@ -141,21 +151,28 @@ export const Income = ({
         </div>
         <button
           onClick={handleAddPay}
-          disabled={!payDate || !payAmount}
-          className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 text-white rounded-xl font-semibold transition-colors"
+          disabled={!payDate || !payAmount || !paySchedule}
+          className={`w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 text-white rounded-xl font-semibold transition-colors ${uiTap.control}`}
         >
           Log Pay
         </button>
 
+        {!paySchedule && (
+          <p className={`text-amber-600 mt-2 flex items-center gap-1.5 ${uiType.helperText}`}>
+            <ListChecks size={12} />
+            Complete pay schedule setup to start logging actual pay.
+          </p>
+        )}
+
         {/* Pay History */}
         {sortedPayEntries.length > 0 && (
-          <div className="mt-4 pt-3 border-t">
-            <h4 className="text-xs font-semibold text-slate-400 uppercase mb-2">Pay History</h4>
-            <div className="space-y-1.5 max-h-64 overflow-y-auto">
+          <div className="mt-5 pt-4 border-t">
+            <h4 className={`font-semibold text-slate-400 uppercase mb-3 ${uiType.helperText}`}>Pay History</h4>
+            <div className="space-y-3 max-h-64 overflow-y-auto">
               {sortedPayEntries.map((entry) => (
                 <div
                   key={entry.id}
-                  className="flex items-center justify-between p-2.5 bg-slate-50 rounded-xl"
+                  className="flex items-center justify-between p-3 bg-slate-50 rounded-xl"
                 >
                   <div className="flex items-center gap-3">
                     <div>
@@ -180,7 +197,7 @@ export const Income = ({
                     </span>
                     <button
                       onClick={() => onDeleteActualPay(entry.id)}
-                      className="p-1 text-red-400 hover:bg-red-50 rounded"
+                      className={`p-1 text-red-400 hover:bg-red-50 rounded ${uiTap.iconControl}`}
                     >
                       <Trash2 size={14} />
                     </button>
@@ -194,10 +211,10 @@ export const Income = ({
 
       {/* Variable Bills - Submit Actuals */}
       {thisMonthVars.length > 0 && (
-        <div className="bg-white rounded-2xl shadow-lg p-5">
-          <h3 className="font-bold text-slate-800 mb-1">Variable Bills</h3>
-          <p className="text-xs text-slate-400 mb-3">Enter actual amounts for variable bills this month</p>
-          <div className="space-y-2">
+        <div className={`bg-white ${uiSpacing.card}`}>
+          <h3 className={`${uiType.sectionTitle} text-slate-800 mb-1`}>Variable Bills</h3>
+          <p className={`text-slate-400 mb-4 ${uiType.helperText}`}>Enter actual amounts for variable bills this month</p>
+          <div className={uiSpacing.sectionStack}>
             {thisMonthVars.map((i) => (
               <div
                 key={i.id}
@@ -211,7 +228,7 @@ export const Income = ({
                   </p>
                 </div>
                 <button
-                  className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold flex items-center gap-1.5 flex-shrink-0"
+                  className={`px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold flex items-center gap-1.5 flex-shrink-0 ${uiTap.control}`}
                   onClick={() => onEditTemplate(i.templateId)}
                 >
                   <Edit2 size={14} /> Update

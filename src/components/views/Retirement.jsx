@@ -32,12 +32,18 @@ const HISTORICAL_RETURNS = {
   cash: { mean: 0.03, stdDev: 0.01 },    // ~3% nominal (T-bills / money market)
 };
 
-// Correlation matrix (stocks and bonds can correlate in crashes)
-const CORRELATION = {
-  stocksBonds: 0.2,  // Slight positive correlation historically
-  stocksCash: 0.0,
-  bondsCash: 0.3,
-};
+// Correlation matrix for [stocks, bonds, cash]
+const CORRELATION_MATRIX = [
+  [1.0, 0.2, 0.0],
+  [0.2, 1.0, 0.3],
+  [0.0, 0.3, 1.0],
+];
+
+const IDENTITY_CORRELATION_CHOLESKY = [
+  [1, 0, 0],
+  [0, 1, 0],
+  [0, 0, 1],
+];
 
 // Social Security benefit by claiming age (relative to Full Retirement Age)
 const SS_ADJUSTMENT = {
@@ -107,23 +113,84 @@ const HISTORICAL_ANNUAL = [
   [0.2502,0.0125,0.0500],
 ];
 
+const cholesky3x3 = (matrix) => {
+  const n = 3;
+  const lower = Array.from({ length: n }, () => Array(n).fill(0));
+
+  for (let i = 0; i < n; i++) {
+    for (let j = 0; j <= i; j++) {
+      let sum = 0;
+      for (let k = 0; k < j; k++) {
+        sum += lower[i][k] * lower[j][k];
+      }
+
+      if (i === j) {
+        const diag = matrix[i][i] - sum;
+        if (!Number.isFinite(diag) || diag <= 0) {
+          return null;
+        }
+        lower[i][j] = Math.sqrt(diag);
+      } else {
+        if (lower[j][j] === 0) {
+          return null;
+        }
+        lower[i][j] = (matrix[i][j] - sum) / lower[j][j];
+      }
+    }
+  }
+
+  return lower;
+};
+
+const validateCorrelationMatrix = (matrix) => {
+  if (!Array.isArray(matrix) || matrix.length !== 3 || matrix.some((row) => !Array.isArray(row) || row.length !== 3)) {
+    return { valid: false, message: 'Correlation matrix must be 3x3.' };
+  }
+
+  for (let i = 0; i < 3; i++) {
+    for (let j = 0; j < 3; j++) {
+      const value = matrix[i][j];
+      if (!Number.isFinite(value) || value < -1 || value > 1) {
+        return { valid: false, message: 'Correlation values must be between -1 and 1.' };
+      }
+      if (i === j && Math.abs(value - 1) > 1e-10) {
+        return { valid: false, message: 'Correlation matrix diagonal entries must equal 1.' };
+      }
+      if (Math.abs(matrix[i][j] - matrix[j][i]) > 1e-10) {
+        return { valid: false, message: 'Correlation matrix must be symmetric.' };
+      }
+    }
+  }
+
+  const cholesky = cholesky3x3(matrix);
+  if (!cholesky) {
+    return {
+      valid: false,
+      message: 'Correlation assumptions are inconsistent. Please use a positive-definite matrix.',
+    };
+  }
+
+  return { valid: true, cholesky };
+};
+
 // Generate correlated random returns using Cholesky decomposition (Statistical model)
-const generateCorrelatedReturns = (customReturns) => {
+const generateCorrelatedReturns = (customReturns, choleskyLower = IDENTITY_CORRELATION_CHOLESKY) => {
   // Generate independent standard normal variables
   const z1 = randomNormal(0, 1);
   const z2 = randomNormal(0, 1);
   const z3 = randomNormal(0, 1);
 
-  // Apply correlation using Cholesky decomposition
-  const stockZ = z1;
-  const bondZ = CORRELATION.stocksBonds * z1 + Math.sqrt(1 - CORRELATION.stocksBonds ** 2) * z2;
-  const cashZ = z3; // Cash uncorrelated for simplicity
+  const correlatedZ = [
+    choleskyLower[0][0] * z1,
+    choleskyLower[1][0] * z1 + choleskyLower[1][1] * z2,
+    choleskyLower[2][0] * z1 + choleskyLower[2][1] * z2 + choleskyLower[2][2] * z3,
+  ];
 
   // Convert to actual returns (use custom if provided, else defaults)
   const sr = customReturns || HISTORICAL_RETURNS;
-  const stockReturn = sr.stocks.mean + sr.stocks.stdDev * stockZ;
-  const bondReturn = sr.bonds.mean + sr.bonds.stdDev * bondZ;
-  const cashReturn = sr.cash.mean + sr.cash.stdDev * cashZ;
+  const stockReturn = sr.stocks.mean + sr.stocks.stdDev * correlatedZ[0];
+  const bondReturn = sr.bonds.mean + sr.bonds.stdDev * correlatedZ[1];
+  const cashReturn = sr.cash.mean + sr.cash.stdDev * correlatedZ[2];
 
   return { stockReturn, bondReturn, cashReturn };
 };
@@ -467,6 +534,7 @@ const calculateEnhancedMonteCarloSimulation = (params, progressCallback) => {
 };
 import {
   DEFAULT_SIMULATION_COUNT,
+  SS_ADJUSTMENT,
   runEnhancedMonteCarloSimulation,
 } from '../../utils/retirementSimulation';
 
@@ -474,12 +542,14 @@ import {
 // HELPER FUNCTIONS
 // ============================================
 const formatCurrency = (value) => {
+  if (!Number.isFinite(value)) return '$0';
   if (value >= 1000000) return `$${(value / 1000000).toFixed(2)}M`;
   if (value >= 1000) return `$${(value / 1000).toFixed(1)}K`;
   return `$${value.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
 };
 
 const formatFullCurrency = (value) => {
+  if (!Number.isFinite(value)) return '$0';
   return `$${value.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
 };
 
@@ -859,6 +929,7 @@ const MonteCarloSimulator = () => {
   const [results, setResults] = useState(null);
   const [isRunning, setIsRunning] = useState(false);
   const [progress, setProgress] = useState(0);
+  const [simulationWarning, setSimulationWarning] = useState('');
 
   // Scenario comparison
   const [savedScenarios, setSavedScenarios] = useState([]);
@@ -889,6 +960,22 @@ const MonteCarloSimulator = () => {
       alert('Please enter your current age, retirement age, and life expectancy');
       return;
     }
+    let choleskyLower = IDENTITY_CORRELATION_CHOLESKY;
+    if (simulationModel === 'historical') {
+      setSimulationWarning('');
+    } else {
+      const correlationValidation = validateCorrelationMatrix(CORRELATION_MATRIX);
+      choleskyLower = correlationValidation.valid
+        ? correlationValidation.cholesky
+        : IDENTITY_CORRELATION_CHOLESKY;
+
+      if (correlationValidation.valid) {
+        setSimulationWarning('');
+      } else {
+        setSimulationWarning(`Using uncorrelated fallback returns because correlation settings are invalid: ${correlationValidation.message}`);
+      }
+    }
+
     setIsRunning(true);
     setProgress(0);
 
@@ -978,7 +1065,7 @@ const MonteCarloSimulator = () => {
     { label: 'Retire 2 years later', effect: '+2 years', apply: () => setRetirementAge(String(retAge + 2)) },
     { label: 'Spend 10% less', effect: '-10%', apply: () => setAnnualSpending(String(Math.round(annSpend * 0.9))) },
     { label: 'Save $5K more/year', effect: '+$5K', apply: () => setAnnualContribution(String(annContrib + 5000)) },
-    { label: 'Delay SS to 70', effect: '+24%', apply: () => setSsClaimingAge('70') },
+    ...(ssAge < 70 ? [{ label: 'Delay SS to 70', effect: `+${Math.round((SS_ADJUSTMENT[70] / (SS_ADJUSTMENT[ssAge] || 1) - 1) * 100)}%`, apply: () => setSsClaimingAge('70') }] : []),
   ];
 
   // Success rate gauge SVG component
@@ -1390,6 +1477,13 @@ const MonteCarloSimulator = () => {
         </div>
       )}
 
+      {simulationWarning && (
+        <div className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800 flex items-start gap-2">
+          <AlertCircle size={16} className="mt-0.5 flex-shrink-0" />
+          <span>{simulationWarning}</span>
+        </div>
+      )}
+
       {/* What-If Quick Adjustments */}
       {results && (
         <div className="bg-white rounded-2xl shadow-xl p-4 sm:p-6">
@@ -1614,15 +1708,17 @@ const MonteCarloSimulator = () => {
                       </p>
                     </div>
                   </div>
-                  <div className="flex gap-3 p-3 bg-amber-50 rounded-xl">
-                    <AlertCircle className="text-amber-500 flex-shrink-0" size={20} />
-                    <div>
-                      <p className="font-medium text-amber-800">Delay Social Security if possible</p>
-                      <p className="text-sm text-amber-700">
-                        Waiting until 70 increases your benefit by 24% over claiming at 67.
-                      </p>
+                  {ssAge < 70 && (
+                    <div className="flex gap-3 p-3 bg-amber-50 rounded-xl">
+                      <AlertCircle className="text-amber-500 flex-shrink-0" size={20} />
+                      <div>
+                        <p className="font-medium text-amber-800">Delay Social Security if possible</p>
+                        <p className="text-sm text-amber-700">
+                          Waiting until 70 increases your benefit by {Math.round((SS_ADJUSTMENT[70] / (SS_ADJUSTMENT[ssAge] || 1) - 1) * 100)}% over claiming at {ssAge}.
+                        </p>
+                      </div>
                     </div>
-                  </div>
+                  )}
                 </>
               )}
 

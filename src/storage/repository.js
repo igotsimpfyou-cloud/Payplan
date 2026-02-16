@@ -17,6 +17,11 @@ import {
   LS_HISTORICAL_BILLS,
   LS_PAYCHECKS,
   LS_LAST_ROLLOVER,
+  LS_INSTITUTIONS,
+  LS_ACCOUNT_CONNECTIONS,
+  LS_SYNCED_ACCOUNTS,
+  LS_SYNCED_TRANSACTIONS,
+  LS_SYNC_JOBS,
 } from '../constants/storageKeys.js';
 
 const DB_NAME = 'payplan-pro';
@@ -43,6 +48,11 @@ const Collections = {
   actualPayEntries: { type: 'array', keyPath: 'id', legacyKey: LS_ACTUAL_PAY, validate: hasId },
   scannedReceipts: { type: 'array', keyPath: 'id', legacyKey: LS_SCANNED_RECEIPTS, validate: hasId },
   investments: { type: 'array', keyPath: 'id', legacyKey: LS_INVESTMENTS, validate: hasId },
+  institutions: { type: 'array', keyPath: 'id', legacyKey: LS_INSTITUTIONS, validate: hasId },
+  accountConnections: { type: 'array', keyPath: 'id', legacyKey: LS_ACCOUNT_CONNECTIONS, validate: hasId },
+  syncedAccounts: { type: 'array', keyPath: 'id', legacyKey: LS_SYNCED_ACCOUNTS, validate: hasId },
+  syncedTransactions: { type: 'array', keyPath: 'id', legacyKey: LS_SYNCED_TRANSACTIONS, validate: hasId },
+  syncJobs: { type: 'array', keyPath: 'id', legacyKey: LS_SYNC_JOBS, validate: hasId },
   paySchedule: { type: 'singleton', legacyKey: LS_PAY, validate: (v) => v == null || isObject(v) },
   calendarConnected: { type: 'singleton', legacyKey: LS_CAL, validate: (v) => typeof v === 'boolean' },
   emergencyFund: { type: 'singleton', legacyKey: LS_EMERGENCY, validate: (v) => isObject(v) },
