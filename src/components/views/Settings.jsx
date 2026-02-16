@@ -32,16 +32,7 @@ export const Settings = ({
     <div>
       <SettingsSectionNav sections={SETTINGS_SECTIONS} />
 
-      <IntegrationsSection
-        billInstances={billInstances}
-        institutions={institutions}
-        accountConnections={accountConnections}
-        syncedAccounts={syncedAccounts}
-        syncJobs={syncJobs}
-        onLinkInstitution={onLinkInstitution}
-        onRunSync={onRunSync}
-        onUnlinkConnection={onUnlinkConnection}
-      />
+      <IntegrationsSection billInstances={billInstances} bills={bills} />
 
       <DataManagementSection bills={bills} />
 

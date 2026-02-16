@@ -107,7 +107,15 @@ export const Analytics = ({
 
     // Count on-time payments (paid before or on due date)
     paidBills.forEach((bill) => {
-      onTimeCount++;
+      if (bill.paidDate) {
+        const paid = new Date(bill.paidDate);
+        if (paid <= bill._date) {
+          onTimeCount++;
+        }
+      } else {
+        // If no paidDate recorded, assume on-time for legacy data
+        onTimeCount++;
+      }
     });
 
     return { streak, totalPaid, onTimeCount };

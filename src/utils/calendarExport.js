@@ -16,10 +16,26 @@ const escapeICS = (text) => {
 };
 
 /**
+ * Parse a date string in either MMDDYYYY or YYYY-MM-DD format to a local Date
+ */
+const parseDateStr = (dateStr) => {
+  if (!dateStr) return new Date();
+  // MMDDYYYY format (8 digits, no dashes)
+  if (/^\d{8}$/.test(dateStr)) {
+    const mm = parseInt(dateStr.substring(0, 2), 10);
+    const dd = parseInt(dateStr.substring(2, 4), 10);
+    const yyyy = parseInt(dateStr.substring(4, 8), 10);
+    return new Date(yyyy, mm - 1, dd);
+  }
+  // YYYY-MM-DD format
+  return new Date(dateStr + 'T00:00:00');
+};
+
+/**
  * Format date for ICS (YYYYMMDD for all-day events)
  */
 const formatICSDate = (dateStr) => {
-  const date = new Date(dateStr + 'T00:00:00');
+  const date = parseDateStr(dateStr);
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, '0');
   const day = String(date.getDate()).padStart(2, '0');
@@ -71,7 +87,7 @@ export const generateICSContent = (billInstances, options = {}) => {
   // Add each bill as an event
   billInstances.forEach((bill) => {
     const uid = generateUID(bill, bill.dueDate);
-    const amount = (bill.actualPaid || bill.amountEstimate || 0).toFixed(2);
+    const amount = (bill.actualPaid || bill.amountEstimate || bill.amount || 0).toFixed(2);
     const status = bill.paid ? 'PAID' : 'DUE';
     const statusEmoji = bill.paid ? '✅' : '💵';
 
@@ -160,7 +176,7 @@ export const generateFilename = (billInstances) => {
 
   // Format: payplan-bills-2024-01-to-2024-06.ics
   const formatMonth = (dateStr) => {
-    const d = new Date(dateStr + 'T00:00:00');
+    const d = parseDateStr(dateStr);
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
   };
 

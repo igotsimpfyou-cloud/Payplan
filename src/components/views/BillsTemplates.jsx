@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Plus, DollarSign, Calendar, Edit2, Trash2, History, TrendingUp } from 'lucide-react';
+import { Plus, DollarSign, Calendar, Edit2, Trash2, History, TrendingUp, ArrowRight } from 'lucide-react';
 import { parseAmt } from '../../utils/formatters';
 import { startOfMonth, parseLocalDate } from '../../utils/dateHelpers';
 import { Button } from '../ui/Button';
@@ -243,8 +243,17 @@ export const BillsTemplates = ({
             </div>
           ))
         ) : (
-          <div className="bg-white rounded-xl p-8 text-center text-slate-600">
-            No templates yet. Click "Add Template".
+          <div className="bg-white rounded-xl p-8 text-center border border-dashed border-emerald-200">
+            <p className="text-slate-800 text-base font-semibold">No bill templates yet</p>
+            <p className="text-slate-500 text-sm mt-1 mb-4">Create your first recurring bill to start paycheck assignment and reminders.</p>
+            <Button
+              onClick={onAddTemplate}
+              variant="primary"
+              className="mx-auto"
+              icon={ArrowRight}
+            >
+              Add your first template
+            </Button>
           </div>
         )}
       </div>
