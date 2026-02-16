@@ -39,16 +39,7 @@ export const Settings = ({
     <div>
       <SettingsSectionNav sections={SETTINGS_SECTIONS} />
 
-      <IntegrationsSection
-        billInstances={safeBillInstances}
-        institutions={safeInstitutions}
-        accountConnections={safeAccountConnections}
-        syncedAccounts={safeSyncedAccounts}
-        syncJobs={safeSyncJobs}
-        onLinkInstitution={onLinkInstitution}
-        onRunSync={onRunSync}
-        onUnlinkConnection={onUnlinkConnection}
-      />
+      <IntegrationsSection billInstances={billInstances} bills={bills} />
 
       <DataManagementSection bills={safeBills} />
 

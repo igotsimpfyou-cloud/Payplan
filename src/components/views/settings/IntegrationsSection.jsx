@@ -18,25 +18,9 @@ import SectionCard from './SectionCard';
 
 const OCR_API_KEY_STORAGE = 'ppp.ocrApiKey';
 
-const IntegrationsSection = ({
-  billInstances = [],
-  institutions = [],
-  accountConnections = [],
-  syncedAccounts = [],
-  syncJobs = [],
-  onLinkInstitution,
-  onRunSync,
-  onUnlinkConnection,
-}) => {
-  const safeBillInstances = Array.isArray(billInstances) ? billInstances : [];
-  const safeInstitutions = Array.isArray(institutions) ? institutions : [];
-  const safeAccountConnections = Array.isArray(accountConnections) ? accountConnections : [];
-  const safeSyncedAccounts = Array.isArray(syncedAccounts) ? syncedAccounts : [];
-  const safeSyncJobs = Array.isArray(syncJobs) ? syncJobs : [];
-  const handleLinkInstitution = typeof onLinkInstitution === 'function' ? onLinkInstitution : () => {};
-  const handleRunSync = typeof onRunSync === 'function' ? onRunSync : () => {};
-  const handleUnlinkConnection = typeof onUnlinkConnection === 'function' ? onUnlinkConnection : () => {};
-
+const IntegrationsSection = ({ billInstances = [], bills = [] }) => {
+  // Use new bills array when legacy billInstances is empty
+  const exportBills = billInstances.length > 0 ? billInstances : bills;
   const [ocrApiKey, setOcrApiKey] = useState('');
   const [showApiKey, setShowApiKey] = useState(false);
   const [apiKeySaved, setApiKeySaved] = useState(false);
@@ -71,14 +55,14 @@ const IntegrationsSection = ({
   };
 
   const handleExportCalendar = () => {
-    if (!safeBillInstances.length) {
+    if (!exportBills.length) {
       setExportSuccess({ success: false, message: 'No bills to export' });
       setTimeout(() => setExportSuccess(null), 3000);
       return;
     }
 
-    const filename = generateFilename(safeBillInstances);
-    const result = downloadICSFile(safeBillInstances, { filename });
+    const filename = generateFilename(exportBills);
+    const result = downloadICSFile(exportBills, { filename });
 
     setExportSuccess({
       success: true,
@@ -307,7 +291,7 @@ const IntegrationsSection = ({
           )}
 
           <div className="mt-3 text-sm text-slate-500">
-            {safeBillInstances.length} bill{safeBillInstances.length !== 1 ? 's' : ''} will be exported
+            {exportBills.length} bill{exportBills.length !== 1 ? 's' : ''} will be exported
           </div>
 
           <LearnMoreToggle
