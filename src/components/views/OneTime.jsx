@@ -26,6 +26,7 @@ export const OneTime = ({
       <div className="flex items-center justify-between mb-6">
         <h2 className="text-3xl font-black text-white">One-Time Bills</h2>
         <button
+              type="button"
           onClick={onAddOneTime}
           className="px-6 py-3 bg-white hover:bg-emerald-50 text-emerald-600 rounded-xl font-semibold shadow-lg transition-colors flex items-center gap-2"
         >
@@ -61,6 +62,7 @@ export const OneTime = ({
               >
                 <div className="flex items-start gap-4">
                   <button
+                      type="button"
                     onClick={() => onToggleOneTimePaid(bill.id)}
                     className={`p-3 rounded-xl ${
                       bill.paid
@@ -110,12 +112,14 @@ export const OneTime = ({
                   </div>
                   <div className="flex gap-2">
                     <button
+                      type="button"
                       onClick={() => onEditOneTime(bill)}
                       className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
                     >
                       <Edit2 size={18} />
                     </button>
                     <button
+                      type="button"
                       onClick={() => {
                         if (confirm(`Delete ${bill.name}?`))
                           onDeleteOneTime(bill.id);
@@ -139,6 +143,7 @@ export const OneTime = ({
               Track non-recurring expenses like medical bills or repairs
             </p>
             <button
+              type="button"
               onClick={onAddOneTime}
               className="px-6 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-semibold"
             >
