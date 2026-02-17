@@ -92,6 +92,8 @@ const MIGRATIONS = {
 };
 
 const isIndexedDBAvailable = () => typeof indexedDB !== 'undefined';
+const isElectronStorageBridgeAvailable = () =>
+  typeof window !== 'undefined' && !!window.electronStorage;
 
 export function shouldSeedFromLegacy(fromPrimary, hasSeededFlag) {
   if (hasSeededFlag) return false;
@@ -252,7 +254,12 @@ async function runMigrations(adapter) {
 }
 
 export async function createStorageRepository() {
-  const adapter = isIndexedDBAvailable() ? new IndexedDbAdapter() : new LocalStorageAdapter();
+  // In Electron we mirror localStorage to disk via preload bridge.
+  // Prefer LocalStorageAdapter so app data persists across app restarts.
+  const preferLocalStorage = isElectronStorageBridgeAvailable();
+  const adapter = !preferLocalStorage && isIndexedDBAvailable()
+    ? new IndexedDbAdapter()
+    : new LocalStorageAdapter();
   await adapter.init();
   await runMigrations(adapter);
 
