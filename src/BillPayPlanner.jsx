@@ -2312,6 +2312,13 @@ const BillPayPlanner = () => {
                   onExportBackup={exportBackup}
                   onImportBackup={importBackupFromFile}
                   bills={bills}
+                  institutions={institutions}
+                  accountConnections={accountConnections}
+                  syncedAccounts={syncedAccounts}
+                  syncJobs={syncJobs}
+                  onLinkInstitution={handleLinkInstitution}
+                  onRunSync={handleRunSync}
+                  onUnlinkConnection={handleUnlinkConnection}
                   onDeduplicateBills={handleDeduplicateBills}
                   onMarkPastBillsPaid={handleMarkPastBillsPaid}
                 />
