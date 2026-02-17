@@ -18,9 +18,26 @@ import SectionCard from './SectionCard';
 
 const OCR_API_KEY_STORAGE = 'ppp.ocrApiKey';
 
-const IntegrationsSection = ({ billInstances = [], bills = [] }) => {
+const IntegrationsSection = ({
+  billInstances = [],
+  bills = [],
+  institutions = [],
+  accountConnections = [],
+  syncedAccounts = [],
+  syncJobs = [],
+  onLinkInstitution,
+  onRunSync,
+  onUnlinkConnection,
+}) => {
   // Use new bills array when legacy billInstances is empty
   const exportBills = billInstances.length > 0 ? billInstances : bills;
+  const safeInstitutions = Array.isArray(institutions) ? institutions : [];
+  const safeAccountConnections = Array.isArray(accountConnections) ? accountConnections : [];
+  const safeSyncedAccounts = Array.isArray(syncedAccounts) ? syncedAccounts : [];
+  const safeSyncJobs = Array.isArray(syncJobs) ? syncJobs : [];
+  const handleLinkInstitution = typeof onLinkInstitution === 'function' ? onLinkInstitution : () => {};
+  const handleRunSync = typeof onRunSync === 'function' ? onRunSync : () => {};
+  const handleUnlinkConnection = typeof onUnlinkConnection === 'function' ? onUnlinkConnection : () => {};
   const [ocrApiKey, setOcrApiKey] = useState('');
   const [showApiKey, setShowApiKey] = useState(false);
   const [apiKeySaved, setApiKeySaved] = useState(false);
