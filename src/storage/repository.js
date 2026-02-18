@@ -286,10 +286,23 @@ export async function createStorageRepository() {
   // In Electron we mirror localStorage to disk via preload bridge.
   // Prefer LocalStorageAdapter so app data persists across app restarts.
   const preferLocalStorage = isElectronStorageBridgeAvailable();
-  const adapter = !preferLocalStorage && isIndexedDBAvailable()
-    ? new IndexedDbAdapter()
-    : new LocalStorageAdapter();
-  await adapter.init();
+  let adapter = null;
+
+  if (!preferLocalStorage && isIndexedDBAvailable()) {
+    try {
+      adapter = new IndexedDbAdapter();
+      await adapter.init();
+    } catch (err) {
+      console.warn('IndexedDB unavailable, falling back to localStorage', err);
+      adapter = null;
+    }
+  }
+
+  if (!adapter) {
+    adapter = new LocalStorageAdapter();
+    await adapter.init();
+  }
+
   await runMigrations(adapter);
 
   return {
