@@ -95,6 +95,19 @@ const isIndexedDBAvailable = () => typeof indexedDB !== 'undefined';
 const isElectronStorageBridgeAvailable = () =>
   typeof window !== 'undefined' && !!window.electronStorage;
 
+async function syncElectronStorageKey(key, value, shouldRemove = false) {
+  if (!isElectronStorageBridgeAvailable()) return;
+  try {
+    if (shouldRemove) {
+      await window.electronStorage.removeItem(key);
+      return;
+    }
+    await window.electronStorage.setItem(key, value);
+  } catch (err) {
+    console.warn('electronStorage sync failed', err);
+  }
+}
+
 export function shouldSeedFromLegacy(fromPrimary, hasSeededFlag) {
   if (hasSeededFlag) return false;
   if (fromPrimary == null) return true;
@@ -146,16 +159,28 @@ class LocalStorageAdapter {
   constructor() { this.name = 'localStorage'; this.pending = new Map(); this.flushTimer = null; }
   async init() {}
   async getMeta(key) { const raw = localStorage.getItem(`meta:${key}`); return raw ? JSON.parse(raw) : null; }
-  async setMeta(key, value) { localStorage.setItem(`meta:${key}`, JSON.stringify(value)); }
+  async setMeta(key, value) {
+    const storageKey = `meta:${key}`;
+    const serialized = JSON.stringify(value);
+    localStorage.setItem(storageKey, serialized);
+    await syncElectronStorageKey(storageKey, serialized);
+  }
   async loadCollection(name) { return parseLegacyCollection(name); }
   async saveCollection(name, value) {
     const key = Collections[name].legacyKey;
     if (name === 'lastRolloverMonth') {
-      if (value) localStorage.setItem(key, value);
-      else localStorage.removeItem(key);
+      if (value) {
+        localStorage.setItem(key, value);
+        await syncElectronStorageKey(key, value);
+      } else {
+        localStorage.removeItem(key);
+        await syncElectronStorageKey(key, null, true);
+      }
       return;
     }
-    localStorage.setItem(key, JSON.stringify(value));
+    const serialized = JSON.stringify(value);
+    localStorage.setItem(key, serialized);
+    await syncElectronStorageKey(key, serialized);
   }
   queuePatch(name, operation) {
     const queue = this.pending.get(name) ?? [];
@@ -181,7 +206,11 @@ class LocalStorageAdapter {
     }
     this.pending.clear();
   }
-  async quarantine(records) { localStorage.setItem('quarantine:records', JSON.stringify(records)); }
+  async quarantine(records) {
+    const serialized = JSON.stringify(records);
+    localStorage.setItem('quarantine:records', serialized);
+    await syncElectronStorageKey('quarantine:records', serialized);
+  }
 }
 
 class IndexedDbAdapter {
