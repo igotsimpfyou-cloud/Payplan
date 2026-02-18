@@ -2,9 +2,12 @@ const { app, BrowserWindow, ipcMain } = require('electron');
 const path = require('path');
 const fs = require('fs');
 
-// Data file location: Documents/PayPlanPro/data.json
-const dataDir = path.join(app.getPath('documents'), 'PayPlanPro');
+// Data file location: Electron userData path (reliable writable location)
+const dataDir = path.join(app.getPath('userData'), 'PayPlanPro');
 const dataFile = path.join(dataDir, 'data.json');
+// Legacy location kept for one-time migration of existing installs.
+const legacyDataDir = path.join(app.getPath('documents'), 'PayPlanPro');
+const legacyDataFile = path.join(legacyDataDir, 'data.json');
 
 function ensureDataDir() {
   if (!fs.existsSync(dataDir)) {
@@ -12,7 +15,21 @@ function ensureDataDir() {
   }
 }
 
+function migrateLegacyDataFileIfNeeded() {
+  ensureDataDir();
+  if (fs.existsSync(dataFile) || !fs.existsSync(legacyDataFile)) {
+    return;
+  }
+
+  try {
+    fs.copyFileSync(legacyDataFile, dataFile);
+  } catch (err) {
+    console.warn('Failed migrating legacy data file:', err);
+  }
+}
+
 function readData() {
+  migrateLegacyDataFileIfNeeded();
   ensureDataDir();
   if (fs.existsSync(dataFile)) {
     try {
