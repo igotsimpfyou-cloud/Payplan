@@ -1,30 +1,50 @@
 import React from 'react';
-import { Download, Upload } from 'lucide-react';
+import { Download, Upload, Smartphone, RotateCcw } from 'lucide-react';
 import LearnMoreToggle from './LearnMoreToggle';
 import SectionCard from './SectionCard';
 
-const BackupRestoreSection = ({ backupFileInputRef, onExportBackup, onImportBackup }) => {
+const BackupRestoreSection = ({
+  backupFileInputRef,
+  onExportBackup,
+  onImportBackup,
+  onCreateLocalBackup,
+  onRestoreLocalBackup,
+}) => {
   return (
     <SectionCard
       id="backup-restore"
       title="Backup & Restore"
-      summary="Export your data or restore from a backup file."
+      summary="Save backups on this phone or export files for off-device storage."
       className="mb-6"
     >
-      <div className="flex gap-3">
+      <div className="grid gap-3 sm:grid-cols-2">
+        <button
+          onClick={onCreateLocalBackup}
+          className="px-4 py-3 bg-indigo-100 hover:bg-indigo-200 text-indigo-700 rounded-xl font-semibold transition-colors flex items-center justify-center gap-2"
+        >
+          <Smartphone size={18} />
+          Save on This Phone
+        </button>
+        <button
+          onClick={onRestoreLocalBackup}
+          className="px-4 py-3 bg-violet-100 hover:bg-violet-200 text-violet-700 rounded-xl font-semibold transition-colors flex items-center justify-center gap-2"
+        >
+          <RotateCcw size={18} />
+          Restore Local Backup
+        </button>
         <button
           onClick={onExportBackup}
-          className="flex-1 px-4 py-3 bg-blue-100 hover:bg-blue-200 text-blue-700 rounded-xl font-semibold transition-colors flex items-center justify-center gap-2"
+          className="px-4 py-3 bg-blue-100 hover:bg-blue-200 text-blue-700 rounded-xl font-semibold transition-colors flex items-center justify-center gap-2"
         >
           <Download size={18} />
-          Export Backup
+          Export File Backup
         </button>
         <button
           onClick={() => backupFileInputRef.current?.click()}
-          className="flex-1 px-4 py-3 bg-emerald-100 hover:bg-emerald-200 text-emerald-700 rounded-xl font-semibold transition-colors flex items-center justify-center gap-2"
+          className="px-4 py-3 bg-emerald-100 hover:bg-emerald-200 text-emerald-700 rounded-xl font-semibold transition-colors flex items-center justify-center gap-2"
         >
           <Upload size={18} />
-          Restore Backup
+          Restore File Backup
         </button>
         <input
           ref={backupFileInputRef}
@@ -43,11 +63,11 @@ const BackupRestoreSection = ({ backupFileInputRef, onExportBackup, onImportBack
 
       <LearnMoreToggle
         className="mt-4"
-        summary="Backups contain your templates, instances, assets, one-time bills, and settings."
+        summary="Local backups are saved on this phone/browser. File backups can be moved to other devices."
       >
         <p>
-          Keep backup files in a secure location. Restoring a backup replaces current in-app data
-          with the file contents.
+          Use "Save on This Phone" for quick on-device recovery. Keep exported files in a secure
+          location for off-device backup. Restoring any backup replaces your current in-app data.
         </p>
       </LearnMoreToggle>
     </SectionCard>

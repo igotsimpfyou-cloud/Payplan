@@ -18,6 +18,7 @@ import { toYMD, startOfMonth, addMonths, sameMonth, idForInstance, parseLocalDat
 import { parseAmt } from './utils/formatters';
 import { calculateNextPayDates, monthlyTotal } from './utils/calculations';
 import { createStorageRepository } from './storage/repository';
+import { saveLocalBackup, getLatestLocalBackup } from './utils/localBackup';
 import {
   BUDGET_CATEGORIES,
   monthKeyFromDate,
@@ -1007,37 +1008,39 @@ const BillPayPlanner = () => {
   const budgetEditorCaps = resolveBudgetCapsForMonth(budgets, budgetEditorMonthKey);
 
   // ---------- Backup / Restore ----------
+  const buildBackupPayload = () => ({
+    app: 'PayPlan Pro',
+    version: 4, // Includes Phase 1A sync foundation data in backup payloads
+    exportedAt: new Date().toISOString(),
+    data: {
+      billTemplates,
+      billInstances, // Legacy, kept for compatibility
+      bills,         // New database format
+      historicalBills,
+      paychecks,
+      lastRolloverMonth,
+      assets,
+      oneTimeBills,
+      paySchedule,
+      propaneFills,
+      calendarConnected,
+      emergencyFund,
+      debtPayoff,
+      envelopes,
+      budgets,
+      actualPayEntries,
+      scannedReceipts,
+      investments,
+      institutions,
+      accountConnections,
+      syncedAccounts,
+      syncedTransactions,
+      syncJobs,
+    },
+  });
+
   const exportBackup = () => {
-    const payload = {
-      app: 'PayPlan Pro',
-      version: 4, // Includes Phase 1A sync foundation data in backup payloads
-      exportedAt: new Date().toISOString(),
-      data: {
-        billTemplates,
-        billInstances, // Legacy, kept for compatibility
-        bills,         // New database format
-        historicalBills,
-        paychecks,
-        lastRolloverMonth,
-        assets,
-        oneTimeBills,
-        paySchedule,
-        propaneFills,
-        calendarConnected,
-        emergencyFund,
-        debtPayoff,
-        envelopes,
-        budgets,
-        actualPayEntries,
-        scannedReceipts,
-        investments,
-        institutions,
-        accountConnections,
-        syncedAccounts,
-        syncedTransactions,
-        syncJobs,
-      },
-    };
+    const payload = buildBackupPayload();
     const blob = new Blob([JSON.stringify(payload, null, 2)], {
       type: 'application/json',
     });
@@ -1047,6 +1050,27 @@ const BillPayPlanner = () => {
     a.download = `payplan-backup-${new Date().toISOString().slice(0, 10)}.json`;
     a.click();
     URL.revokeObjectURL(url);
+  };
+
+  const createLocalBackup = () => {
+    const payload = buildBackupPayload();
+    const snapshot = saveLocalBackup(payload.data);
+    if (snapshot) {
+      alert('Local backup created on this device. You can restore it anytime from Settings.');
+    } else {
+      alert('Local backup is only available in the app/browser environment.');
+    }
+  };
+
+  const restoreFromLatestLocalBackup = async () => {
+    const snapshot = getLatestLocalBackup();
+    if (!snapshot?.data) {
+      alert('No local backup found on this device yet. Create one first.');
+      return;
+    }
+
+    await applyBackup({ data: snapshot.data });
+    alert(`Local backup restored from ${new Date(snapshot.exportedAt).toLocaleString()}.`);
   };
 
   const applyBackup = async (payload) => {
@@ -2311,6 +2335,8 @@ const BillPayPlanner = () => {
                   billInstances={billInstances}
                   onExportBackup={exportBackup}
                   onImportBackup={importBackupFromFile}
+                  onCreateLocalBackup={createLocalBackup}
+                  onRestoreLocalBackup={restoreFromLatestLocalBackup}
                   bills={bills}
                   institutions={institutions}
                   accountConnections={accountConnections}

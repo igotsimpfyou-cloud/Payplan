@@ -16,6 +16,8 @@ export const Settings = ({
   backupFileInputRef,
   onExportBackup,
   onImportBackup,
+  onCreateLocalBackup,
+  onRestoreLocalBackup,
   billInstances = [],
   bills = [],
   institutions = [],
@@ -62,6 +64,8 @@ export const Settings = ({
         backupFileInputRef={backupFileInputRef}
         onExportBackup={onExportBackup}
         onImportBackup={onImportBackup}
+        onCreateLocalBackup={onCreateLocalBackup}
+        onRestoreLocalBackup={onRestoreLocalBackup}
       />
     </div>
   );
