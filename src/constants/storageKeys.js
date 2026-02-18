@@ -29,3 +29,7 @@ export const LS_ACCOUNT_CONNECTIONS = 'ppp.accountConnections';
 export const LS_SYNCED_ACCOUNTS = 'ppp.syncedAccounts';
 export const LS_SYNCED_TRANSACTIONS = 'ppp.syncedTransactions';
 export const LS_SYNC_JOBS = 'ppp.syncJobs';
+
+// Automatic local backup snapshots (for on-device recovery)
+export const LS_LOCAL_BACKUP_CURRENT = 'ppp.localBackup.current';
+export const LS_LOCAL_BACKUP_HISTORY = 'ppp.localBackup.history';
