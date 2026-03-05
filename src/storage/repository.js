@@ -95,6 +95,23 @@ const isIndexedDBAvailable = () => typeof indexedDB !== 'undefined';
 const isElectronStorageBridgeAvailable = () =>
   typeof window !== 'undefined' && !!window.electronStorage;
 
+export async function hydrateLocalStorageFromElectronStorage() {
+  if (!isElectronStorageBridgeAvailable() || typeof localStorage === 'undefined') return;
+
+  try {
+    const storedEntries = await window.electronStorage.getAll();
+    if (!storedEntries || typeof storedEntries !== 'object') return;
+
+    for (const [key, value] of Object.entries(storedEntries)) {
+      if (value == null) continue;
+      const serialized = typeof value === 'string' ? value : JSON.stringify(value);
+      localStorage.setItem(key, serialized);
+    }
+  } catch (err) {
+    console.warn('Failed to hydrate localStorage from Electron storage', err);
+  }
+}
+
 async function syncElectronStorageKey(key, value, shouldRemove = false) {
   if (!isElectronStorageBridgeAvailable()) return;
   try {
@@ -283,6 +300,8 @@ async function runMigrations(adapter) {
 }
 
 export async function createStorageRepository() {
+  await hydrateLocalStorageFromElectronStorage();
+
   // In Electron we mirror localStorage to disk via preload bridge.
   // Prefer LocalStorageAdapter so app data persists across app restarts.
   const preferLocalStorage = isElectronStorageBridgeAvailable();
